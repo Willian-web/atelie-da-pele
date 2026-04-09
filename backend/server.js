@@ -6,8 +6,8 @@ const whatsappService = require('./services/whatsappService');
 const pagbankService = require('./services/pagbankService');
 
 const app = express();
-// Blindando a porta em 3000 fixo porque o usuário ancorou o Roteador da Nuvem na 3000 MANUALMENTE!
-const PORT = 3000;
+// Obedecendo de forma estrita a porta fornecida pelo container da nuvem, ou recuando pro 8080
+const PORT = process.env.PORT || 8080;
 
 app.use(cors({ origin: '*' }));
 app.use(express.json());
@@ -95,8 +95,8 @@ app.post('/appointments', async (req, res) => {
     }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Ateliê Backend: Express na Trilha Global (0.0.0.0) na porta ${PORT}`);
+app.listen(PORT, () => {
+    console.log(`Ateliê Backend: Express rodando livremente na porta ${PORT}`);
 });
 
 // Forçando rebuild na Railway (Erro Interno deles de Context Canceled)
