@@ -1,115 +1,54 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+const twilio = require('twilio');
 
-class WhatsappWebJS_Service {
+class WhatsappService {
     constructor() {
-        console.log('🤖 Iniciando Robô do WhatsApp Local. Aguarde alguns segundos...');
+        console.log('🔗 Preparando Integração Leve com a API Oficial do Twilio...');
         
-        // Inicializa o Client garantindo salvamento de sessão (LocalAuth)
-        this.client = new Client({
-            authStrategy: new LocalAuth(),
-            puppeteer: {
-                executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-                args: [
-                    '--no-sandbox', 
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--disable-software-rasterizer',
-                    '--single-process'
-                ]
-            }
-        });
-        
-        this.isReady = false;
-        this.lastQr = '';
-        this.fatalError = null;
+        // Puxa as Chaves do Arquivo .env / Railway Variaveis
+        this.accountSid = process.env.TWILIO_ACCOUNT_SID;
+        this.authToken = process.env.TWILIO_AUTH_TOKEN;
+        this.twilioNumber = process.env.TWILIO_WHATSAPP_NUMBER; // Ex: whatsapp:+14155238886
 
-        // Quando o cliente pedir autenticação, geramos o QR no Terminal Visível
-        this.client.on('qr', (qr) => {
-            console.log('\n======================================================');
-            console.log('📱 ESCANEIE ESTE QR CODE COM O SEU WHATSAPP (APARELHOS CONECTADOS)');
-            console.log('======================================================');
-            // small: true garante que no Windows o QR não fique gigantesco
-            qrcode.generate(qr, { small: true });
-            
-            // Grava na memória ram do servidor para mostrar na página web
-            this.lastQr = qr;
-        });
-
-        // Quando logado com sucesso e sincronizado
-        this.client.on('ready', () => {
-            console.log('\n✅ ROBO DO WHATSAPP CONECTADO COM SUCESSO! A partir de agora, os agendamentos já enviarão mensagens.');
+        if (this.accountSid && this.authToken) {
+            this.client = twilio(this.accountSid, this.authToken);
             this.isReady = true;
-            this.lastQr = '';
-        });
-
-        this.client.on('auth_failure', () => {
-            console.error('\n❌ Falha na autenticação do WhatsApp!');
-        });
-
-        this.client.on('disconnected', (reason) => {
-            console.log('\n⚠️ Whatsapp Desconectado! Motivo:', reason);
+            console.log('✅ Twilio Iniciado: Chaves encontradas no cofre.');
+        } else {
+            console.warn('⚠️ Alerta: Conexão incompleta. Por favor configure as chaves do Twilio no .env!');
             this.isReady = false;
-        });
-
-        // "Liga" o robô de fato
-        // Trazendo o try-catch explícito contra erros de falta de memória (OOM) ou Bibliotecas ausentes
-        setTimeout(async () => {
-            try {
-                await this.client.initialize();
-            } catch (error) {
-                console.error("FATAL: Falha no Puppeteer / Carga Limite RAM:", error);
-                this.fatalError = error.message || error.toString();
-            }
-        }, 100);
+        }
     }
 
-    getQrCode() {
-        return this.lastQr;
-    }
-
-    async sendMessage(to, body) {
+    async sendMessage(to, message) {
         if (!this.isReady) {
-            console.warn(`[Aguardando Escaneamento] O sistema tentou enviar para ${to}, mas o celular não estava scaneado.`);
-            throw new Error('Você precisa ler o QR Code no terminal primeiro!');
+            console.error('🚫 Erro de Disparo: Twilio não está configurado.');
+            return { success: false, error: 'API do Twilio não configurada' };
         }
 
-        // Limpa tudo o que não for número
-        let digits = to.replace(/\D/g, '');
-        if (!digits) throw new Error('Telefone vazio.');
-        if (digits.startsWith('0')) digits = digits.substring(1);
-        
-        // Garante o prefixo do Brasil 55
-        if (!digits.startsWith('55')) {
-            digits = '55' + digits;
-        }
-
-        console.log(`[WA-WEB] Verificando existência de WhatsApp para: ${digits}...`);
-        
         try {
-            // Essa função getNumberId é INCRÍVEL. 
-            // Ela pega qualquer número e bate no servidor do WhatsApp para ver 
-            // se o número real possui ou não o bendito 9º dígito.
-            const registeredPhone = await this.client.getNumberId(digits);
-
-            if (!registeredPhone) {
-                console.error(`[WA-WEB] Erro letal: O número ${digits} não existe no WhatsApp.`);
-                throw new Error('O número informado não está associado, ou está incorreto no Banco de Dados global.');
+            // Formata o número para o padrão internacional do WhatsApp Exigido pelo Twilio
+            // Aceita tanto com 55 quanto sem, e injeta o `whatsapp:+` na frente
+            let formattedNumber = to.replace(/\D/g, ''); 
+            if (!formattedNumber.startsWith('55')) {
+                formattedNumber = '55' + formattedNumber;
             }
+            formattedNumber = 'whatsapp:+' + formattedNumber;
 
-            // Pega o ID Oficial formatado diretamente pela plataforma ('554184928985@c.us')
-            const jidMapeado = registeredPhone._serialized;
-            
-            await this.client.sendMessage(jidMapeado, body);
-            console.log(`[WA-WEB] Mensagem entregue para ${jidMapeado} com louvor.`);
-            return true;
-            
+            console.log(`📡 Disparando Torpedo Twilio para ${formattedNumber}...`);
+
+            const response = await this.client.messages.create({
+                body: message,
+                from: this.twilioNumber, // Número Oficial Sandbox ou Produção do Twilio
+                to: formattedNumber
+            });
+
+            console.log(`✅ [Twilio] Mensagem Despachada com Sucesso! SID: ${response.sid}`);
+            return { success: true, sid: response.sid };
         } catch (error) {
-            console.error(`[WA-WEB] Falha fatal ao entregar mensagem para ${digits}:`, error.message || error);
-            throw error;
+            console.error('❌ Erro no Disparo:', error);
+            return { success: false, error: error.message };
         }
     }
 }
 
-module.exports = new WhatsappWebJS_Service();
+module.exports = new WhatsappService();
