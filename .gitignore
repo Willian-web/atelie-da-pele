@@ -1,0 +1,20 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Configs e Sessões Sigilosas
+backend/.env
+backend/.wwebjs_auth
+backend/.wwebjs_cache
+
+# Cache e Dependencias
+backend/node_modules/
+node_modules/
+.npm
+
+# SO
+.DS_Store
+Thumbs.db
