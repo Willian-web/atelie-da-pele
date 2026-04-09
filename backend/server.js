@@ -6,7 +6,8 @@ const whatsappService = require('./services/whatsappService');
 const pagbankService = require('./services/pagbankService');
 
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+// Blindando a porta em 3000 fixo porque o usuário ancorou o Roteador da Nuvem na 3000 MANUALMENTE!
+const PORT = 3000;
 
 app.use(cors({ origin: '*' }));
 app.use(express.json());
