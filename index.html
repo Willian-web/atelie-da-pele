@@ -36,10 +36,8 @@
     <script type="text/babel">
 const { useState, useEffect, useMemo } = React;
 
-// Link Inteligente de Destino (Muda sozinho pra Nuvem quando hospedado!)
-const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-    ? 'http://localhost:3000' 
-    : 'https://seu-backend-railway.up.railway.app'; // Trocaremos pela real em breve!
+// Link de Destino Oficial - Apontando sempre para a Nuvem da Railway!
+const API_BASE_URL = 'https://atelie-da-pele-production.up.railway.app';
 
 const SERVICES = [
     { id: 'limpeza_pele', name: 'Limpeza de Pele', price: 119.90, category: 'Estética Facial', duration: 60 },
