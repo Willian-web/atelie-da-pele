@@ -18,9 +18,6 @@ COPY . .
 
 # Variável ultra-importante que avisa o Robô para usar o Chrome Linux que acabamos de instalar!
 ENV PUPPETEER_EXECUTABLE_PATH="/usr/bin/chromium"
-ENV PORT=3000
-
-EXPOSE 3000
 
 # Executa o Node
 CMD ["npm", "start"]
