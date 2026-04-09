@@ -6,9 +6,9 @@ const whatsappService = require('./services/whatsappService');
 const pagbankService = require('./services/pagbankService');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-app.use(cors());
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 // Rota de Boas Vindas e Checagem da Nuvem
