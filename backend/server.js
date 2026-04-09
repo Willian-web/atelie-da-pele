@@ -19,6 +19,16 @@ app.get('/', (req, res) => {
 // A Rota Mágica do Leitor de WhatsApp pela Nuvem
 app.get('/qr', async (req, res) => {
     try {
+        if (whatsappService.fatalError) {
+            return res.status(500).send(`
+                <div style="font-family: sans-serif; text-align: center; margin-top: 20vh; color: red;">
+                    <h1>🚨 Falha Crítica do Chrome no Servidor!</h1>
+                    <p>O Motor na Nuvem não encontrou memória RAM ou peças suficientes para ligar o navegador.</p>
+                    <pre style="background: #222; color: #0f0; padding: 20px; text-align: left; overflow-x: auto;">${whatsappService.fatalError}</pre>
+                </div>
+            `);
+        }
+
         if (whatsappService.isReady) {
             return res.send(`
                 <div style="font-family: sans-serif; text-align: center; margin-top: 20vh;">

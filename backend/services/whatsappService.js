@@ -14,13 +14,16 @@ class WhatsappWebJS_Service {
                     '--no-sandbox', 
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
-                    '--disable-gpu'
+                    '--disable-gpu',
+                    '--disable-software-rasterizer',
+                    '--single-process'
                 ]
             }
         });
         
         this.isReady = false;
         this.lastQr = '';
+        this.fatalError = null;
 
         // Quando o cliente pedir autenticação, geramos o QR no Terminal Visível
         this.client.on('qr', (qr) => {
@@ -51,7 +54,15 @@ class WhatsappWebJS_Service {
         });
 
         // "Liga" o robô de fato
-        this.client.initialize();
+        // Trazendo o try-catch explícito contra erros de falta de memória (OOM) ou Bibliotecas ausentes
+        setTimeout(async () => {
+            try {
+                await this.client.initialize();
+            } catch (error) {
+                console.error("FATAL: Falha no Puppeteer / Carga Limite RAM:", error);
+                this.fatalError = error.message || error.toString();
+            }
+        }, 100);
     }
 
     getQrCode() {
