@@ -97,3 +97,5 @@ app.post('/appointments', async (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Ateliê Backend: Express na Trilha Global (0.0.0.0) na porta ${PORT}`);
 });
+
+// Forçando rebuild na Railway (Erro Interno deles de Context Canceled)
