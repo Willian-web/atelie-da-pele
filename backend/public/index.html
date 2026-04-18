@@ -464,12 +464,14 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
                 body: JSON.stringify({ id: Date.now().toString(), name: newClient.name, phone: cleanPhone, address: newClient.address })
             });
             const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Erro na API Backend');
+            
             setSelectedClient(data);
             setIsCreatingNew(false);
             setStep(3); // Avança pra confirmação dedicada
             refreshData(); // Puxa clients atualizados
         } catch (e) {
-            alert('Falha ao registrar cliente no banco de dados.');
+            alert('Falha ao registrar seu perfil (Servidor Backend com Falha DB?): ' + e.message);
         }
         setIsLoading(false);
     };
@@ -715,8 +717,12 @@ const App = () => {
             const resAps = await fetch(`${API_BASE_URL}/appointments`);
             if (resAps.ok) {
                 const aps = await resAps.json();
-                setAppointments(aps);
-                setDbStatus('PostgreSQL Conectado');
+                if (Array.isArray(aps)) {
+                    setAppointments(aps);
+                    setDbStatus('PostgreSQL Conectado');
+                } else {
+                    setDbStatus('Erro DB (Verifique URL)');
+                }
             } else { setDbStatus('Erro Conexão API'); }
 
             const resClis = await fetch(`${API_BASE_URL}/clients`);
