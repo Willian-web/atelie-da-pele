@@ -3,6 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const { Pool } = require('pg');
 require('dotenv').config();
+const { sendConfirmationEmail } = require('./services/emailService');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -287,6 +288,27 @@ app.post('/webhook/pagbank', async (req, res) => {
                 WHERE id = $1 AND status = 'pending_payment'
             `, [appointment_id]);
             console.log(`[WebHook] Agendamento ${appointment_id} confirmado!`);
+            
+            // Buscar dados do agendamento para o email
+            try {
+                const result = await pool.query('SELECT * FROM appointments WHERE id = $1', [appointment_id]);
+                if (result.rows.length > 0) {
+                    const ap = result.rows[0];
+                    const SERVICES = [
+                        { id: 'limpeza_pele', name: 'Limpeza de Pele', price: 119.90 },
+                        { id: 'dep_intima', name: 'Depilação Íntima Completa', price: 59.90 },
+                        { id: 'dep_axila', name: 'Depilação Axila', price: 29.90 },
+                        { id: 'dep_buco', name: 'Depilação Buço', price: 29.90 },
+                        { id: 'dep_completa', name: 'Depilação Completa', price: 129.90 },
+                        { id: 'reflexologia', name: 'Reflexologia Podal', price: 89.90 }
+                    ];
+                    const serviceObj = SERVICES.find(s => s.id === ap.service_id);
+                    await sendConfirmationEmail(ap, serviceObj);
+                }
+            } catch (emailErr) {
+                console.error('[WebHook] Falha ao enviar e-mail de confirmação:', emailErr);
+            }
+
         } else if (payment_status === 'RECUSED' || payment_status === 'EXPIRED') {
             await pool.query(`
                 UPDATE appointments 
