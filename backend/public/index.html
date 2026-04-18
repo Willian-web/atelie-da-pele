@@ -247,6 +247,12 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig }) =>
                                                 <div className="detail-badge"><i className="fas fa-phone"></i> {app.clientPhone}</div>
                                             </div>
                                             {app.location && <div className="obs-text"><strong><i className="fas fa-map-marker-alt"></i> Local:</strong> {app.location}</div>}
+                                            {!app.location && (
+                                                <div className="obs-text" style={{display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px'}}>
+                                                    <span><strong><i className="fas fa-map-marker-alt"></i> Local do atendimento:</strong> Ateliê da Pele — Rua Rio Jaguaribe, nº 274</span>
+                                                    <a href="https://www.google.com/maps/search/?api=1&query=Ateliê+da+Pele+Rua+Rio+Jaguaribe+274" target="_blank" rel="noreferrer" style={{display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#0ea5e9', textDecoration: 'none', background: '#f0f9ff', padding: '4px 10px', border: '1px solid #bae6fd', borderRadius: '15px'}}><i className="fas fa-map-marked-alt"></i> Abrir no Google Maps</a>
+                                                </div>
+                                            )}
                                             {app.notes && <div className="obs-text"><strong>Obs:</strong> {app.notes}</div>}
                                             {isCancelled && app.cancelReason && <div className="obs-text" style={{color: '#ef4444'}}><strong>Motivo:</strong> {app.cancelReason}</div>}
                                         </div>
@@ -392,6 +398,12 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                                         <StatusBadge status={app.status} />
                                     </div>
                                     {app.location && <div className="obs-text"><strong>Endereço do Local:</strong> {app.location}</div>}
+                                    {!app.location && (
+                                        <div className="obs-text" style={{display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px'}}>
+                                            <span><strong>Local do atendimento:</strong> Ateliê da Pele — Rua Rio Jaguaribe, nº 274</span>
+                                            <a href="https://www.google.com/maps/search/?api=1&query=Ateliê+da+Pele+Rua+Rio+Jaguaribe+274" target="_blank" rel="noreferrer" style={{display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#0ea5e9', textDecoration: 'none', background: '#f0f9ff', padding: '4px 10px', border: '1px solid #bae6fd', borderRadius: '15px'}}><i className="fas fa-map-marked-alt"></i> Ver localização no mapa</a>
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="appointment-actions" style={{display:'flex', flexDirection:'column', gap:'5px', minWidth: '130px'}}>
                                     {isPending && !isCancelled && !isPast && (
@@ -674,31 +686,96 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
                 </div>
             )}
 
-            {step === 4 && completedAppInfo && (
+            {step === 4 && completedAppInfo && (() => {
+                const liveApp = appointments.find(a => a.id === completedAppInfo.app.id) || completedAppInfo.app;
+                const isConfirmed = liveApp.status === 'confirmed';
+                const isCancelled = liveApp.status === 'cancelled';
+                const isPending = liveApp.status === 'pending_payment';
+                const dateStr = new Date(liveApp.date + 'T12:00:00').toLocaleDateString('pt-BR');
+                const whatsappMsg = `Olá, sou o(a) ${completedAppInfo.client.name.split(' ')[0]} e fiz um agendamento no Ateliê da Pele e gostaria de confirmar.\n\nServiço: ${completedAppInfo.service.name}\nData: ${dateStr}\nHorário: ${liveApp.time}\nValor: R$ ${completedAppInfo.service.price.toFixed(2).replace('.', ',')}`;
+                // Numero fornecido explicitamente pelo cliente na resposta anterior
+                const zapLink = `https://wa.me/5541984928985?text=${encodeURIComponent(whatsappMsg)}`;
+
+                return (
                 <div className="booking-section step-container" style={{textAlign: 'center'}}>
-                    <i className="fas fa-clock" style={{fontSize: '50px', color: '#f59e0b', marginBottom: '15px'}}></i>
-                    <h2 style={{color: '#d97706', marginBottom: '10px'}}>Horário Bloqueado Aguardando Pagamento</h2>
-                    <p style={{color: 'var(--text-muted)', marginBottom: '20px'}}>Pague o adiantamento de 30% dentro dos próximos 15 minutos para que não seja cancelado.</p>
+                    {isPending && (
+                        <>
+                            <i className="fas fa-clock" style={{fontSize: '50px', color: '#f59e0b', margin: '0 auto 15px', display: 'block'}}></i>
+                            <h2 style={{color: '#d97706', marginBottom: '10px'}}>Horário Bloqueado Aguardando Pagamento</h2>
+                            <p style={{color: 'var(--text-muted)', marginBottom: '20px'}}>Pague o adiantamento de 30% dentro dos próximos 15 minutos.</p>
+                        </>
+                    )}
+                    {isConfirmed && (
+                        <>
+                            <i className="fas fa-check-circle" style={{fontSize: '50px', color: '#10b981', margin: '0 auto 15px', display: 'block'}}></i>
+                            <h2 style={{color: '#059669', marginBottom: '10px'}}>Agendamento Confirmado!</h2>
+                            <p style={{color: 'var(--text-muted)', marginBottom: '20px'}}>Pagamento aprovado. Seu agendamento foi confirmado com sucesso.</p>
+                        </>
+                    )}
+                    {isCancelled && (
+                        <>
+                            <i className="fas fa-times-circle" style={{fontSize: '50px', color: '#ef4444', margin: '0 auto 15px', display: 'block'}}></i>
+                            <h2 style={{color: '#dc2626', marginBottom: '10px'}}>Agendamento Cancelado</h2>
+                            <p style={{color: 'var(--text-muted)', marginBottom: '20px'}}>O tempo limite esgotou ou houve falha no pagamento.</p>
+                        </>
+                    )}
                     
                     <div style={{background: '#fcfcfc', border: '1px solid #ddd', padding: '20px', borderRadius: '8px', textAlign: 'left', marginBottom: '25px', display: 'inline-block', maxWidth: '400px', width: '100%'}}>
                         <strong>{completedAppInfo.client.name}</strong><br/>
-                        {completedAppInfo.service.name}<br/>
-                        Para: {new Date(completedAppInfo.app.date + 'T12:00:00').toLocaleDateString('pt-BR')} às {completedAppInfo.app.time} <br/>
-                        Local: {completedAppInfo.app.location || 'Consultório Principal'}
+                        {completedAppInfo.service.name} (R$ {completedAppInfo.service.price.toFixed(2).replace('.', ',')})<br/>
+                        Para: {dateStr} às {liveApp.time} <br/>
+                        <div style={{marginTop: '10px'}}>
+                            {liveApp.location && <span><strong>Local do atendimento:</strong><br/>{liveApp.location}</span>}
+                            {!liveApp.location && (
+                                <div style={{display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px'}}>
+                                    <span><strong>Local do atendimento:</strong><br/>Ateliê da Pele — Rua Rio Jaguaribe, nº 274</span>
+                                    <a href="https://www.google.com/maps/search/?api=1&query=Ateliê+da+Pele+Rua+Rio+Jaguaribe+274" target="_blank" rel="noreferrer" style={{display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#0ea5e9', textDecoration: 'none', background: '#f0f9ff', padding: '6px 12px', border: '1px solid #bae6fd', borderRadius: '20px'}}>
+                                        <i className="fas fa-map-marked-alt"></i> Abrir no Google Maps
+                                    </a>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
-                    <div style={{marginBottom: '30px', background: '#e0f2fe', padding: '20px', borderRadius: '8px', maxWidth: '350px', margin: '0 auto 30px'}}>
-                        <p style={{fontWeight: 'bold', fontSize: '18px', color: '#0369a1', marginBottom: '15px'}}>Valor a pagar agora: R$ {adiantamento}</p>
-                        <a href={completedAppInfo.app.paymentUrl} target="_blank" className="btn-submit pay-btn" style={{width: '100%', display: 'block', textDecoration: 'none', padding: '15px'}}>
-                            <i className="fas fa-money-bill-wave"></i> Realizar Pagamento via PagBank
-                        </a>
-                    </div>
+                    {isPending && (
+                        <div style={{marginBottom: '30px', background: '#e0f2fe', padding: '20px', borderRadius: '8px', maxWidth: '350px', margin: '0 auto 30px'}}>
+                            <p style={{fontWeight: 'bold', fontSize: '18px', color: '#0369a1', marginBottom: '15px'}}>Valor a pagar agora: R$ {adiantamento}</p>
+                            <a href={liveApp.paymentUrl} target="_blank" rel="noreferrer" className="btn-submit pay-btn" style={{width: '100%', display: 'block', textDecoration: 'none', padding: '15px'}}>
+                                <i className="fas fa-money-bill-wave"></i> Realizar Pagamento PagBank
+                            </a>
+                            
+                            {/* CAIXA DE TESTES / SANDBOX */}
+                            <div style={{marginTop: '20px', borderTop: '1px dashed #bae6fd', paddingTop: '15px', display: 'flex', flexDirection: 'column', gap: '8px'}}>
+                                <span style={{fontSize: '12px', color: '#0369a1', fontWeight: 'bold'}}><i className="fas fa-vial"></i> Modo Teste (Sandbox)</span>
+                                <div style={{display: 'flex', gap: '10px', justifyContent: 'center'}}>
+                                    <button className="btn-cancel" style={{flex: 1, padding: '8px', fontSize: '11px', borderColor: '#10b981', color: '#10b981'}} onClick={async () => {
+                                        await fetch(`${API_BASE_URL}/webhook/pagbank`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ appointment_id: liveApp.id, payment_status: 'PAID' }) });
+                                        refreshData();
+                                    }}>Aprovar PG</button>
+                                    
+                                    <button className="btn-cancel" style={{flex: 1, padding: '8px', fontSize: '11px', borderColor: '#ef4444', color: '#ef4444'}} onClick={async () => {
+                                        await fetch(`${API_BASE_URL}/webhook/pagbank`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ appointment_id: liveApp.id, payment_status: 'EXPIRED' }) });
+                                        refreshData();
+                                    }}>Recusar/Expirar</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {isConfirmed && (
+                         <div style={{marginBottom: '30px', display: 'flex', justifyContent: 'center'}}>
+                            <a href={zapLink} target="_blank" rel="noreferrer" className="btn-submit" style={{background: '#25D366', color: 'white', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '15px 30px', borderRadius: '30px', fontWeight: 'bold'}}>
+                                <i className="fab fa-whatsapp" style={{fontSize: '24px'}}></i> Enviar mensagem no WhatsApp
+                            </a>
+                        </div>
+                    )}
 
                     <div style={{display: 'flex', flexDirection: 'column', gap: '15px', alignItems: 'center'}}>
-                        <button className="btn-admin" style={{margin: '0 auto'}} onClick={() => { setStep(1); setBookingData({date:'', time:'', notes:'', location:''}); }}>Fazer novo/voltar início</button>
+                        <button className="btn-admin" style={{margin: '0 auto'}} onClick={() => { setStep(1); setBookingData({date:'', time:'', notes:'', location:''}); }}>Fazer novo ou Voltar ao início</button>
                     </div>
                 </div>
-            )}
+                );
+            })()}
         </div>
     );
 };
@@ -755,11 +832,6 @@ const App = () => {
         <div className="container">
             <Header view={view} setView={navigateTo} />
             {showPassword && <PasswordModal onSuccess={() => { setShowPassword(false); setView('admin'); }} onCancel={() => setShowPassword(false)} />}
-            
-            <div style={{textAlign: 'center', fontSize: '11px', padding: '4px', background: dbStatus.includes('Conectado') ? '#d4edda' : '#f8d7da', color: dbStatus.includes('Conectado') ? '#155724' : '#721c24', marginBottom: '20px', borderRadius: '4px'}}>
-               Status do Driver DB: {dbStatus} (Polling 10s)
-            </div>
-
             <main>
                 {view === 'client' && <ClientArea appointments={appointments} refreshData={refreshData} clients={clients} config={config} />}
                 {view === 'my_apps' && <MyAppointmentsArea appointments={appointments} refreshData={refreshData} clients={clients} setView={setView} />}

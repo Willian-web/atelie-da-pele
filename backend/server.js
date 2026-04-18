@@ -280,7 +280,6 @@ app.post('/webhook/pagbank', async (req, res) => {
     if (!isPostgresSetup) return res.status(500).json({error:'Sem DB'});
 
     try {
-        // Mock de verificação: Se status for "PAID"
         if (payment_status === 'PAID') {
             await pool.query(`
                 UPDATE appointments 
@@ -288,6 +287,16 @@ app.post('/webhook/pagbank', async (req, res) => {
                 WHERE id = $1 AND status = 'pending_payment'
             `, [appointment_id]);
             console.log(`[WebHook] Agendamento ${appointment_id} confirmado!`);
+        } else if (payment_status === 'RECUSED' || payment_status === 'EXPIRED') {
+            await pool.query(`
+                UPDATE appointments 
+                SET status = 'cancelled', 
+                    cancel_reason = $2,
+                    cancelled_at = CURRENT_TIMESTAMP,
+                    cancelled_by = 'system'
+                WHERE id = $1 AND status = 'pending_payment'
+            `, [appointment_id, payment_status === 'EXPIRED' ? 'Expirou no Sandbox' : 'Cartão não aprovado (Sandbox)']);
+            console.log(`[WebHook] Agendamento ${appointment_id} reprovado/expirado!`);
         }
         res.status(200).json({ received: true });
     } catch(e) {
