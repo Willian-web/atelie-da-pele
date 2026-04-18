@@ -8,6 +8,11 @@ const transporter = nodemailer.createTransport({
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
     },
+    tls: {
+       rejectUnauthorized: false
+    },
+    // Forçar IPv4 para resolver o bug de rede no Railway
+    family: 4,
 });
 
 async function sendConfirmationEmail(appointmentData, serviceData) {
