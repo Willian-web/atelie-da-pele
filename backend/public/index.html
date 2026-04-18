@@ -446,11 +446,15 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
     useEffect(() => {
         if (bookingData.date) {
             setAvailableTimes(generateTimeSlots(bookingData.date, appointments));
-            setBookingData(prev => ({...prev, time: ''}));
         } else {
             setAvailableTimes([]);
         }
     }, [bookingData.date, appointments]);
+
+    // Reseta o tempo selecionado apenas se o usuário trocar o dia manualmente
+    useEffect(() => {
+        setBookingData(prev => ({...prev, time: ''}));
+    }, [bookingData.date]);
 
     const handleCreateClient = async () => {
         if(!newClient.name || !newClient.phone) return alert('Nome e Telefone são obrigatórios.');
