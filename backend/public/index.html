@@ -41,7 +41,9 @@
     <script type="text/babel">
 const { useState, useEffect, useMemo, useCallback } = React;
 
-const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:8080' : 'https://' + window.location.hostname;
+const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://localhost:8080'
+    : 'https://' + window.location.hostname;
 
 const SERVICES = [
     { id: 'limpeza_pele', name: 'Limpeza de Pele', price: 119.90, category: 'Estética Facial', duration: 60 },
@@ -51,6 +53,8 @@ const SERVICES = [
     { id: 'dep_completa', name: 'Depilação Completa', price: 129.90, category: 'Depilação', duration: 60 },
     { id: 'reflexologia', name: 'Reflexologia Podal', price: 89.90, category: 'Bem-Estar', duration: 60 }
 ];
+
+const FIXED_SIGNAL_AMOUNT = 30.00;
 
 const formatPrice = (price) => price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -73,13 +77,13 @@ const generateTimeSlots = (dateString, existingAppointments) => {
 
     let slots = [];
     if (dayOfWeek === 0) return [];
-    else if (dayOfWeek === 6) { // Sat
+    else if (dayOfWeek === 6) {
         let hour = 14; let min = 0;
         while (hour < 17 || (hour === 17 && min === 0)) {
             slots.push(`${hour.toString().padStart(2, '0')}:${min === 0 ? '00' : '30'}`);
             min += 30; if (min >= 60) { hour += 1; min = 0; }
         }
-    } else { // Mon-Fri
+    } else {
         let hour = 13; let min = 0;
         while (hour < 19 || (hour === 19 && min <= 30)) {
             slots.push(`${hour.toString().padStart(2, '0')}:${min === 0 ? '00' : '30'}`);
@@ -87,7 +91,6 @@ const generateTimeSlots = (dateString, existingAppointments) => {
         }
     }
     
-    // Status que ocupam a agenda: pending_payment, confirmed, completed
     const bookedIntervals = existingAppointments
         .filter(app => app.date === dateString && ['pending_payment', 'confirmed', 'completed'].includes(app.status))
         .map(app => {
@@ -270,7 +273,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig }) =>
 
             {adminView === 'clientes' && (
                 <div className="appointments-list" style={{marginTop: '15px'}}>
-                    {(!clients || clients.length === 0) ? <div className="empty-state"><i className="fas fa-users-slash"></i><p>Nenhuma cliente na base de dados (SQLite/PG).</p></div> : 
+                    {(!clients || clients.length === 0) ? <div className="empty-state"><i className="fas fa-users-slash"></i><p>Nenhuma cliente na base de dados.</p></div> : 
                         clients.map(client => (
                             <div key={client.id} className="appointment-item" style={{alignItems: 'center'}}>
                                 <div className="appointment-info" style={{flex: 1}}>
@@ -295,7 +298,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig }) =>
 };
 
 
-// ============== ÁREA "MEUS AGENDAMENTOS" (CLIENTE LOGADO) ==============
+// ============== ÁREA "MEUS AGENDAMENTOS" ==============
 
 const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => {
     const [loginPhone, setLoginPhone] = useState('');
@@ -313,7 +316,6 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
     };
 
     const handleCancelAppointment = async (app) => {
-        // Validação Frontend (Menos de 2 horas)
         const apTime = new Date(app.date + 'T' + app.time + ':00-03:00').getTime();
         const now = new Date().getTime();
         const diffHours = (apTime - now) / (1000 * 60 * 60);
@@ -323,7 +325,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
             return;
         }
 
-        if(window.confirm('Deseja cancelar o seu horário? A taxa de adiantamento, se paga, seguirá a política de estorno do Ateliê.')) {
+        if(window.confirm('Deseja cancelar o seu horário? A taxa de sinal, se paga, seguirá a política de estorno do Ateliê.')) {
             try {
                 const req = await fetch(`${API_BASE_URL}/appointments/${app.id}/cancel`, {
                     method: 'PATCH',
@@ -341,10 +343,20 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
     };
 
     const simulaPagamento = async (appId) => {
-        // Rotina secreta/Mock apenas para testar Webhook enquanto o Pagbank real não vem
-        await fetch(`${API_BASE_URL}/webhook/pagbank`, { 
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({ appointment_id: appId, payment_status: 'PAID' }) 
+        await fetch(`${API_BASE_URL}/webhook/infinitepay`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({
+                invoice_slug: `mock-slug-${appId}`,
+                amount: 3000,
+                paid_amount: 3000,
+                installments: 1,
+                capture_method: 'pix',
+                transaction_nsu: `mock-transaction-${appId}`,
+                order_nsu: appId,
+                receipt_url: `https://mock.receipt/${appId}`,
+                items: [{ quantity: 1, price: 3000, description: 'Sinal do agendamento' }]
+            }) 
         });
         alert('Pagamento processado com sucesso! (MOCK)');
         refreshData();
@@ -383,9 +395,8 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                         const isCancelled = app.status === 'cancelled';
                         const isPending = app.status === 'pending_payment';
 
-                        // Verifica se pode cancelar
                         const apTime = new Date(app.date + 'T' + app.time + ':00-03:00').getTime();
-                        const canCancel = (apTime - new Date().getTime()) >= (2 * 60 * 60 * 1000); // Faltam 2+ horas
+                        const canCancel = (apTime - new Date().getTime()) >= (2 * 60 * 60 * 1000);
                         
                         return (
                             <div key={app.id} className="appointment-item" style={isCancelled ? {opacity: 0.6, borderLeft: '4px solid #ef4444'} : (isPast ? {opacity: 0.8} : {borderLeft: '4px solid var(--primary-color)'})}>
@@ -404,15 +415,15 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                                 <div className="appointment-actions" style={{display:'flex', flexDirection:'column', gap:'5px', minWidth: '130px'}}>
                                     {isPending && !isCancelled && !isPast && (
                                         <>
-                                            <a href={app.paymentUrl || '#'} target="_blank" className="btn-submit pay-btn" style={{padding: '6px', fontSize: '13px', textAlign:'center', textDecoration: 'none'}}>Pagar Adiantamento</a>
+                                            <a href={app.paymentUrl || '#'} target="_blank" className="btn-submit pay-btn" style={{padding: '6px', fontSize: '13px', textAlign:'center', textDecoration: 'none'}}>Pagar Sinal</a>
                                             <button className="btn-cancel" onClick={() => simulaPagamento(app.id)} style={{fontSize: '11px', padding: '4px'}}>Simular MOCK</button>
                                         </>
                                     )}
                                     {!isPast && !isCancelled && canCancel && (
-                                        <button className="btn-cancel" onClick={() => handleCancelAppointment(app)} title="Cancelar Agendamento" style={{color: '#ef4444', borderColor: '#ef4444', padding: '6px'}}>Cancelar (&lt;2h)</button>
+                                        <button className="btn-cancel" onClick={() => handleCancelAppointment(app)} title="Cancelar Agendamento" style={{color: '#ef4444', borderColor: '#ef4444', padding: '6px'}}>Cancelar</button>
                                     )}
                                     {!canCancel && !isPast && !isCancelled && (
-                                        <span style={{fontSize: '11px', color:'#777', textAlign:'center'}}>Cancelamento bloqueado (faltam -2h)</span>
+                                        <span style={{fontSize: '11px', color:'#777', textAlign:'center'}}>Cancelamento bloqueado (&lt;2h)</span>
                                     )}
                                 </div>
                             </div>
@@ -424,27 +435,23 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
     );
 };
 
-// ============== ÁREA NOVO AGENDAMENTO (FLOW PRINCIPAL) ==============
+// ============== ÁREA NOVO AGENDAMENTO ==============
 
 const ClientArea = ({ appointments, refreshData, clients, config }) => {
     const [step, setStep] = useState(1);
     
-    // Step 1
     const [selectedService, setSelectedService] = useState('');
     const [bookingData, setBookingData] = useState({ date: '', time: '', notes: '', location: '' });
     const [availableTimes, setAvailableTimes] = useState([]);
     
-    // Step 2
     const [loginPhone, setLoginPhone] = useState('');
     const [loginError, setLoginError] = useState('');
     const [selectedClient, setSelectedClient] = useState(null);
     const [newClient, setNewClient] = useState({ name: '', phone: '', address: '' });
     const [isCreatingNew, setIsCreatingNew] = useState(false);
 
-    // Step 3
     const [checkedTerms, setCheckedTerms] = useState(false);
 
-    // Step 4
     const [completedAppInfo, setCompletedAppInfo] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [apiError, setApiError] = useState('');
@@ -459,7 +466,6 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
         }
     }, [bookingData.date, appointments]);
 
-    // Reseta o tempo selecionado apenas se o usuário trocar o dia manualmente
     useEffect(() => {
         setBookingData(prev => ({...prev, time: ''}));
     }, [bookingData.date]);
@@ -480,16 +486,16 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
             
             setSelectedClient(data);
             setIsCreatingNew(false);
-            setStep(3); // Avança pra confirmação dedicada
-            refreshData(); // Puxa clients atualizados
+            setStep(3);
+            refreshData();
         } catch (e) {
-            alert('Falha ao registrar seu perfil (Servidor Backend com Falha DB?): ' + e.message);
+            alert('Falha ao registrar seu perfil: ' + e.message);
         }
         setIsLoading(false);
     };
 
     const handleConfirmBooking = async () => {
-        if(!checkedTerms) return alert("Você precisa aceitar os termos de pagamento do adiantamento.");
+        if(!checkedTerms) return alert("Você precisa aceitar os termos de pagamento do sinal.");
 
         setIsLoading(true);
         setApiError('');
@@ -509,8 +515,7 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
                     date: bookingData.date,
                     time: bookingData.time,
                     notes: bookingData.notes,
-                    location: bookingData.location,
-                    price: serviceObj.price
+                    location: bookingData.location
                 })
             });
 
@@ -524,7 +529,7 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
             }
 
             setCompletedAppInfo({ service: serviceObj, app: data, client: selectedClient });
-            refreshData(); // Atualiza tudo do banco (polling state)
+            refreshData();
             setStep(4);
 
         } catch (error) {
@@ -535,7 +540,7 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
     };
 
     const priceObj = SERVICES.find(s=>s.id === selectedService);
-    const adiantamento = priceObj ? (priceObj.price * 0.3).toFixed(2) : 0;
+    const adiantamento = formatPrice(FIXED_SIGNAL_AMOUNT);
 
     return (
         <div>
@@ -660,23 +665,22 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
                         {bookingData.location && <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Endereço Cliente:</strong> {bookingData.location}</div>}
                         <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Local do atendimento:</strong> Ateliê da Pele — Rua Rio Jaguaribe, nº 274</div>
                         <div style={{fontSize: '16px', borderTop: '1px solid #ddd', paddingTop: '10px', marginTop: '15px'}}><strong style={{color: '#00A676'}}>Valor Serviço:</strong> {formatPrice(priceObj.price)}</div>
-                        <div style={{fontSize: '16px', color: '#eab308', fontWeight: 'bold'}}><strong style={{color: '#eab308'}}>PagBank Adiantamento (30%):</strong> R$ {adiantamento}</div>
+                        <div style={{fontSize: '16px', color: '#eab308', fontWeight: 'bold'}}><strong style={{color: '#eab308'}}>Sinal Fixo:</strong> {adiantamento}</div>
                     </div>
 
-                    {/* TERMO PAGBANK OBRIGATÓRIO (REQUISITO 4) */}
                     <div style={{background: '#fff3cd', border: '1px solid #ffeeba', padding: '15px', borderRadius: '8px', maxWidth: '400px', margin: '0 auto 20px', textAlign: 'left'}}>
                         <label style={{display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer', fontSize: '14px', color: '#856404'}}>
                             <input type="checkbox" checked={checkedTerms} onChange={e => setCheckedTerms(e.target.checked)} style={{marginTop: '3px', transform: 'scale(1.2)'}} />
                             <span>
-                                <strong>Estou ciente</strong> de que o agendamento só será confirmado em definitivo após o pagamento do adiantamento na próxima tela via PagBank. <br/><br/>
-                                <i className="fas fa-exclamation-triangle"></i> Sem o pagamento em até 15 minutos, o horário será cancelado e o espaço liberado para outra que deseja o serviço.
+                                <strong>Estou ciente</strong> de que o agendamento só será confirmado em definitivo após o pagamento do sinal na próxima tela via InfinitePay. <br/><br/>
+                                <i className="fas fa-exclamation-triangle"></i> Sem o pagamento em até 15 minutos, o horário será cancelado e o espaço liberado para outra cliente.
                             </span>
                         </label>
                     </div>
 
                     <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
                         <button className="btn-submit" onClick={handleConfirmBooking} disabled={isLoading || !checkedTerms} style={{width: '100%', maxWidth: '400px', padding: '16px', fontSize: '18px', opacity: !checkedTerms ? 0.5 : 1}}>
-                            {isLoading ? <><i className="fas fa-spinner fa-spin"></i> Emitindo PagBank...</> : 'Solicitar Horário & Ir ao Pagamento'}
+                            {isLoading ? <><i className="fas fa-spinner fa-spin"></i> Gerando pagamento...</> : 'Solicitar Horário & Ir ao Pagamento'}
                         </button>
                         {apiError && <div className="alert alert-error" style={{marginTop: '20px'}}>{apiError}</div>}
                     </div>
@@ -690,7 +694,6 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
                 const isPending = liveApp.status === 'pending_payment';
                 const dateStr = new Date(liveApp.date + 'T12:00:00').toLocaleDateString('pt-BR');
                 const whatsappMsg = `Olá, sou o(a) ${completedAppInfo.client.name.split(' ')[0]} e fiz um agendamento no Ateliê da Pele e gostaria de confirmar.\n\nServiço: ${completedAppInfo.service.name}\nData: ${dateStr}\nHorário: ${liveApp.time}\nValor: R$ ${completedAppInfo.service.price.toFixed(2).replace('.', ',')}`;
-                // Numero fornecido explicitamente pelo cliente na resposta anterior
                 const zapLink = `https://wa.me/5541984928985?text=${encodeURIComponent(whatsappMsg)}`;
 
                 return (
@@ -699,7 +702,7 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
                         <>
                             <i className="fas fa-clock" style={{fontSize: '50px', color: '#f59e0b', margin: '0 auto 15px', display: 'block'}}></i>
                             <h2 style={{color: '#d97706', marginBottom: '10px'}}>Horário Bloqueado Aguardando Pagamento</h2>
-                            <p style={{color: 'var(--text-muted)', marginBottom: '20px'}}>Pague o adiantamento de 30% dentro dos próximos 15 minutos.</p>
+                            <p style={{color: 'var(--text-muted)', marginBottom: '20px'}}>Pague o sinal de {adiantamento} dentro dos próximos 15 minutos.</p>
                         </>
                     )}
                     {isConfirmed && (
@@ -734,22 +737,42 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
 
                     {isPending && (
                         <div style={{marginBottom: '30px', background: '#e0f2fe', padding: '20px', borderRadius: '8px', maxWidth: '350px', margin: '0 auto 30px'}}>
-                            <p style={{fontWeight: 'bold', fontSize: '18px', color: '#0369a1', marginBottom: '15px'}}>Valor a pagar agora: R$ {adiantamento}</p>
+                            <p style={{fontWeight: 'bold', fontSize: '18px', color: '#0369a1', marginBottom: '15px'}}>Valor a pagar agora: {adiantamento}</p>
                             <a href={liveApp.paymentUrl} target="_blank" rel="noreferrer" className="btn-submit pay-btn" style={{width: '100%', display: 'block', textDecoration: 'none', padding: '15px'}}>
-                                <i className="fas fa-money-bill-wave"></i> Realizar Pagamento PagBank
+                                <i className="fas fa-money-bill-wave"></i> Pagar via InfinitePay
                             </a>
                             
-                            {/* CAIXA DE TESTES / SANDBOX */}
                             <div style={{marginTop: '20px', borderTop: '1px dashed #bae6fd', paddingTop: '15px', display: 'flex', flexDirection: 'column', gap: '8px'}}>
-                                <span style={{fontSize: '12px', color: '#0369a1', fontWeight: 'bold'}}><i className="fas fa-vial"></i> Modo Teste (Sandbox)</span>
+                                <span style={{fontSize: '12px', color: '#0369a1', fontWeight: 'bold'}}><i className="fas fa-vial"></i> Modo Teste</span>
                                 <div style={{display: 'flex', gap: '10px', justifyContent: 'center'}}>
                                     <button className="btn-cancel" style={{flex: 1, padding: '8px', fontSize: '11px', borderColor: '#10b981', color: '#10b981'}} onClick={async () => {
-                                        await fetch(`${API_BASE_URL}/webhook/pagbank`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ appointment_id: liveApp.id, payment_status: 'PAID' }) });
+                                        await fetch(`${API_BASE_URL}/webhook/infinitepay`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                                invoice_slug: `mock-slug-${liveApp.id}`,
+                                                amount: 3000,
+                                                paid_amount: 3000,
+                                                installments: 1,
+                                                capture_method: 'pix',
+                                                transaction_nsu: `mock-transaction-${liveApp.id}`,
+                                                order_nsu: liveApp.id,
+                                                receipt_url: `https://mock.receipt/${liveApp.id}`,
+                                                items: [{ quantity: 1, price: 3000, description: 'Sinal do agendamento' }]
+                                            })
+                                        });
                                         refreshData();
-                                    }}>Aprovar PG</button>
+                                    }}>Aprovar</button>
                                     
                                     <button className="btn-cancel" style={{flex: 1, padding: '8px', fontSize: '11px', borderColor: '#ef4444', color: '#ef4444'}} onClick={async () => {
-                                        await fetch(`${API_BASE_URL}/webhook/pagbank`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ appointment_id: liveApp.id, payment_status: 'EXPIRED' }) });
+                                        await fetch(`${API_BASE_URL}/appointments/${liveApp.id}/cancel`, {
+                                            method: 'PATCH',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                                cancelledBy: 'system',
+                                                cancelReason: 'Pagamento não aprovado (teste)'
+                                            })
+                                        });
                                         refreshData();
                                     }}>Recusar/Expirar</button>
                                 </div>
@@ -766,7 +789,14 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
                     )}
 
                     <div style={{display: 'flex', flexDirection: 'column', gap: '15px', alignItems: 'center'}}>
-                        <button className="btn-admin" style={{margin: '0 auto'}} onClick={() => { setStep(1); setBookingData({date:'', time:'', notes:'', location:''}); }}>Fazer novo ou Voltar ao início</button>
+                        <button className="btn-admin" style={{margin: '0 auto'}} onClick={() => {
+                            setStep(1);
+                            setBookingData({date:'', time:'', notes:'', location:''});
+                            setSelectedService('');
+                            setSelectedClient(null);
+                            setCheckedTerms(false);
+                            setCompletedAppInfo(null);
+                        }}>Fazer novo ou Voltar ao início</button>
                     </div>
                 </div>
                 );
@@ -775,8 +805,7 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
     );
 };
 
-
-// ============== ROOT APP (ORQUESTRADOR DB) ==============
+// ============== ROOT APP ==============
 
 const App = () => {
     const [view, setView] = useState('client'); 
@@ -785,9 +814,7 @@ const App = () => {
     const [appointments, setAppointments] = useState([]);
     const [clients, setClients] = useState([]);
     const [config, setConfig] = useState({ profPhone: '' });
-    const [dbStatus, setDbStatus] = useState('conectando...');
 
-    // Função de Refresh Principal
     const refreshData = useCallback(async () => {
         try {
             const resAps = await fetch(`${API_BASE_URL}/appointments`);
@@ -795,16 +822,18 @@ const App = () => {
                 const aps = await resAps.json();
                 if (Array.isArray(aps)) {
                     setAppointments(aps);
-                    setDbStatus('PostgreSQL Conectado');
-                } else {
-                    setDbStatus('Erro DB (Verifique URL)');
                 }
-            } else { setDbStatus('Erro Conexão API'); }
+            }
 
             const resClis = await fetch(`${API_BASE_URL}/clients`);
-            if (resClis.ok) setClients(await resClis.json());
+            if (resClis.ok) {
+                const cls = await resClis.json();
+                if (Array.isArray(cls)) {
+                    setClients(cls);
+                }
+            }
         } catch(e) { 
-            console.error(e); setDbStatus('Offline'); 
+            console.error(e);
         }
     }, []);
 
@@ -813,7 +842,6 @@ const App = () => {
         const savedConfig = localStorage.getItem('atelie_config');
         if (savedConfig) setConfig(JSON.parse(savedConfig));
 
-        // POLLING AUTOMÁTICO A CADA 10 SEGUNDOS
         const intervalId = setInterval(refreshData, 10000);
         return () => clearInterval(intervalId);
     }, [refreshData]);
