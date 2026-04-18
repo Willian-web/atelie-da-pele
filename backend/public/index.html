@@ -246,13 +246,11 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig }) =>
                                                 <div className="detail-badge"><i className="fas fa-spa"></i> {service.name}</div>
                                                 <div className="detail-badge"><i className="fas fa-phone"></i> {app.clientPhone}</div>
                                             </div>
-                                            {app.location && <div className="obs-text"><strong><i className="fas fa-map-marker-alt"></i> Local:</strong> {app.location}</div>}
-                                            {!app.location && (
-                                                <div className="obs-text" style={{display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px'}}>
-                                                    <span><strong><i className="fas fa-map-marker-alt"></i> Local do atendimento:</strong> Ateliê da Pele — Rua Rio Jaguaribe, nº 274</span>
-                                                    <a href="https://www.google.com/maps/search/?api=1&query=Ateliê+da+Pele+Rua+Rio+Jaguaribe+274" target="_blank" rel="noreferrer" style={{display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#0ea5e9', textDecoration: 'none', background: '#f0f9ff', padding: '4px 10px', border: '1px solid #bae6fd', borderRadius: '15px'}}><i className="fas fa-map-marked-alt"></i> Abrir no Google Maps</a>
-                                                </div>
-                                            )}
+                                            {app.location && <div className="obs-text"><strong><i className="fas fa-home"></i> Endereço/Domicílio Sugerido:</strong> {app.location}</div>}
+                                            <div className="obs-text" style={{display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px'}}>
+                                                <span><strong><i className="fas fa-map-marker-alt"></i> Local do atendimento:</strong> Ateliê da Pele — Rua Rio Jaguaribe, nº 274</span>
+                                                <a href="https://www.google.com/maps/search/?api=1&query=Ateliê+da+Pele+Rua+Rio+Jaguaribe+274" target="_blank" rel="noreferrer" style={{display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#0ea5e9', textDecoration: 'none', background: '#f0f9ff', padding: '4px 10px', border: '1px solid #bae6fd', borderRadius: '15px'}}><i className="fas fa-map-marked-alt"></i> Abrir no Google Maps</a>
+                                            </div>
                                             {app.notes && <div className="obs-text"><strong>Obs:</strong> {app.notes}</div>}
                                             {isCancelled && app.cancelReason && <div className="obs-text" style={{color: '#ef4444'}}><strong>Motivo:</strong> {app.cancelReason}</div>}
                                         </div>
@@ -397,13 +395,11 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                                         <div className="detail-badge"><i className="fas fa-spa"></i> {service.name}</div>
                                         <StatusBadge status={app.status} />
                                     </div>
-                                    {app.location && <div className="obs-text"><strong>Endereço do Local:</strong> {app.location}</div>}
-                                    {!app.location && (
-                                        <div className="obs-text" style={{display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px'}}>
-                                            <span><strong>Local do atendimento:</strong> Ateliê da Pele — Rua Rio Jaguaribe, nº 274</span>
-                                            <a href="https://www.google.com/maps/search/?api=1&query=Ateliê+da+Pele+Rua+Rio+Jaguaribe+274" target="_blank" rel="noreferrer" style={{display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#0ea5e9', textDecoration: 'none', background: '#f0f9ff', padding: '4px 10px', border: '1px solid #bae6fd', borderRadius: '15px'}}><i className="fas fa-map-marked-alt"></i> Ver localização no mapa</a>
-                                        </div>
-                                    )}
+                                    {app.location && <div className="obs-text"><strong>Endereço Sugerido:</strong> {app.location}</div>}
+                                    <div className="obs-text" style={{display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px'}}>
+                                        <span><strong>Local do atendimento:</strong> Ateliê da Pele — Rua Rio Jaguaribe, nº 274</span>
+                                        <a href="https://www.google.com/maps/search/?api=1&query=Ateliê+da+Pele+Rua+Rio+Jaguaribe+274" target="_blank" rel="noreferrer" style={{display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#0ea5e9', textDecoration: 'none', background: '#f0f9ff', padding: '4px 10px', border: '1px solid #bae6fd', borderRadius: '15px'}}><i className="fas fa-map-marked-alt"></i> Ver localização no mapa</a>
+                                    </div>
                                 </div>
                                 <div className="appointment-actions" style={{display:'flex', flexDirection:'column', gap:'5px', minWidth: '130px'}}>
                                     {isPending && !isCancelled && !isPast && (
@@ -661,7 +657,8 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
                     <div style={{background: '#fcfcfc', padding: '25px', borderRadius: '12px', textAlign: 'left', marginBottom: '20px', display: 'inline-block', maxWidth: '400px', width: '100%', border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.03)'}}>
                         <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Serviço (Estética/Epilação):</strong> {priceObj.name}</div>
                         <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Agendamento para:</strong> {new Date(bookingData.date + 'T12:00:00').toLocaleDateString('pt-BR')} às {bookingData.time}</div>
-                        {bookingData.location && <div style={{marginBottom: '10px', fontSize: '14px', fontStyle: 'italic'}}><strong style={{color: 'var(--primary-color)'}}>Em:</strong> {bookingData.location}</div>}
+                        {bookingData.location && <div style={{marginBottom: '10px', fontSize: '14px', fontStyle: 'italic'}}><strong style={{color: 'var(--primary-color)'}}>Endereço sugerido:</strong> {bookingData.location}</div>}
+                        <div style={{marginBottom: '10px', fontSize: '14px'}}><strong style={{color: 'var(--primary-color)'}}>Local do atendimento:</strong> Ateliê da Pele — Rua Rio Jaguaribe, nº 274</div>
                         <div style={{fontSize: '16px', borderTop: '1px solid #ddd', paddingTop: '10px', marginTop: '15px'}}><strong style={{color: '#00A676'}}>Valor Serviço:</strong> {formatPrice(priceObj.price)}</div>
                         <div style={{fontSize: '16px', color: '#eab308', fontWeight: 'bold'}}><strong style={{color: '#eab308'}}>PagBank Adiantamento (30%):</strong> R$ {adiantamento}</div>
                     </div>
@@ -725,15 +722,13 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
                         {completedAppInfo.service.name} (R$ {completedAppInfo.service.price.toFixed(2).replace('.', ',')})<br/>
                         Para: {dateStr} às {liveApp.time} <br/>
                         <div style={{marginTop: '10px'}}>
-                            {liveApp.location && <span><strong>Local do atendimento:</strong><br/>{liveApp.location}</span>}
-                            {!liveApp.location && (
-                                <div style={{display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px'}}>
-                                    <span><strong>Local do atendimento:</strong><br/>Ateliê da Pele — Rua Rio Jaguaribe, nº 274</span>
-                                    <a href="https://www.google.com/maps/search/?api=1&query=Ateliê+da+Pele+Rua+Rio+Jaguaribe+274" target="_blank" rel="noreferrer" style={{display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#0ea5e9', textDecoration: 'none', background: '#f0f9ff', padding: '6px 12px', border: '1px solid #bae6fd', borderRadius: '20px'}}>
-                                        <i className="fas fa-map-marked-alt"></i> Abrir no Google Maps
-                                    </a>
-                                </div>
-                            )}
+                            {liveApp.location && <span style={{display: 'block', marginBottom: '8px'}}><strong>Endereço Sugerido:</strong><br/>{liveApp.location}</span>}
+                            <div style={{display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px'}}>
+                                <span><strong>Local do atendimento:</strong><br/>Ateliê da Pele — Rua Rio Jaguaribe, nº 274</span>
+                                <a href="https://www.google.com/maps/search/?api=1&query=Ateliê+da+Pele+Rua+Rio+Jaguaribe+274" target="_blank" rel="noreferrer" style={{display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#0ea5e9', textDecoration: 'none', background: '#f0f9ff', padding: '6px 12px', border: '1px solid #bae6fd', borderRadius: '20px'}}>
+                                    <i className="fas fa-map-marked-alt"></i> Abrir no Google Maps
+                                </a>
+                            </div>
                         </div>
                     </div>
 
