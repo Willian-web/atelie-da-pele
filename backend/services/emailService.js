@@ -1,31 +1,24 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
-const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.ethereal.email',
-    port: Number(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_PORT == 465, // true for 465, false for other ports
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-    },
-    tls: {
-       rejectUnauthorized: false
-    },
-    family: 4, // Forçar IPv4 para resolver o bug de rede no Railway
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 async function sendConfirmationEmail(appointmentData, serviceData) {
-    console.log(`[EmailService] Iniciando envio para: ${process.env.NOTIFICATION_EMAIL || 'NÃO DEFINIDO'}`);
-    console.log(`[EmailService] SMTP configurado com host: ${process.env.SMTP_HOST}, porta: ${process.env.SMTP_PORT}, user: ${process.env.SMTP_USER}`);
+    console.log(`[EmailService] Iniciando envio via HTTPS REST (Resend)...`);
+    console.log(`[EmailService] Variáveis - Destino: ${process.env.NOTIFICATION_EMAIL || 'NÃO DEFINIDO'}, Remetente: ${process.env.FROM_EMAIL || 'onboarding@resend.dev'}`);
+
+    if (!process.env.RESEND_API_KEY) {
+        console.error('[EmailService] ERRO CRÍTICO: RESEND_API_KEY não está definida no arquivo .env !');
+        return;
+    }
 
     if (!process.env.NOTIFICATION_EMAIL) {
-        console.error('[EmailService] ERRO CRÍTICO: NOTIFICATION_EMAIL não está definido no .env do Railway!');
+        console.error('[EmailService] ERRO CRÍTICO: NOTIFICATION_EMAIL não está definido no arquivo .env !');
         return;
     }
 
     try {
-        const mailOptions = {
-            from: `"Ateliê da Pele" <${process.env.SMTP_USER || 'no-reply@ateliedapele.com'}>`,
+        const emailData = {
+            from: process.env.FROM_EMAIL || 'Atelie da Pele <onboarding@resend.dev>',
             to: process.env.NOTIFICATION_EMAIL,
             subject: `Novo Agendamento Confirmado - ${appointmentData.client_name || appointmentData.clientName || 'Cliente'}`,
             text: `
@@ -45,20 +38,26 @@ Valor do Adiantamento: ${serviceData && serviceData.price ? (serviceData.price *
 Status: Confirmado
 
 ------------------------------------------
-Este é um e-mail automático do sistema.
+Este é um e-mail automático enviado via API HTTPS.
             `
         };
 
-        const info = await transporter.sendMail(mailOptions);
-        console.log(`[EmailService] E-mail enviado com sucesso! Message ID: ${info.messageId}`);
-        return info;
+        console.log('[EmailService] Efetuando requisição POST para a API do Resend...');
+        const { data, error } = await resend.emails.send(emailData);
+
+        if (error) {
+            console.error('[EmailService] Falha bloqueada pela API do provedor:', error.message || error);
+            throw new Error(error.message);
+        }
+
+        console.log(`[EmailService] E-mail enviado via HTTPS com sucesso! Resend ID: ${data.id}`);
+        return data;
     } catch (error) {
-        console.error('[EmailService] Falha ao enviar e-mail:', error.message || error);
+        console.error('[EmailService] Falha geral ao enviar e-mail REST:', error.message || error);
         throw error;
     }
 }
 
 module.exports = {
-    sendConfirmationEmail,
-    transporter
+    sendConfirmationEmail
 };
