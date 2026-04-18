@@ -291,9 +291,11 @@ app.post('/webhook/pagbank', async (req, res) => {
             
             // Buscar dados do agendamento para o email
             try {
+                console.log(`[WebHook] Extraindo dados do agendamento ${appointment_id} para enviar e-mail...`);
                 const result = await pool.query('SELECT * FROM appointments WHERE id = $1', [appointment_id]);
                 if (result.rows.length > 0) {
                     const ap = result.rows[0];
+                    console.log(`[WebHook] Agendamento encontrado para o cliente: ${ap.client_name}`);
                     const SERVICES = [
                         { id: 'limpeza_pele', name: 'Limpeza de Pele', price: 119.90 },
                         { id: 'dep_intima', name: 'Depilação Íntima Completa', price: 59.90 },
@@ -303,10 +305,14 @@ app.post('/webhook/pagbank', async (req, res) => {
                         { id: 'reflexologia', name: 'Reflexologia Podal', price: 89.90 }
                     ];
                     const serviceObj = SERVICES.find(s => s.id === ap.service_id);
+                    console.log(`[WebHook] Chamando a função sendConfirmationEmail...`);
                     await sendConfirmationEmail(ap, serviceObj);
+                    console.log(`[WebHook] Função sendConfirmationEmail finalizou a execução.`);
+                } else {
+                    console.log(`[WebHook] NENHUM dado encontrado para o id ${appointment_id}. E-mail cancelado.`);
                 }
             } catch (emailErr) {
-                console.error('[WebHook] Falha ao enviar e-mail de confirmação:', emailErr);
+                console.error('[WebHook] Falha geral ao enviar e-mail de confirmação:', emailErr);
             }
 
         } else if (payment_status === 'RECUSED' || payment_status === 'EXPIRED') {
@@ -324,6 +330,26 @@ app.post('/webhook/pagbank', async (req, res) => {
     } catch(e) {
         console.error(e);
         res.status(500).json({ error: 'Erro no webhook' });
+    }
+});
+
+// ====================== TESTE DE EMAIL (DEV) ====================
+app.post('/test-email', async (req, res) => {
+    try {
+        console.log('[TestEmail] Chamando endpoint manual /test-email');
+        const mockAp = {
+            client_name: 'Cliente Teste Manual',
+            date: '2026-04-18',
+            time: '14:30',
+            location: 'Rua de Teste, 123'
+        };
+        const mockService = { name: 'Serviço de Teste', price: 100.00 };
+        
+        await sendConfirmationEmail(mockAp, mockService);
+        res.status(200).json({ success: true, message: 'E-mail de teste enviado com sucesso! Verifique sua caixa de entrada.' });
+    } catch (e) {
+        console.error('[TestEmail] Erro no teste:', e);
+        res.status(500).json({ success: false, error: e.message || 'Erro ao enviar email' });
     }
 });
 
