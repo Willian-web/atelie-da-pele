@@ -1,0 +1,14 @@
+{
+  "name": "atelie-da-pele-root",
+  "version": "1.0.0",
+  "description": "Root package to launch backend in Railway seamlessly",
+  "main": "backend/server.js",
+  "scripts": {
+    "start": "node backend/server.js",
+    "build": "cd backend && npm install",
+    "postinstall": "cd backend && npm install"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
