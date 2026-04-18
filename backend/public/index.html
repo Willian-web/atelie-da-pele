@@ -401,7 +401,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                                         </>
                                     )}
                                     {!isPast && !isCancelled && canCancel && (
-                                        <button className="btn-cancel" onClick={() => handleCancelAppointment(app)} title="Cancelar Agendamento" style={{color: '#ef4444', borderColor: '#ef4444', padding: '6px'}}>Cancelar (<2h)</button>
+                                        <button className="btn-cancel" onClick={() => handleCancelAppointment(app)} title="Cancelar Agendamento" style={{color: '#ef4444', borderColor: '#ef4444', padding: '6px'}}>Cancelar (&lt;2h)</button>
                                     )}
                                     {!canCancel && !isPast && !isCancelled && (
                                         <span style={{fontSize: '11px', color:'#777', textAlign:'center'}}>Cancelamento bloqueado (faltam -2h)</span>
