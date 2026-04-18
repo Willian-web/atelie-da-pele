@@ -1,7 +1,5 @@
 const { Resend } = require('resend');
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 async function sendConfirmationEmail(appointmentData, serviceData) {
     console.log(`[EmailService] Iniciando envio via HTTPS REST (Resend)...`);
     console.log(`[EmailService] Variáveis - Destino: ${process.env.NOTIFICATION_EMAIL || 'NÃO DEFINIDO'}, Remetente: ${process.env.FROM_EMAIL || 'onboarding@resend.dev'}`);
@@ -15,6 +13,9 @@ async function sendConfirmationEmail(appointmentData, serviceData) {
         console.error('[EmailService] ERRO CRÍTICO: NOTIFICATION_EMAIL não está definido no arquivo .env !');
         return;
     }
+
+    // Instancia o Resend apenas aqui dentro para não derrubar o NodeJS inteiro se a env estiver vazia na inicialização
+    const resend = new Resend(process.env.RESEND_API_KEY);
 
     try {
         const emailData = {
