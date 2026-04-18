@@ -12,7 +12,6 @@ const PORT = process.env.PORT || 8080;
 
 app.use(cors({ origin: '*' }));
 app.use(express.json());
-
 app.use(express.static(path.join(__dirname, 'public')));
 
 const isPostgresSetup = !!process.env.DATABASE_URL;
@@ -46,6 +45,7 @@ async function initDB() {
     const client = await pool.connect();
 
     try {
+        // Tabela clients
         await client.query(`
             CREATE TABLE IF NOT EXISTS clients (
                 id VARCHAR(255) PRIMARY KEY,
@@ -56,6 +56,7 @@ async function initDB() {
             );
         `);
 
+        // Tabela appointments base
         await client.query(`
             CREATE TABLE IF NOT EXISTS appointments (
                 id VARCHAR(255) PRIMARY KEY,
@@ -70,24 +71,49 @@ async function initDB() {
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 status VARCHAR(50) DEFAULT 'pending_payment',
                 payment_url TEXT,
-                payment_amount NUMERIC(10,2) DEFAULT 30.00,
-                transaction_nsu VARCHAR(255),
-                invoice_slug VARCHAR(255),
-                receipt_url TEXT,
-                capture_method VARCHAR(50),
-                paid_amount NUMERIC(10,2),
                 cancelled_at TIMESTAMP WITH TIME ZONE,
                 cancelled_by VARCHAR(50),
                 cancel_reason TEXT
             );
         `);
 
+        // MIGRAÇÕES AUTOMÁTICAS
         await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_appointments_date_time_status
-            ON appointments (date, time, status);
+            ALTER TABLE appointments
+            ADD COLUMN IF NOT EXISTS payment_amount NUMERIC(10,2) DEFAULT 30.00
         `);
 
-        console.log('✅ Banco de dados sincronizado');
+        await client.query(`
+            ALTER TABLE appointments
+            ADD COLUMN IF NOT EXISTS transaction_nsu VARCHAR(255)
+        `);
+
+        await client.query(`
+            ALTER TABLE appointments
+            ADD COLUMN IF NOT EXISTS invoice_slug VARCHAR(255)
+        `);
+
+        await client.query(`
+            ALTER TABLE appointments
+            ADD COLUMN IF NOT EXISTS receipt_url TEXT
+        `);
+
+        await client.query(`
+            ALTER TABLE appointments
+            ADD COLUMN IF NOT EXISTS capture_method VARCHAR(50)
+        `);
+
+        await client.query(`
+            ALTER TABLE appointments
+            ADD COLUMN IF NOT EXISTS paid_amount NUMERIC(10,2)
+        `);
+
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_appointments_date_time_status
+            ON appointments (date, time, status)
+        `);
+
+        console.log('✅ Banco de dados sincronizado / migrado');
     } catch (err) {
         console.error('❌ Erro ao iniciar banco:', err);
     } finally {
@@ -344,7 +370,6 @@ app.post('/appointments', async (req, res) => {
         const cleanPhone = String(clientPhone).replace(/\D/g, '');
         let finalClientId = clientId;
 
-        // Garante cliente
         const existingClient = await client.query('SELECT * FROM clients WHERE phone = $1', [cleanPhone]);
 
         if (existingClient.rows.length > 0) {
@@ -374,7 +399,6 @@ app.post('/appointments', async (req, res) => {
             ]);
         }
 
-        // Anti double-booking
         const double = await client.query(`
             SELECT id
             FROM appointments
