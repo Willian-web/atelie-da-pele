@@ -1027,8 +1027,8 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig }) =>
                             <Card title="Clientes únicos" value={String(summary.uniqueClients || 0)} />
                         </div>
 
-                        <div style={{background: '#fff', border: '1px solid #ddd', borderRadius: '10px', overflowX: 'auto'}}>
-                            <table style={{width: '100%', borderCollapse: 'collapse', minWidth: '820px'}}>
+                        <div style={{background: '#fff', border: '1px solid #ddd', borderRadius: '10px', overflowX: 'auto', maxWidth: '100%', boxSizing: 'border-box'}}>
+                            <table style={{width: '100%', borderCollapse: 'collapse', minWidth: '860px'}}>
                                 <thead>
                                     <tr style={{background: '#f8fafc'}}>
                                         <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Cliente</th>
@@ -1038,7 +1038,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig }) =>
                                         <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Status</th>
                                         <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Tipo pagamento</th>
                                         <th style={{textAlign: 'right', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Valor pago</th>
-                                        <th style={{textAlign: 'right', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Valor restante</th>
+                                        <th style={{textAlign: 'right', padding: '10px 18px 10px 10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Valor restante</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1049,10 +1049,15 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig }) =>
                                             </td>
                                         </tr>
                                     ) : items.map((it, idx) => {
-                                        const dateLabel = it.date ? new Date(it.date + 'T12:00:00').toLocaleDateString('pt-BR') : '';
+                                        const dateLabel = it.date ? new Date(it.date + 'T12:00:00').toLocaleDateString('pt-BR') : '-';
                                         const amountCharged = (it.amountCharged === null || it.amountCharged === undefined) ? null : Number(it.amountCharged);
                                         const remainingAmount = (it.remainingAmount === null || it.remainingAmount === undefined) ? null : Number(it.remainingAmount);
-                                        const paymentType = it.paymentType || '-';
+                                        const paymentTypeRaw = (it.paymentType || '').toString().toLowerCase();
+                                        const paymentType = paymentTypeRaw === 'partial'
+                                            ? 'Parcial'
+                                            : paymentTypeRaw === 'full'
+                                                ? 'Total'
+                                                : '-';
 
                                         return (
                                             <tr key={it.id || idx} style={{borderBottom: '1px solid #f1f5f9'}}>
@@ -1063,7 +1068,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig }) =>
                                                 <td style={{padding: '10px', fontSize: '13px'}}><StatusBadge status={it.status} /></td>
                                                 <td style={{padding: '10px', fontSize: '13px'}}>{paymentType}</td>
                                                 <td style={{padding: '10px', fontSize: '13px', textAlign: 'right'}}>{amountCharged != null ? formatBRL(amountCharged) : '-'}</td>
-                                                <td style={{padding: '10px', fontSize: '13px', textAlign: 'right'}}>{remainingAmount != null ? formatBRL(remainingAmount) : '-'}</td>
+                                                <td style={{padding: '10px 18px 10px 10px', fontSize: '13px', textAlign: 'right'}}>{remainingAmount != null ? formatBRL(remainingAmount) : '-'}</td>
                                             </tr>
                                         );
                                     })}
@@ -1111,8 +1116,142 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig }) =>
 };
 
 const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => {
-    // ...igual
-    return (<></>)
+    const [phoneInput, setPhoneInput] = useState('');
+    const [filter, setFilter] = useState('next'); // next | all | past
+
+    const cleanPhone = (p) => String(p || '').replace(/\D/g, '');
+    const myPhone = cleanPhone(phoneInput);
+    const todayStr = getLocalTodayStr();
+
+    const myApps = useMemo(() => {
+        if (!myPhone) return [];
+
+        const list = (appointments || []).filter(a => {
+            const apPhone = cleanPhone(a.clientPhone || a.client_phone);
+            return apPhone && apPhone === myPhone;
+        });
+
+        const sorted = list.slice().sort((a, b) => {
+            const da = a.date || '';
+            const db = b.date || '';
+            if (da !== db) return da.localeCompare(db);
+            const ta = (a.time || '').toString();
+            const tb = (b.time || '').toString();
+            return ta.localeCompare(tb);
+        });
+
+        if (filter === 'all') return sorted;
+        if (filter === 'past') return sorted.filter(a => (a.date || '') < todayStr);
+        return sorted.filter(a => (a.date || '') >= todayStr);
+    }, [appointments, myPhone, filter, todayStr]);
+
+    const getServiceName = (serviceId) => {
+        const s = SERVICES.find(x => x.id === serviceId);
+        return s ? s.name : (serviceId || 'Serviço');
+    };
+
+    return (
+        <div className="booking-section step-container" style={{textAlign: 'center'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '16px'}}>
+                <h2 style={{margin: 0}}>Meus Agendamentos</h2>
+                <button className="btn-admin" onClick={refreshData}>
+                    <i className="fas fa-sync-alt"></i> Atualizar
+                </button>
+            </div>
+
+            <div style={{maxWidth: '520px', margin: '0 auto', textAlign: 'left'}}>
+                <label style={{fontSize: '13px', color: 'var(--text-muted)', display: 'block', marginBottom: '8px'}}>
+                    Digite seu telefone para ver seus agendamentos
+                </label>
+                <input
+                    type="text"
+                    className="form-control"
+                    value={phoneInput}
+                    onChange={e => setPhoneInput(e.target.value)}
+                    placeholder="Ex: (41) 99999-9999"
+                />
+
+                <div className="filter-tabs" style={{marginTop: '14px', marginBottom: '18px', justifyContent: 'center'}}>
+                    <button className={`tab-btn ${filter === 'next' ? 'active' : ''}`} onClick={() => setFilter('next')}>
+                        Próximos
+                    </button>
+                    <button className={`tab-btn ${filter === 'past' ? 'active' : ''}`} onClick={() => setFilter('past')}>
+                        Anteriores
+                    </button>
+                    <button className={`tab-btn ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
+                        Todos
+                    </button>
+                </div>
+            </div>
+
+            {!myPhone && (
+                <div className="alert" style={{background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155'}}>
+                    Informe seu telefone acima para carregar seus agendamentos.
+                </div>
+            )}
+
+            {myPhone && myApps.length === 0 && (
+                <div className="alert" style={{background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155'}}>
+                    Nenhum agendamento encontrado para este telefone.
+                </div>
+            )}
+
+            <div style={{display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px'}}>
+                {myApps.map(app => {
+                    const clientName = app.clientName || app.client_name || 'Cliente';
+                    const serviceId = app.serviceId || app.service_id || '';
+                    const serviceName = getServiceName(serviceId);
+                    const dateLabel = app.date ? new Date(app.date + 'T12:00:00').toLocaleDateString('pt-BR') : '-';
+                    const timeLabel = app.time || '-';
+                    const location = app.location || '';
+                    const notes = app.notes || '';
+                    const cancelReason = app.cancelReason || app.cancel_reason || '';
+
+                    return (
+                        <div key={app.id} style={{background: '#fcfcfc', border: '1px solid #ddd', padding: '16px', borderRadius: '10px', textAlign: 'left'}}>
+                            <div style={{display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start', flexWrap: 'wrap'}}>
+                                <div>
+                                    <div style={{fontWeight: '700', marginBottom: '6px'}}>{serviceName}</div>
+                                    <div style={{fontSize: '13px', color: 'var(--text-muted)'}}>{dateLabel} • {timeLabel}</div>
+                                    <div style={{fontSize: '13px', color: 'var(--text-muted)', marginTop: '6px'}}><strong>Cliente:</strong> {clientName}</div>
+                                </div>
+                                <StatusBadge status={app.status} />
+                            </div>
+
+                            {location && (
+                                <div style={{fontSize: '13px', marginTop: '10px'}}>
+                                    <strong>Endereço informado:</strong><br />{location}
+                                </div>
+                            )}
+
+                            <div style={{fontSize: '13px', marginTop: '10px'}}>
+                                <strong>Local do atendimento:</strong><br />
+                                Ateliê da Pele — Rua Rio Jaguaribe, nº 274
+                            </div>
+
+                            {notes && (
+                                <div style={{fontSize: '13px', marginTop: '10px'}}>
+                                    <strong>Observações:</strong><br />{notes}
+                                </div>
+                            )}
+
+                            {cancelReason && (
+                                <div style={{fontSize: '13px', marginTop: '10px', color: '#b91c1c'}}>
+                                    <strong>Motivo do cancelamento:</strong><br />{cancelReason}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+
+            <div style={{marginTop: '20px'}}>
+                <button className="btn-admin" onClick={() => setView('client')}>
+                    <i className="fas fa-arrow-left"></i> Voltar
+                </button>
+            </div>
+        </div>
+    );
 };
 
 
