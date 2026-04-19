@@ -7,6 +7,10 @@ async function createCheckoutLink(appointment) {
         throw new Error('INFINITEPAY_HANDLE não configurado.');
     }
 
+    const amountInCents = Number(appointment?.paymentCents) > 0
+        ? Number(appointment.paymentCents)
+        : 3000;
+
     const payload = {
         handle,
         order_nsu: String(appointment.id),
@@ -15,7 +19,7 @@ async function createCheckoutLink(appointment) {
         items: [
             {
                 quantity: 1,
-                price: 3000,
+                price: amountInCents,
                 description: 'Sinal do agendamento (Ateliê da Pele)'
             }
         ],
@@ -28,6 +32,7 @@ async function createCheckoutLink(appointment) {
     };
 
     console.log(`[InfinitePayService] Criando checkout para order_nsu=${payload.order_nsu}`);
+    console.log(`[InfinitePayService] Valor enviado (centavos)=${amountInCents}`);
 
     const response = await fetch('https://api.infinitepay.io/invoices/public/checkout/links', {
         method: 'POST',

@@ -54,6 +54,43 @@ async function sendConfirmationEmail(appointmentData, serviceData) {
             ? `\nEndereço Cliente (A Domicílio): ${appointmentData.location}`
             : '';
 
+        const paymentType = appointmentData.payment_type || null;
+        const captureMethod = appointmentData.capture_method || null;
+
+        const paidAmountValue = appointmentData.paid_amount ?? null;
+        const amountChargedValue = appointmentData.amount_charged ?? null;
+        const remainingAmountValue = appointmentData.remaining_amount ?? null;
+
+        const paidNow = paidAmountValue != null
+            ? Number(paidAmountValue)
+            : (amountChargedValue != null ? Number(amountChargedValue) : null);
+
+        const remainingAmount = remainingAmountValue != null
+            ? Number(remainingAmountValue)
+            : null;
+
+        const paymentMethodLine = captureMethod ? `Forma de pagamento: ${captureMethod}` : '';
+
+        let paymentIntro = 'O pagamento do sinal foi aprovado e um novo agendamento foi confirmado no sistema.';
+        let paymentLines = `Valor do Sinal: ${formatCurrencyBRL(FIXED_SIGNAL_AMOUNT)}`;
+
+        if (paymentType === 'partial') {
+            paymentIntro = 'Pagamento parcial aprovado e agendamento confirmado no sistema.';
+            paymentLines = [
+                paidNow != null ? `Valor pago agora: ${formatCurrencyBRL(paidNow)}` : '',
+                remainingAmount != null ? `Valor restante (para o dia do atendimento): ${formatCurrencyBRL(remainingAmount)}` : '',
+                paymentMethodLine,
+                'Observação: o valor restante será acertado presencialmente no dia do atendimento.'
+            ].filter(Boolean).join('\n');
+        } else if (paymentType === 'full') {
+            paymentIntro = 'Pagamento total aprovado e agendamento confirmado no sistema.';
+            paymentLines = [
+                'Procedimento totalmente pago.',
+                paidNow != null ? `Valor pago: ${formatCurrencyBRL(paidNow)}` : '',
+                paymentMethodLine
+            ].filter(Boolean).join('\n');
+        }
+
         const emailData = {
             from: process.env.FROM_EMAIL || 'Ateliê da Pele <onboarding@resend.dev>',
             to: process.env.NOTIFICATION_EMAIL,
@@ -61,7 +98,7 @@ async function sendConfirmationEmail(appointmentData, serviceData) {
             text: `
 NOVO AGENDAMENTO CONFIRMADO!
 
-O pagamento do sinal foi aprovado e um novo agendamento foi confirmado no sistema.
+${paymentIntro}
 
 DETALHES DO AGENDAMENTO:
 ------------------------------------------
@@ -71,7 +108,7 @@ Data: ${appointmentDate}
 Horário: ${appointmentTime}
 Local do atendimento: Ateliê da Pele — Rua Rio Jaguaribe, nº 274${clientAddress}
 Valor do Serviço: ${serviceValue}
-Valor do Sinal: ${formatCurrencyBRL(FIXED_SIGNAL_AMOUNT)}
+${paymentLines}
 Status: Confirmado
 
 ------------------------------------------

@@ -1,5 +1,25 @@
 const express = require('express');
 const cors = require('cors');
+
+/**
+ * =================== PLANO DE IMPLEMENTAÇÃO ===================
+ * 
+ * 1) Alteração automática do schema:
+ *    - Adicionar as colunas 'payment_type', 'amount_charged', 'remaining_amount' à tabela 'appointments' se não existirem.
+ * 
+ * 2) POST /appointments:
+ *    - Aceitar o campo 'paymentType' enviado pelo frontend (cair como "partial" ou "full").
+ *    - Calcular:
+ *        - amount_charged: (R$ 30,00 se partial, total do serviço se full)
+ *        - remaining_amount: (total - 30 se partial, 0 se full)
+ *    - Salvar esses três campos no banco ao criar o appointment.
+ *    - Passar da mesma forma o valor correto para o createCheckoutLink.
+ * 
+ * 3) mapAppointmentRow:
+ *    - Incluir os novos campos no objeto retornado.
+ * 
+ * ==============================================================
+ */
 const path = require('path');
 const { Pool } = require('pg');
 require('dotenv').config();
@@ -85,6 +105,21 @@ async function initDB() {
 
         await client.query(`
             ALTER TABLE appointments
+            ADD COLUMN IF NOT EXISTS payment_type VARCHAR(20)
+        `);
+
+        await client.query(`
+            ALTER TABLE appointments
+            ADD COLUMN IF NOT EXISTS amount_charged NUMERIC(10,2)
+        `);
+
+        await client.query(`
+            ALTER TABLE appointments
+            ADD COLUMN IF NOT EXISTS remaining_amount NUMERIC(10,2)
+        `);
+
+        await client.query(`
+            ALTER TABLE appointments
             ADD COLUMN IF NOT EXISTS transaction_nsu VARCHAR(255)
         `);
 
@@ -140,6 +175,9 @@ function mapAppointmentRow(row) {
         status: row.status,
         paymentUrl: row.payment_url,
         paymentAmount: Number(row.payment_amount || FIXED_SIGNAL_AMOUNT),
+        paymentType: row.payment_type,
+        amountCharged: row.amount_charged ? Number(row.amount_charged) : null,
+        remainingAmount: row.remaining_amount ? Number(row.remaining_amount) : null,
         transactionNsu: row.transaction_nsu,
         invoiceSlug: row.invoice_slug,
         receiptUrl: row.receipt_url,
@@ -340,6 +378,104 @@ app.get('/appointments', async (req, res) => {
     }
 });
 
+// ====================== ADMIN REPORT ======================
+
+app.get('/admin/report', async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+
+    try {
+        const { start, end } = req.query || {};
+
+        if (!start || !end) {
+            return res.status(400).json({
+                error: 'Informe o período com start e end no formato YYYY-MM-DD. Ex: /admin/report?start=2026-04-01&end=2026-04-30'
+            });
+        }
+
+        const startStr = String(start);
+        const endStr = String(end);
+
+        // date é VARCHAR(10) (YYYY-MM-DD), então a comparação lexicográfica funciona.
+        const { rows } = await pool.query(`
+            SELECT *
+            FROM appointments
+            WHERE date >= $1 AND date <= $2
+            ORDER BY date ASC, time ASC
+        `, [startStr, endStr]);
+
+        const items = rows.map(r => {
+            const serviceObj = findServiceById(r.service_id);
+            return {
+                id: r.id,
+                clientName: r.client_name,
+                clientPhone: r.client_phone,
+                serviceId: r.service_id,
+                serviceName: serviceObj?.name || r.service_id || 'Serviço',
+                date: r.date,
+                time: r.time,
+                status: r.status,
+                paymentType: r.payment_type,
+                amountCharged: r.amount_charged ? Number(r.amount_charged) : null,
+                remainingAmount: r.remaining_amount ? Number(r.remaining_amount) : null,
+                captureMethod: r.capture_method,
+                paidAmount: r.paid_amount ? Number(r.paid_amount) : null
+            };
+        });
+
+        const summary = {
+            totalAppointments: rows.length,
+            confirmedCount: 0,
+            cancelledCount: 0,
+            completedCount: 0,
+            pendingCount: 0,
+            uniqueClients: 0,
+            totalRevenue: 0,
+            totalPartialReceived: 0,
+            totalFullReceived: 0,
+            totalRemainingToReceive: 0
+        };
+
+        const uniqueClientKeys = new Set();
+        for (const r of rows) {
+            if (r.status === 'confirmed') summary.confirmedCount += 1;
+            else if (r.status === 'cancelled') summary.cancelledCount += 1;
+            else if (r.status === 'completed') summary.completedCount += 1;
+            else if (r.status === 'pending_payment') summary.pendingCount += 1;
+
+            const clientKey = r.client_id || r.client_phone || null;
+            if (clientKey) uniqueClientKeys.add(String(clientKey));
+
+            const isPaidStatus = r.status === 'confirmed' || r.status === 'completed';
+            if (!isPaidStatus) continue;
+
+            const amountCharged = r.amount_charged != null ? Number(r.amount_charged) : 0;
+            const remainingAmount = r.remaining_amount != null ? Number(r.remaining_amount) : 0;
+
+            summary.totalRevenue += amountCharged;
+            summary.totalRemainingToReceive += remainingAmount;
+
+            if (r.payment_type === 'partial') {
+                summary.totalPartialReceived += amountCharged;
+            } else if (r.payment_type === 'full') {
+                summary.totalFullReceived += amountCharged;
+            }
+        }
+
+        summary.uniqueClients = uniqueClientKeys.size;
+
+        return res.json({
+            period: { start: startStr, end: endStr },
+            summary,
+            items
+        });
+    } catch (error) {
+        console.error('[GET /admin/report] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao gerar relatório.' });
+    }
+});
+
 app.post('/appointments', async (req, res) => {
     if (!isPostgresSetup) {
         return res.status(500).json({ error: 'DB não configurado.' });
@@ -358,12 +494,33 @@ app.post('/appointments', async (req, res) => {
             date,
             time,
             notes,
-            location
+            location,
+            paymentType: rawPaymentType
         } = req.body;
 
         if (!clientName || !clientPhone || !serviceId || !date || !time) {
             return res.status(400).json({ error: 'Dados obrigatórios faltando.' });
         }
+
+        const paymentType = rawPaymentType ? String(rawPaymentType).toLowerCase() : 'partial';
+        if (!['partial', 'full'].includes(paymentType)) {
+            return res.status(400).json({ error: 'paymentType inválido. Use "partial" ou "full".' });
+        }
+
+        const serviceObj = findServiceById(serviceId);
+        const totalServicePrice = Number(serviceObj.price || 0);
+
+        const amountCharged = paymentType === 'partial'
+            ? FIXED_SIGNAL_AMOUNT
+            : totalServicePrice;
+
+        const remainingAmount = paymentType === 'partial'
+            ? Math.max(0, totalServicePrice - FIXED_SIGNAL_AMOUNT)
+            : 0;
+
+        const paymentCents = paymentType === 'partial'
+            ? 3000
+            : Math.round(totalServicePrice * 100);
 
         await client.query('BEGIN');
 
@@ -424,7 +581,11 @@ app.post('/appointments', async (req, res) => {
             date,
             time,
             notes,
-            location
+            location,
+            paymentType,
+            amountCharged,
+            remainingAmount,
+            paymentCents
         };
 
         console.log(`[Appointments] Criando checkout InfinitePay para o agendamento ${newId}...`);
@@ -443,9 +604,12 @@ app.post('/appointments', async (req, res) => {
                 notes,
                 status,
                 payment_url,
-                payment_amount
+                payment_amount,
+                payment_type,
+                amount_charged,
+                remaining_amount
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending_payment', $10, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending_payment', $10, $11, $12, $13, $14)
             RETURNING *
         `, [
             newId,
@@ -458,7 +622,10 @@ app.post('/appointments', async (req, res) => {
             time,
             notes || '',
             paymentUrl,
-            FIXED_SIGNAL_AMOUNT
+            FIXED_SIGNAL_AMOUNT,
+            paymentType,
+            amountCharged,
+            remainingAmount
         ]);
 
         await client.query('COMMIT');

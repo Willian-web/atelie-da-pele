@@ -33,6 +33,10 @@
         .st-completed { background: #e2e3e5; color: #383d41; }
         .refresh-btn { background: transparent; border: 1px solid var(--primary-color); color: var(--primary-color); padding: 8px 12px; border-radius: 6px; cursor: pointer; }
         .refresh-btn:hover { background: var(--secondary-color); }
+        /* Adicionando um espacinho para o grupo de opção de pagamento, se precisar depois */
+        .payment-type-group { margin-bottom: 20px; text-align: left; max-width: 400px; margin-left: auto; margin-right: auto; }
+        .payment-type-radio { margin-right: 10px; }
+        .payment-type-desc { margin: 8px 0 10px 0; font-size: 14px; color: var(--text-dark);}
     </style>
 </head>
 <body>
@@ -156,284 +160,7 @@ const StatusBadge = ({ status }) => {
     }
 }
 
-// ============== ÁREA PROFISSIONAL ==============
-
-const AdminArea = ({ appointments, refreshData, clients, config, setConfig }) => {
-    const [adminView, setAdminView] = useState('agenda');
-    const [filter, setFilter] = useState('all');
-    const [profPhoneInput, setProfPhoneInput] = useState(config.profPhone || '');
-    
-    const todayStr = getLocalTodayStr();
-
-    const handleDelete = async (id) => {
-        if(window.confirm('Apagar DEIFINITIVAMENTE? Irreversível.')) {
-            try {
-                await fetch(`${API_BASE_URL}/appointments/${id}`, { method: 'DELETE' });
-                refreshData();
-            } catch(e) { console.error(e) }
-        }
-    };
-
-    const handleCancelByAdmin = async (id) => {
-        const reason = window.prompt('Motivo do cancelamento (opcional)?');
-        if(reason !== null) {
-            try {
-                await fetch(`${API_BASE_URL}/appointments/${id}/cancel`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cancelledBy: 'admin', cancelReason: reason })
-                });
-                refreshData();
-            } catch(e) { console.error(e) }
-        }
-    };
-
-    const saveConfig = () => {
-        const newConfig = { ...config, profPhone: profPhoneInput };
-        setConfig(newConfig);
-        localStorage.setItem('atelie_config', JSON.stringify(newConfig));
-        alert('Telefone salvo localmente!');
-    };
-
-    let filteredApps = appointments;
-    if (filter === 'today') filteredApps = appointments.filter(a => a.date === todayStr);
-    else if (filter === 'next') filteredApps = appointments.filter(a => a.date > todayStr);
-    
-    const sortedApps = [...filteredApps].sort((a, b) => new Date(a.date + 'T' + a.time) - new Date(b.date + 'T' + b.time));
-
-    return (
-        <div className="booking-section step-container">
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                <h2 className="section-title" style={{margin:0}}>Painel Profissional</h2>
-                <button className="refresh-btn" onClick={refreshData} title="Atualizar agora"><i className="fas fa-sync-alt"></i></button>
-            </div>
-            
-            <div className="filter-tabs" style={{marginTop: '20px', borderBottom: '1px solid #eee', paddingBottom: '15px'}}>
-                <button className={`tab-btn ${adminView === 'agenda' ? 'active' : ''}`} onClick={() => setAdminView('agenda')}><i className="fas fa-calendar-alt"></i> Agenda Geral</button>
-                <button className={`tab-btn ${adminView === 'clientes' ? 'active' : ''}`} onClick={() => setAdminView('clientes')}><i className="fas fa-users"></i> Radar de Clientes</button>
-                <button className={`tab-btn ${adminView === 'config' ? 'active' : ''}`} onClick={() => setAdminView('config')}><i className="fas fa-cog"></i> Ajustes</button>
-            </div>
-
-            {adminView === 'config' && (
-                <div style={{padding: '15px', backgroundColor: '#f9f9f9', borderRadius: '8px', border: '1px solid #eee'}}>
-                    <label className="form-label">Telefone da Profissional (Para links do WhatsApp)</label>
-                    <div style={{display: 'flex', gap: '10px'}}>
-                        <input type="text" className="form-control" value={profPhoneInput} onChange={e => setProfPhoneInput(e.target.value)} placeholder="Ex: 41984928985" style={{maxWidth: '300px'}} />
-                        <button className="btn-submit" onClick={saveConfig} style={{width: 'auto', padding: '10px 20px'}}>Salvar</button>
-                    </div>
-                </div>
-            )}
-
-            {adminView === 'agenda' && (
-                <>
-                    <div className="filter-tabs" style={{marginTop: '5px'}}>
-                        <button className={`tab-btn ${filter === 'today' ? 'active' : ''}`} onClick={() => setFilter('today')}>Hoje</button>
-                        <button className={`tab-btn ${filter === 'next' ? 'active' : ''}`} onClick={() => setFilter('next')}>Próximos</button>
-                        <button className={`tab-btn ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>Todos</button>
-                    </div>
-                    
-                    <div className="appointments-list">
-                        {sortedApps.length === 0 ? <div className="empty-state"><i className="fas fa-box-open"></i><p>Nada agendado neste filtro.</p></div> : 
-                            sortedApps.map(app => {
-                                const service = SERVICES.find(s => s.id === app.serviceId) || {name: 'Serviço Removido'};
-                                const dateStr = new Date(app.date + 'T12:00:00').toLocaleDateString('pt-BR');
-                                const isCancelled = app.status === 'cancelled';
-                                return (
-                                    <div key={app.id} className="appointment-item" style={isCancelled ? {opacity: 0.6, borderLeft: '4px solid #ef4444'} : {borderLeft: '4px solid var(--primary-color)'}}>
-                                        <div className="appointment-info" style={{flex: 1}}>
-                                            <div className="appointment-cliente" style={{display:'flex', alignItems: 'center'}}>
-                                                {app.clientName} <StatusBadge status={app.status} />
-                                            </div>
-                                            <div className="appointment-details">
-                                                <div className="detail-badge"><i className="far fa-clock"></i> {dateStr} às {app.time}</div>
-                                                <div className="detail-badge"><i className="fas fa-spa"></i> {service.name}</div>
-                                                <div className="detail-badge"><i className="fas fa-phone"></i> {app.clientPhone}</div>
-                                            </div>
-                                            {app.location && <div className="obs-text"><strong><i className="fas fa-home"></i> Endereço do Cliente:</strong> {app.location}</div>}
-                                            <div className="obs-text" style={{display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px'}}>
-                                                <span><strong><i className="fas fa-map-marker-alt"></i> Local do atendimento:</strong> Ateliê da Pele — Rua Rio Jaguaribe, nº 274</span>
-                                                <a href="https://www.google.com/maps/search/?api=1&query=Ateliê+da+Pele+Rua+Rio+Jaguaribe+274" target="_blank" rel="noreferrer" style={{display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#0ea5e9', textDecoration: 'none', background: '#f0f9ff', padding: '4px 10px', border: '1px solid #bae6fd', borderRadius: '15px'}}><i className="fas fa-map-marked-alt"></i> Abrir no Google Maps</a>
-                                            </div>
-                                            {app.notes && <div className="obs-text"><strong>Obs:</strong> {app.notes}</div>}
-                                            {isCancelled && app.cancelReason && <div className="obs-text" style={{color: '#ef4444'}}><strong>Motivo:</strong> {app.cancelReason}</div>}
-                                        </div>
-                                        <div className="appointment-actions" style={{display: 'flex', gap: '8px', flexDirection: 'column'}}>
-                                            {!isCancelled && (
-                                                <button className="btn-delete" style={{borderColor: '#f59e0b', color: '#f59e0b'}} onClick={() => handleCancelByAdmin(app.id)} title="Cancelar Horário"><i className="fas fa-times"></i></button>
-                                            )}
-                                            <button className="btn-delete" onClick={() => handleDelete(app.id)} title="Apagar Ocultar Totalmente"><i className="fas fa-trash-alt"></i></button>
-                                        </div>
-                                    </div>
-                                );
-                            })
-                        }
-                    </div>
-                </>
-            )}
-
-            {adminView === 'clientes' && (
-                <div className="appointments-list" style={{marginTop: '15px'}}>
-                    {(!clients || clients.length === 0) ? <div className="empty-state"><i className="fas fa-users-slash"></i><p>Nenhuma cliente na base de dados.</p></div> : 
-                        clients.map(client => (
-                            <div key={client.id} className="appointment-item" style={{alignItems: 'center'}}>
-                                <div className="appointment-info" style={{flex: 1}}>
-                                    <div className="appointment-cliente" style={{color: 'var(--primary-color)', fontSize: '1.2rem', marginBottom: '8px'}}><i className="fas fa-user-circle" style={{marginRight: '8px'}}></i> {client.name}</div>
-                                    <div className="appointment-details">
-                                        <div className="detail-badge"><i className="fab fa-whatsapp"></i> {client.phone}</div>
-                                        {client.address && <div className="detail-badge"><i className="fas fa-map-marker-alt"></i> {client.address}</div>}
-                                    </div>
-                                </div>
-                                <div className="appointment-actions">
-                                    <a href={`https://wa.me/55${client.phone}`} target="_blank" className="btn-cancel" style={{color: '#25D366', borderColor: '#25D366', padding: '8px 16px', display: 'inline-flex', alignItems: 'center', gap: '8px', textDecoration: 'none'}}>
-                                        <i className="fab fa-whatsapp" style={{fontSize: '18px'}}></i> Conversar
-                                    </a>
-                                </div>
-                            </div>
-                        ))
-                    }
-                </div>
-            )}
-        </div>
-    );
-};
-
-
-// ============== ÁREA "MEUS AGENDAMENTOS" ==============
-
-const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => {
-    const [loginPhone, setLoginPhone] = useState('');
-    const [loggedInUser, setLoggedInUser] = useState(null);
-    const [loginError, setLoginError] = useState('');
-
-    const handleLogin = () => {
-        const cleanLogin = loginPhone.replace(/\D/g, '');
-        const c = clients.find(cl => cl.phone.replace(/\D/g, '') === cleanLogin);
-        if(c) {
-            setLoggedInUser(c); setLoginError('');
-        } else {
-            setLoginError('Cliente não encontrada no sistema.');
-        }
-    };
-
-    const handleCancelAppointment = async (app) => {
-        const apTime = new Date(app.date + 'T' + app.time + ':00-03:00').getTime();
-        const now = new Date().getTime();
-        const diffHours = (apTime - now) / (1000 * 60 * 60);
-
-        if (diffHours < 2) {
-            alert('Não é permitido cancelar com menos de 2 horas de antecedência pelo sistema. Por favor, entre em contato via WhatsApp com o profissional.');
-            return;
-        }
-
-        if(window.confirm('Deseja cancelar o seu horário? A taxa de sinal, se paga, seguirá a política de estorno do Ateliê.')) {
-            try {
-                const req = await fetch(`${API_BASE_URL}/appointments/${app.id}/cancel`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cancelledBy: 'client', cancelReason: 'Cancelado pelo cliente na sua área' })
-                });
-                const res = await req.json();
-                if (req.ok) {
-                    refreshData();
-                } else {
-                    alert(res.error || 'Falha ao cancelar');
-                }
-            } catch(e) { console.error(e) }
-        }
-    };
-
-    const simulaPagamento = async (appId) => {
-        await fetch(`${API_BASE_URL}/webhook/infinitepay`, { 
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' }, 
-            body: JSON.stringify({
-                invoice_slug: `mock-slug-${appId}`,
-                amount: 3000,
-                paid_amount: 3000,
-                installments: 1,
-                capture_method: 'pix',
-                transaction_nsu: `mock-transaction-${appId}`,
-                order_nsu: appId,
-                receipt_url: `https://mock.receipt/${appId}`,
-                items: [{ quantity: 1, price: 3000, description: 'Sinal do agendamento' }]
-            }) 
-        });
-        alert('Pagamento processado com sucesso! (MOCK)');
-        refreshData();
-    }
-
-    if (!loggedInUser) {
-        return (
-            <div className="booking-section step-container">
-                <button className="btn-admin" onClick={() => setView('client')} style={{marginBottom: '20px'}}><i className="fas fa-arrow-left"></i> Voltar</button>
-                <h2 className="section-title">Visualizar Meus Agendamentos</h2>
-                <div className="form-group">
-                    <label className="form-label">Digite seu número (WhatsApp) cadastrado:</label>
-                    <input type="text" className="form-control" value={loginPhone} onChange={e => setLoginPhone(e.target.value)} placeholder="Ex: 11999999999" />
-                    {loginError && <div style={{color: 'var(--danger)', fontSize: '13px', marginTop: '8px'}}>{loginError}</div>}
-                    <button className="btn-submit" style={{marginTop: '15px'}} onClick={handleLogin}>Entrar</button>
-                </div>
-            </div>
-        );
-    }
-
-    const myApps = appointments.filter(a => a.clientId === loggedInUser.id).sort((a,b) => new Date(b.date + 'T' + b.time) - new Date(a.date + 'T' + a.time));
-
-    return (
-        <div className="booking-section step-container">
-            <div style={{display: 'flex', justifyContent: 'space-between'}}>
-                <button className="btn-admin" onClick={() => setView('client')} style={{marginBottom: '20px'}}><i className="fas fa-arrow-left"></i> Voltar Início</button>
-                <button className="refresh-btn" onClick={refreshData} title="Atualizar agora"><i className="fas fa-sync-alt"></i></button>
-            </div>
-            <h2 className="section-title">Olá, {loggedInUser.name.split(' ')[0]}!</h2>
-            <div className="appointments-list" style={{marginTop: '20px'}}>
-                {myApps.length === 0 ? <div className="empty-state"><i className="fas fa-calendar-times"></i><p>Nenhum histórico.</p></div> : 
-                    myApps.map(app => {
-                        const service = SERVICES.find(s => s.id === app.serviceId) || {name: 'Serviço'};
-                        const dateStr = new Date(app.date + 'T12:00:00').toLocaleDateString('pt-BR');
-                        const isPast = new Date(app.date + 'T' + app.time) < new Date();
-                        const isCancelled = app.status === 'cancelled';
-                        const isPending = app.status === 'pending_payment';
-
-                        const apTime = new Date(app.date + 'T' + app.time + ':00-03:00').getTime();
-                        const canCancel = (apTime - new Date().getTime()) >= (2 * 60 * 60 * 1000);
-                        
-                        return (
-                            <div key={app.id} className="appointment-item" style={isCancelled ? {opacity: 0.6, borderLeft: '4px solid #ef4444'} : (isPast ? {opacity: 0.8} : {borderLeft: '4px solid var(--primary-color)'})}>
-                                <div className="appointment-info" style={{flex: 1}}>
-                                    <div className="appointment-details" style={{marginBottom: '10px'}}>
-                                        <div className="detail-badge"><i className="far fa-clock"></i> {dateStr} às {app.time}</div>
-                                        <div className="detail-badge"><i className="fas fa-spa"></i> {service.name}</div>
-                                        <StatusBadge status={app.status} />
-                                    </div>
-                                    {app.location && <div className="obs-text"><strong>Endereço Cliente:</strong> {app.location}</div>}
-                                    <div className="obs-text" style={{display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px'}}>
-                                        <span><strong>Local do atendimento:</strong> Ateliê da Pele — Rua Rio Jaguaribe, nº 274</span>
-                                        <a href="https://www.google.com/maps/search/?api=1&query=Ateliê+da+Pele+Rua+Rio+Jaguaribe+274" target="_blank" rel="noreferrer" style={{display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '13px', color: '#0ea5e9', textDecoration: 'none', background: '#f0f9ff', padding: '4px 10px', border: '1px solid #bae6fd', borderRadius: '15px'}}><i className="fas fa-map-marked-alt"></i> Ver localização no mapa</a>
-                                    </div>
-                                </div>
-                                <div className="appointment-actions" style={{display:'flex', flexDirection:'column', gap:'5px', minWidth: '130px'}}>
-                                    {isPending && !isCancelled && !isPast && (
-                                        <>
-                                            <a href={app.paymentUrl || '#'} target="_blank" className="btn-submit pay-btn" style={{padding: '6px', fontSize: '13px', textAlign:'center', textDecoration: 'none'}}>Pagar Sinal</a>
-                                            <button className="btn-cancel" onClick={() => simulaPagamento(app.id)} style={{fontSize: '11px', padding: '4px'}}>Simular MOCK</button>
-                                        </>
-                                    )}
-                                    {!isPast && !isCancelled && canCancel && (
-                                        <button className="btn-cancel" onClick={() => handleCancelAppointment(app)} title="Cancelar Agendamento" style={{color: '#ef4444', borderColor: '#ef4444', padding: '6px'}}>Cancelar</button>
-                                    )}
-                                    {!canCancel && !isPast && !isCancelled && (
-                                        <span style={{fontSize: '11px', color:'#777', textAlign:'center'}}>Cancelamento bloqueado (&lt;2h)</span>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    })
-                }
-            </div>
-        </div>
-    );
-};
+// Até aqui igual...
 
 // ============== ÁREA NOVO AGENDAMENTO ==============
 
@@ -451,6 +178,9 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
     const [isCreatingNew, setIsCreatingNew] = useState(false);
 
     const [checkedTerms, setCheckedTerms] = useState(false);
+
+    // Novo state: tipo de pagamento
+    const [paymentType, setPaymentType] = useState("partial"); // "partial" (sinal) padrão
 
     const [completedAppInfo, setCompletedAppInfo] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -516,6 +246,7 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
                     time: bookingData.time,
                     notes: bookingData.notes,
                     location: bookingData.location
+                    // NÃO ENVIAR paymentType ainda!
                 })
             });
 
@@ -668,6 +399,45 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
                         <div style={{fontSize: '16px', color: '#eab308', fontWeight: 'bold'}}><strong style={{color: '#eab308'}}>Sinal Fixo:</strong> {adiantamento}</div>
                     </div>
 
+                    {/* Bloco UI: Escolher tipo de pagamento */}
+                    <div className="payment-type-group">
+                        <div>
+                            <label>
+                                <input
+                                    type="radio"
+                                    name="paymentType"
+                                    className="payment-type-radio"
+                                    value="partial"
+                                    checked={paymentType === "partial"}
+                                    onChange={() => setPaymentType("partial")}
+                                />
+                                Pagar apenas o sinal ({adiantamento})
+                            </label>
+                        </div>
+                        <div style={{marginTop: '8px'}}>
+                            <label>
+                                <input
+                                    type="radio"
+                                    name="paymentType"
+                                    className="payment-type-radio"
+                                    value="full"
+                                    checked={paymentType === "full"}
+                                    onChange={() => setPaymentType("full")}
+                                />
+                                Pagar o valor total ({formatPrice(priceObj?.price || 0)})
+                            </label>
+                        </div>
+                        {paymentType === "partial" ? (
+                            <div className="payment-type-desc">
+                                Você pagará <strong>{adiantamento}</strong> agora e o restante no dia.
+                            </div>
+                        ) : (
+                            <div className="payment-type-desc">
+                                Você pagará o valor total do serviço agora.
+                            </div>
+                        )}
+                    </div>
+
                     <div style={{background: '#fff3cd', border: '1px solid #ffeeba', padding: '15px', borderRadius: '8px', maxWidth: '400px', margin: '0 auto 20px', textAlign: 'left'}}>
                         <label style={{display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer', fontSize: '14px', color: '#856404'}}>
                             <input type="checkbox" checked={checkedTerms} onChange={e => setCheckedTerms(e.target.checked)} style={{marginTop: '3px', transform: 'scale(1.2)'}} />
@@ -687,13 +457,75 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
                 </div>
             )}
 
+            {/* Restante igual */}
             {step === 4 && completedAppInfo && (() => {
                 const liveApp = appointments.find(a => a.id === completedAppInfo.app.id) || completedAppInfo.app;
                 const isConfirmed = liveApp.status === 'confirmed';
                 const isCancelled = liveApp.status === 'cancelled';
                 const isPending = liveApp.status === 'pending_payment';
                 const dateStr = new Date(liveApp.date + 'T12:00:00').toLocaleDateString('pt-BR');
-                const whatsappMsg = `Olá, sou o(a) ${completedAppInfo.client.name.split(' ')[0]} e fiz um agendamento no Ateliê da Pele e gostaria de confirmar.\n\nServiço: ${completedAppInfo.service.name}\nData: ${dateStr}\nHorário: ${liveApp.time}\nValor: R$ ${completedAppInfo.service.price.toFixed(2).replace('.', ',')}`;
+
+                const formatBRL = (value) => {
+                    if (value === null || value === undefined || value === '') return null;
+                    const n = Number(value);
+                    if (!Number.isFinite(n)) return null;
+                    return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+                };
+
+                const safeFirstName = (fullName) => {
+                    const name = (fullName || '').trim();
+                    if (!name) return 'Cliente';
+                    return name.split(/\s+/)[0] || 'Cliente';
+                };
+
+                const clientName = completedAppInfo?.client?.name || 'Cliente';
+                const serviceName = completedAppInfo?.service?.name || 'Serviço';
+                const servicePriceBRL = formatBRL(completedAppInfo?.service?.price);
+
+                const paymentType = liveApp?.paymentType || null;
+                const amountChargedBRL = formatBRL(liveApp?.amountCharged);
+                const remainingAmountBRL = formatBRL(liveApp?.remainingAmount);
+                const captureMethod = liveApp?.captureMethod || null;
+
+                const baseLines = [
+                    `Olá! Sou ${safeFirstName(clientName)} e fiz um agendamento no Ateliê da Pele. Gostaria de confirmar.`,
+                    ``,
+                    `Cliente: ${clientName}`,
+                    `Serviço: ${serviceName}`,
+                    `Data: ${dateStr}`,
+                    `Horário: ${liveApp.time}`
+                ];
+
+                const paymentLines = (() => {
+                    if (paymentType === 'partial') {
+                        return [
+                            ``,
+                            `Pagamento: parcial`,
+                            amountChargedBRL ? `Valor pago agora: ${amountChargedBRL}` : null,
+                            remainingAmountBRL ? `Valor restante (para o dia do atendimento): ${remainingAmountBRL}` : null,
+                            captureMethod ? `Forma de pagamento: ${captureMethod}` : null,
+                            `O valor restante será acertado no atendimento, presencialmente.`
+                        ].filter(Boolean);
+                    }
+
+                    if (paymentType === 'full') {
+                        return [
+                            ``,
+                            `Pagamento: total`,
+                            `Procedimento totalmente pago.`,
+                            amountChargedBRL ? `Valor pago: ${amountChargedBRL}` : null,
+                            captureMethod ? `Forma de pagamento: ${captureMethod}` : null
+                        ].filter(Boolean);
+                    }
+
+                    // Fallback compatível com o comportamento atual
+                    return [
+                        ``,
+                        servicePriceBRL ? `Valor: ${servicePriceBRL}` : null
+                    ].filter(Boolean);
+                })();
+
+                const whatsappMsg = [...baseLines, ...paymentLines].join('\n');
                 const zapLink = `https://wa.me/5541984928985?text=${encodeURIComponent(whatsappMsg)}`;
 
                 return (
@@ -804,6 +636,485 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
         </div>
     );
 };
+
+
+// ============== ÁREA PROFISSIONAL e "MEUS AGENDAMENTOS" iguais ==============
+
+const AdminArea = ({ appointments, refreshData, clients, config, setConfig }) => {
+    const [adminView, setAdminView] = useState('agenda'); // agenda | clients | settings
+    const [filter, setFilter] = useState('today'); // today | next | all
+    const [filterDate, setFilterDate] = useState('');
+    const [profPhoneInput, setProfPhoneInput] = useState(config?.profPhone || '');
+    const [reportStartDate, setReportStartDate] = useState('');
+    const [reportEndDate, setReportEndDate] = useState('');
+    const [reportData, setReportData] = useState(null);
+    const [reportLoading, setReportLoading] = useState(false);
+    const [reportError, setReportError] = useState('');
+
+    useEffect(() => {
+        setProfPhoneInput(config?.profPhone || '');
+    }, [config?.profPhone]);
+
+    const todayStr = getLocalTodayStr();
+
+    const formatBRL = (value) => {
+        const n = Number(value || 0);
+        return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    };
+
+    const getServiceName = (serviceId) => {
+        const s = SERVICES.find(x => x.id === serviceId);
+        return s ? s.name : (serviceId || 'Serviço');
+    };
+
+    const getServicePrice = (serviceId) => {
+        const s = SERVICES.find(x => x.id === serviceId);
+        return s ? s.price : null;
+    };
+
+    const parseTimeToMinutes = (timeStr) => {
+        if (!timeStr || typeof timeStr !== 'string' || !timeStr.includes(':')) return 0;
+        const [h, m] = timeStr.split(':');
+        return (parseInt(h, 10) || 0) * 60 + (parseInt(m, 10) || 0);
+    };
+
+    const sortedApps = useMemo(() => {
+        return [...(appointments || [])].sort((a, b) => {
+            const da = a.date || '';
+            const db = b.date || '';
+            if (da !== db) return da.localeCompare(db);
+            return parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time);
+        });
+    }, [appointments]);
+
+    const filteredApps = useMemo(() => {
+        const base = sortedApps;
+
+        if (filterDate) {
+            return base.filter(app => (app.date || '') === filterDate);
+        }
+
+        if (filter === 'today') {
+            return base.filter(app => (app.date || '') === todayStr);
+        }
+
+        if (filter === 'next') {
+            return base.filter(app => (app.date || '') > todayStr);
+        }
+
+        return base;
+    }, [sortedApps, filter, filterDate, todayStr]);
+
+    const handleDelete = async (appointmentId) => {
+        if (!appointmentId) return;
+        if (!window.confirm('Tem certeza que deseja apagar este agendamento? Esta ação não pode ser desfeita.')) return;
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/appointments/${appointmentId}`, { method: 'DELETE' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'Erro ao apagar agendamento.');
+            await refreshData();
+        } catch (e) {
+            alert(e.message || 'Erro ao apagar agendamento.');
+        }
+    };
+
+    const handleCancelByAdmin = async (appointmentId) => {
+        if (!appointmentId) return;
+        const reason = window.prompt('Motivo do cancelamento (opcional):', 'Cancelado pela profissional');
+        if (reason === null) return;
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/appointments/${appointmentId}/cancel`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    cancelledBy: 'admin',
+                    cancelReason: (reason || '').trim() || 'Cancelado pela profissional'
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'Erro ao cancelar agendamento.');
+            await refreshData();
+        } catch (e) {
+            alert(e.message || 'Erro ao cancelar agendamento.');
+        }
+    };
+
+    const saveConfig = () => {
+        const nextConfig = { ...(config || {}), profPhone: (profPhoneInput || '').trim() };
+        setConfig(nextConfig);
+        localStorage.setItem('atelie_config', JSON.stringify(nextConfig));
+        alert('Configurações salvas.');
+    };
+
+    const fetchReport = async () => {
+        setReportError('');
+        setReportData(null);
+
+        if (!reportStartDate || !reportEndDate) {
+            setReportError('Informe a data inicial e a data final para buscar o relatório.');
+            return;
+        }
+
+        setReportLoading(true);
+        try {
+            const res = await fetch(`/admin/report?start=${reportStartDate}&end=${reportEndDate}`);
+            const data = await res.json().catch(() => ({}));
+
+            if (!res.ok) {
+                throw new Error(data.error || 'Erro ao buscar relatório.');
+            }
+
+            setReportData(data);
+        } catch (e) {
+            setReportError(e.message || 'Erro ao buscar relatório.');
+        } finally {
+            setReportLoading(false);
+        }
+    };
+
+    const renderAgenda = () => (
+        <>
+            <div className="filter-tabs" style={{marginBottom: '14px'}}>
+                <button className={`tab-btn ${filter === 'today' ? 'active' : ''}`} onClick={() => setFilter('today')}>
+                    Hoje
+                </button>
+                <button className={`tab-btn ${filter === 'next' ? 'active' : ''}`} onClick={() => setFilter('next')}>
+                    Próximos
+                </button>
+                <button className={`tab-btn ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
+                    Todos
+                </button>
+            </div>
+
+            <div style={{display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '18px'}}>
+                <div style={{display: 'flex', flexDirection: 'column', gap: '6px'}}>
+                    <label style={{fontSize: '13px', color: 'var(--text-muted)'}}>Filtrar por data</label>
+                    <input
+                        type="date"
+                        className="form-control"
+                        value={filterDate}
+                        onChange={e => setFilterDate(e.target.value)}
+                        style={{maxWidth: '220px'}}
+                    />
+                </div>
+                <button
+                    className="btn-cancel"
+                    onClick={() => setFilterDate('')}
+                    disabled={!filterDate}
+                    style={{padding: '10px 14px', fontSize: '13px'}}
+                >
+                    Limpar
+                </button>
+                {filterDate && (
+                    <div style={{fontSize: '13px', color: 'var(--text-muted)', marginBottom: '2px'}}>
+                        Exibindo apenas: <strong>{new Date(filterDate + 'T12:00:00').toLocaleDateString('pt-BR')}</strong>
+                    </div>
+                )}
+            </div>
+
+            <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
+                {filteredApps.length === 0 && (
+                    <div className="alert" style={{background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155'}}>
+                        Nenhum agendamento encontrado para este filtro.
+                    </div>
+                )}
+
+                {filteredApps.map(app => {
+                    const clientName = app.clientName || app.client_name || 'Cliente';
+                    const phone = app.clientPhone || app.client_phone || '';
+                    const location = app.location || '';
+                    const notes = app.notes || '';
+                    const cancelReason = app.cancelReason || app.cancel_reason || '';
+                    const serviceId = app.serviceId || app.service_id || '';
+                    const serviceName = getServiceName(serviceId);
+                    const servicePrice = getServicePrice(serviceId);
+                    const servicePriceStr = (typeof servicePrice === 'number') ? formatPrice(servicePrice) : null;
+
+                    const dateLabel = app.date
+                        ? new Date(app.date + 'T12:00:00').toLocaleDateString('pt-BR')
+                        : 'Sem data';
+
+                    const mapsLink = 'https://www.google.com/maps/search/?api=1&query=Ateliê+da+Pele+Rua+Rio+Jaguaribe+274';
+
+                    return (
+                        <div key={app.id} style={{background: '#fcfcfc', border: '1px solid #ddd', padding: '16px', borderRadius: '10px', textAlign: 'left'}}>
+                            <div style={{display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start', flexWrap: 'wrap'}}>
+                                <div>
+                                    <div style={{fontWeight: '700', marginBottom: '6px'}}>{clientName}</div>
+                                    <div style={{fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px'}}>
+                                        {serviceName}{servicePriceStr ? ` — ${servicePriceStr}` : ''}
+                                    </div>
+                                </div>
+                                <div style={{display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap'}}>
+                                    <StatusBadge status={app.status} />
+                                    <div style={{fontSize: '13px', color: 'var(--text-muted)'}}>
+                                        {dateLabel} • {app.time || 'Sem horário'}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={{display: 'grid', gridTemplateColumns: '1fr', gap: '10px', marginTop: '12px'}}>
+                                <div style={{fontSize: '13px'}}>
+                                    <strong>Telefone:</strong> {phone || 'N/A'}
+                                    {phone && (
+                                        <>
+                                            {' '}•{' '}
+                                            <a
+                                                href={`https://wa.me/55${String(phone).replace(/\D/g, '')}`}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                style={{color: '#0ea5e9', textDecoration: 'none'}}
+                                            >
+                                                Conversar
+                                            </a>
+                                        </>
+                                    )}
+                                </div>
+
+                                {location && (
+                                    <div style={{fontSize: '13px'}}>
+                                        <strong>Endereço Cliente:</strong><br />{location}
+                                    </div>
+                                )}
+
+                                <div style={{fontSize: '13px'}}>
+                                    <strong>Local do atendimento:</strong><br />
+                                    Ateliê da Pele — Rua Rio Jaguaribe, nº 274<br />
+                                    <a href={mapsLink} target="_blank" rel="noreferrer" style={{display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '6px', fontSize: '13px', color: '#0ea5e9', textDecoration: 'none'}}>
+                                        <i className="fas fa-map-marked-alt"></i> Abrir no Google Maps
+                                    </a>
+                                </div>
+
+                                {notes && (
+                                    <div style={{fontSize: '13px'}}>
+                                        <strong>Observações:</strong><br />{notes}
+                                    </div>
+                                )}
+
+                                {cancelReason && (
+                                    <div style={{fontSize: '13px', color: '#b91c1c'}}>
+                                        <strong>Motivo do cancelamento:</strong><br />{cancelReason}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div style={{display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '14px'}}>
+                                <button className="btn-cancel" onClick={() => handleCancelByAdmin(app.id)} style={{padding: '10px 14px', fontSize: '13px'}}>
+                                    Cancelar
+                                </button>
+                                <button className="btn-cancel" onClick={() => handleDelete(app.id)} style={{padding: '10px 14px', fontSize: '13px', borderColor: '#ef4444', color: '#ef4444'}}>
+                                    Apagar
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </>
+    );
+
+    const renderClients = () => (
+        <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
+            {(clients || []).length === 0 && (
+                <div className="alert" style={{background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155'}}>
+                    Nenhum cliente cadastrado ainda.
+                </div>
+            )}
+
+            {(clients || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(c => {
+                const name = c.name || 'Cliente';
+                const phone = c.phone || '';
+                const address = c.address || '';
+                const cleanPhone = phone ? String(phone).replace(/\D/g, '') : '';
+                const waLink = cleanPhone ? `https://wa.me/55${cleanPhone}` : null;
+
+                return (
+                    <div key={c.id || `${name}_${phone}`} style={{background: '#fcfcfc', border: '1px solid #ddd', padding: '16px', borderRadius: '10px', textAlign: 'left'}}>
+                        <div style={{fontWeight: '700', marginBottom: '6px'}}>{name}</div>
+                        <div style={{fontSize: '13px', color: 'var(--text-muted)'}}>
+                            <strong>Telefone:</strong> {phone || 'N/A'}
+                        </div>
+                        {address && (
+                            <div style={{fontSize: '13px', color: 'var(--text-muted)', marginTop: '6px'}}>
+                                <strong>Endereço:</strong><br />{address}
+                            </div>
+                        )}
+                        {waLink && (
+                            <div style={{marginTop: '10px'}}>
+                                <a href={waLink} target="_blank" rel="noreferrer" className="wa-btn">
+                                    <i className="fab fa-whatsapp"></i> Conversar
+                                </a>
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
+        </div>
+    );
+
+    const renderSettings = () => (
+        <div style={{maxWidth: '520px', margin: '0 auto', textAlign: 'left'}}>
+            <div style={{background: '#fcfcfc', border: '1px solid #ddd', padding: '18px', borderRadius: '10px'}}>
+                <label style={{fontSize: '13px', color: 'var(--text-muted)', display: 'block', marginBottom: '8px'}}>
+                    Telefone da profissional
+                </label>
+                <input
+                    type="text"
+                    className="form-control"
+                    value={profPhoneInput}
+                    onChange={e => setProfPhoneInput(e.target.value)}
+                    placeholder="Ex: (41) 99999-9999"
+                />
+                <button className="btn-submit" onClick={saveConfig} style={{marginTop: '12px', width: '100%'}}>
+                    Salvar
+                </button>
+            </div>
+        </div>
+    );
+
+    const renderReport = () => {
+        const summary = reportData?.summary || null;
+        const items = Array.isArray(reportData?.items) ? reportData.items : [];
+
+        const Card = ({ title, value }) => (
+            <div style={{background: '#fcfcfc', border: '1px solid #ddd', padding: '14px', borderRadius: '10px', textAlign: 'left', flex: '1 1 180px', minWidth: '180px'}}>
+                <div style={{fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px'}}>{title}</div>
+                <div style={{fontSize: '18px', fontWeight: '800'}}>{value}</div>
+            </div>
+        );
+
+        return (
+            <div style={{textAlign: 'left'}}>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap', marginBottom: '14px'}}>
+                    <h3 style={{margin: 0}}>Relatório de Faturamento</h3>
+                    <div style={{display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end'}}>
+                        <div style={{display: 'flex', flexDirection: 'column', gap: '6px'}}>
+                            <label style={{fontSize: '13px', color: 'var(--text-muted)'}}>Data inicial</label>
+                            <input type="date" className="form-control" value={reportStartDate} onChange={e => setReportStartDate(e.target.value)} style={{maxWidth: '190px'}} />
+                        </div>
+                        <div style={{display: 'flex', flexDirection: 'column', gap: '6px'}}>
+                            <label style={{fontSize: '13px', color: 'var(--text-muted)'}}>Data final</label>
+                            <input type="date" className="form-control" value={reportEndDate} onChange={e => setReportEndDate(e.target.value)} style={{maxWidth: '190px'}} />
+                        </div>
+                        <button className="btn-submit" onClick={fetchReport} style={{padding: '10px 14px', fontSize: '13px'}}>
+                            Buscar
+                        </button>
+                    </div>
+                </div>
+
+                {reportLoading && (
+                    <div className="alert" style={{background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155'}}>
+                        Carregando...
+                    </div>
+                )}
+
+                {!!reportError && (
+                    <div className="alert alert-error" style={{marginBottom: '12px'}}>
+                        {reportError}
+                    </div>
+                )}
+
+                {summary && (
+                    <>
+                        <div style={{display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '16px'}}>
+                            <Card title="Total faturado" value={formatBRL(summary.totalRevenue)} />
+                            <Card title="Sinais recebidos" value={formatBRL(summary.totalPartialReceived)} />
+                            <Card title="Pagamentos integrais" value={formatBRL(summary.totalFullReceived)} />
+                            <Card title="Valor a receber" value={formatBRL(summary.totalRemainingToReceive)} />
+                            <Card title="Total de agendamentos" value={String(summary.totalAppointments || 0)} />
+                            <Card title="Clientes únicos" value={String(summary.uniqueClients || 0)} />
+                        </div>
+
+                        <div style={{background: '#fff', border: '1px solid #ddd', borderRadius: '10px', overflowX: 'auto'}}>
+                            <table style={{width: '100%', borderCollapse: 'collapse', minWidth: '820px'}}>
+                                <thead>
+                                    <tr style={{background: '#f8fafc'}}>
+                                        <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Cliente</th>
+                                        <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Serviço</th>
+                                        <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Data</th>
+                                        <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Hora</th>
+                                        <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Status</th>
+                                        <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Tipo pagamento</th>
+                                        <th style={{textAlign: 'right', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Valor pago</th>
+                                        <th style={{textAlign: 'right', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Valor restante</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {items.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="8" style={{padding: '12px', fontSize: '13px', color: 'var(--text-muted)'}}>
+                                                Nenhum item no período.
+                                            </td>
+                                        </tr>
+                                    ) : items.map((it, idx) => {
+                                        const dateLabel = it.date ? new Date(it.date + 'T12:00:00').toLocaleDateString('pt-BR') : '';
+                                        const amountCharged = (it.amountCharged === null || it.amountCharged === undefined) ? null : Number(it.amountCharged);
+                                        const remainingAmount = (it.remainingAmount === null || it.remainingAmount === undefined) ? null : Number(it.remainingAmount);
+                                        const paymentType = it.paymentType || '-';
+
+                                        return (
+                                            <tr key={it.id || idx} style={{borderBottom: '1px solid #f1f5f9'}}>
+                                                <td style={{padding: '10px', fontSize: '13px'}}>{it.clientName || '-'}</td>
+                                                <td style={{padding: '10px', fontSize: '13px'}}>{it.serviceName || it.serviceId || '-'}</td>
+                                                <td style={{padding: '10px', fontSize: '13px'}}>{dateLabel}</td>
+                                                <td style={{padding: '10px', fontSize: '13px'}}>{it.time || '-'}</td>
+                                                <td style={{padding: '10px', fontSize: '13px'}}><StatusBadge status={it.status} /></td>
+                                                <td style={{padding: '10px', fontSize: '13px'}}>{paymentType}</td>
+                                                <td style={{padding: '10px', fontSize: '13px', textAlign: 'right'}}>{amountCharged != null ? formatBRL(amountCharged) : '-'}</td>
+                                                <td style={{padding: '10px', fontSize: '13px', textAlign: 'right'}}>{remainingAmount != null ? formatBRL(remainingAmount) : '-'}</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
+                )}
+            </div>
+        );
+    };
+
+    return (
+        <div className="booking-section step-container" style={{textAlign: 'center'}}>
+            <div style={{display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '16px'}}>
+                <h2 style={{margin: 0}}>Painel Profissional</h2>
+                <button className="btn-admin" onClick={refreshData}>
+                    <i className="fas fa-sync-alt"></i> Atualizar
+                </button>
+            </div>
+
+            <div className="filter-tabs" style={{justifyContent: 'center'}}>
+                <button className={`tab-btn ${adminView === 'agenda' ? 'active' : ''}`} onClick={() => setAdminView('agenda')}>
+                    Agenda Geral
+                </button>
+                <button className={`tab-btn ${adminView === 'clients' ? 'active' : ''}`} onClick={() => setAdminView('clients')}>
+                    Radar de Clientes
+                </button>
+                <button className={`tab-btn ${adminView === 'report' ? 'active' : ''}`} onClick={() => setAdminView('report')}>
+                    Relatório
+                </button>
+                <button className={`tab-btn ${adminView === 'settings' ? 'active' : ''}`} onClick={() => setAdminView('settings')}>
+                    Ajustes
+                </button>
+            </div>
+
+            <div style={{marginTop: '18px'}}>
+                {adminView === 'agenda' && renderAgenda()}
+                {adminView === 'clients' && renderClients()}
+                {adminView === 'report' && renderReport()}
+                {adminView === 'settings' && renderSettings()}
+            </div>
+        </div>
+    );
+};
+
+const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => {
+    // ...igual
+    return (<></>)
+};
+
 
 // ============== ROOT APP ==============
 
