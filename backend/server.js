@@ -589,7 +589,15 @@ async function trySendClientAppointmentConfirmationIfNeeded(appointmentRow) {
     }
 
     const serviceObj = findServiceById(appointmentRow.service_id);
-    await sendClientConfirmationEmail(appointmentRow, serviceObj, em);
+    const fin = normalizeAppointmentFinancials(appointmentRow);
+    const rowForClientEmail = {
+        ...appointmentRow,
+        payment_type: fin.paymentType,
+        paid_amount: fin.paidAmount,
+        amount_charged: fin.amountCharged,
+        remaining_amount: fin.remainingAmount
+    };
+    await sendClientConfirmationEmail(rowForClientEmail, serviceObj, em);
 
     await pool.query(
         `

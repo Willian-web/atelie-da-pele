@@ -9,21 +9,38 @@ function formatCurrencyBRL(value) {
     });
 }
 
+function roundMoney2(n) {
+    return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/** Aceita número, string numérica do pg, etc. */
+function toMoneyNumberEmail(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+}
+
+function normalizePaymentKindForEmail(raw) {
+    const t = String(raw ?? '').trim().toLowerCase();
+    if (t === 'full' || t === 'integral' || t === 'total') return 'full';
+    return 'partial';
+}
+
 /**
  * Valor exibido nos e-mails: em pagamento integral o checkout correto está em `amount_charged`;
  * o gateway às vezes envia `paid_amount` do sinal (ex.: R$ 30) — não priorizar isso sobre o total.
  */
 function resolvePaidAmountForDisplay({ paymentType, paid_amount, amount_charged, servicePrice }) {
-    const paid = paid_amount != null && paid_amount !== '' ? Number(paid_amount) : null;
-    const charged = amount_charged != null && amount_charged !== '' ? Number(amount_charged) : null;
-    const pOk = paid != null && Number.isFinite(paid) && paid > 0;
-    const cOk = charged != null && Number.isFinite(charged) && charged > 0;
+    const paid = toMoneyNumberEmail(paid_amount);
+    const charged = toMoneyNumberEmail(amount_charged);
+    const pOk = paid != null && paid > 0;
+    const cOk = charged != null && charged > 0;
     const svc =
         servicePrice != null && Number.isFinite(Number(servicePrice)) && Number(servicePrice) > 0
             ? Number(servicePrice)
             : null;
 
-    if (String(paymentType || '').toLowerCase() === 'full') {
+    if (normalizePaymentKindForEmail(paymentType) === 'full') {
         if (cOk) return charged;
         if (pOk) return paid;
         return svc;
@@ -78,7 +95,7 @@ async function sendConfirmationEmail(appointmentData, serviceData) {
             ? `\nEndereço Cliente (A Domicílio): ${appointmentData.location}`
             : '';
 
-        const paymentType = appointmentData.payment_type || null;
+        const paymentType = normalizePaymentKindForEmail(appointmentData.payment_type);
         const captureMethod = appointmentData.capture_method || null;
 
         const paidAmountValue = appointmentData.paid_amount ?? null;
@@ -95,9 +112,11 @@ async function sendConfirmationEmail(appointmentData, serviceData) {
             servicePrice: servicePriceNum
         });
 
-        const remainingAmount = remainingAmountValue != null
-            ? Number(remainingAmountValue)
-            : null;
+        let remainingAmount = toMoneyNumberEmail(remainingAmountValue);
+        if (paymentType === 'partial' && (remainingAmount == null || !Number.isFinite(remainingAmount)) && servicePriceNum != null) {
+            const basePaid = paidNow != null && Number.isFinite(paidNow) && paidNow > 0 ? paidNow : FIXED_SIGNAL_AMOUNT;
+            remainingAmount = Math.max(0, roundMoney2(servicePriceNum - basePaid));
+        }
 
         const paymentMethodLine = captureMethod ? `Forma de pagamento: ${captureMethod}` : '';
 
@@ -106,9 +125,15 @@ async function sendConfirmationEmail(appointmentData, serviceData) {
 
         if (paymentType === 'partial') {
             paymentIntro = 'Pagamento parcial aprovado e agendamento confirmado no sistema.';
+            const paidLine =
+                paidNow != null && Number.isFinite(paidNow) && paidNow > 0
+                    ? paidNow
+                    : FIXED_SIGNAL_AMOUNT;
             paymentLines = [
-                paidNow != null ? `Valor pago agora: ${formatCurrencyBRL(paidNow)}` : '',
-                remainingAmount != null ? `Valor restante (para o dia do atendimento): ${formatCurrencyBRL(remainingAmount)}` : '',
+                `Valor pago agora: ${formatCurrencyBRL(paidLine)}`,
+                remainingAmount != null && Number.isFinite(remainingAmount) && remainingAmount >= 0
+                    ? `Valor restante (para o dia do atendimento): ${formatCurrencyBRL(remainingAmount)}`
+                    : '',
                 paymentMethodLine,
                 'Observação: o valor restante será acertado presencialmente no dia do atendimento.'
             ].filter(Boolean).join('\n');
@@ -203,37 +228,50 @@ async function sendClientConfirmationEmail(appointmentRow, serviceData, clientEm
             ? formatCurrencyBRL(serviceData.price)
             : null;
 
-    const paymentType = String(appointmentRow.payment_type || '').toLowerCase();
+    const paymentKind = normalizePaymentKindForEmail(appointmentRow.payment_type);
+    const servicePriceNum =
+        typeof serviceData?.price === 'number' && Number.isFinite(serviceData.price) ? serviceData.price : null;
+
     const paidNow = resolvePaidAmountForDisplay({
-        paymentType,
+        paymentType: paymentKind,
         paid_amount: appointmentRow.paid_amount,
         amount_charged: appointmentRow.amount_charged,
-        servicePrice: typeof serviceData?.price === 'number' ? serviceData.price : null
+        servicePrice: servicePriceNum
     });
-    const remaining =
-        appointmentRow.remaining_amount != null && appointmentRow.remaining_amount !== ''
-            ? Number(appointmentRow.remaining_amount)
-            : null;
+
+    let remaining = toMoneyNumberEmail(appointmentRow.remaining_amount);
+    if (
+        paymentKind === 'partial' &&
+        (remaining == null || !Number.isFinite(remaining)) &&
+        servicePriceNum != null
+    ) {
+        const basePaid =
+            paidNow != null && Number.isFinite(paidNow) && paidNow > 0 ? paidNow : FIXED_SIGNAL_AMOUNT;
+        remaining = Math.max(0, roundMoney2(servicePriceNum - basePaid));
+    }
 
     const captureMethod = appointmentRow.capture_method || null;
 
     let paymentSummaryLines = '';
-    if (paymentType === 'full') {
+    if (paymentKind === 'full') {
         paymentSummaryLines = [
             'Forma de pagamento: valor integral do procedimento.',
-            paidNow != null && Number.isFinite(paidNow) ? `Valor pago: ${formatCurrencyBRL(paidNow)}` : '',
+            paidNow != null && Number.isFinite(paidNow) && paidNow > 0 ? `Valor pago: ${formatCurrencyBRL(paidNow)}` : '',
             captureMethod ? `Registro do pagamento: ${captureMethod}` : ''
         ]
             .filter(Boolean)
             .join('\n');
     } else {
+        const paidDisplay =
+            paidNow != null && Number.isFinite(paidNow) && paidNow > 0 ? paidNow : FIXED_SIGNAL_AMOUNT;
         paymentSummaryLines = [
             'Forma de pagamento: sinal (reserva) + saldo no dia do atendimento.',
-            paidNow != null && Number.isFinite(paidNow) ? `Valor pago agora (sinal): ${formatCurrencyBRL(paidNow)}` : '',
+            `Valor pago agora (sinal): ${formatCurrencyBRL(paidDisplay)}`,
             remaining != null && Number.isFinite(remaining) && remaining > 0
                 ? `Saldo restante (no atendimento): ${formatCurrencyBRL(remaining)}`
                 : '',
-            captureMethod ? `Registro do pagamento: ${captureMethod}` : ''
+            captureMethod ? `Registro do pagamento: ${captureMethod}` : '',
+            'Observação: o saldo restante será acertado presencialmente no dia do atendimento.'
         ]
             .filter(Boolean)
             .join('\n');
