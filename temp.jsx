@@ -1223,22 +1223,32 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
 // ============== ÁREA "MEUS AGENDAMENTOS" (CLIENTE LOGADO) ==============
 
 const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => {
+    /** Valor do campo (digitação) — nunca dispara busca por si só. */
     const [phoneInput, setPhoneInput] = useState('');
+    /** Dígitos do telefone da última ação "Buscar" (só atualiza no clique/Enter). null = ainda não houve busca válida com número. */
+    const [searchedPhoneDigits, setSearchedPhoneDigits] = useState(null);
     const [searchedClient, setSearchedClient] = useState(null);
     const [searchAttempted, setSearchAttempted] = useState(false);
     const [loginError, setLoginError] = useState('');
 
+    const inputClean = String(phoneInput).replace(/\D/g, '');
+    /** Lista e cabeçalho só quando o que está no campo bate com o último número buscado (evita resultados “fantasma” ao editar). */
+    const showCommittedResults =
+        searchedPhoneDigits !== null && inputClean === searchedPhoneDigits;
+    const displayClient = showCommittedResults ? searchedClient : null;
+
     const handleSearch = () => {
         setLoginError('');
         const clean = String(phoneInput).replace(/\D/g, '');
+        setSearchAttempted(true);
         if (!clean) {
-            setLoginError('Digite o número cadastrado (com DDD).');
-            setSearchAttempted(true);
+            setSearchedPhoneDigits(null);
             setSearchedClient(null);
+            setLoginError('Digite o número cadastrado (com DDD).');
             return;
         }
+        setSearchedPhoneDigits(clean);
         const c = clients.find((cl) => cl.phone.replace(/\D/g, '') === clean);
-        setSearchAttempted(true);
         if (c) {
             setSearchedClient(c);
             setLoginError('');
@@ -1250,8 +1260,15 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
 
     const handleNewSearch = () => {
         setSearchedClient(null);
+        setSearchedPhoneDigits(null);
         setSearchAttempted(false);
         setLoginError('');
+        setPhoneInput('');
+    };
+
+    const handleRefreshClick = () => {
+        if (!displayClient) return;
+        refreshData();
     };
 
     const handleCancelAppointment = async (app) => {
@@ -1292,11 +1309,15 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
         refreshData();
     }
 
-    const myApps = searchedClient
+    const myApps = displayClient
         ? appointments
-            .filter((a) => a.clientId === searchedClient.id)
+            .filter((a) => a.clientId === displayClient.id)
             .sort((a, b) => new Date(b.date + 'T' + b.time) - new Date(a.date + 'T' + a.time))
         : [];
+
+    const showLoginError =
+        !!loginError &&
+        (showCommittedResults || (searchAttempted && searchedPhoneDigits === null));
 
     return (
         <div className="booking-section step-container">
@@ -1304,8 +1325,8 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                 <button className="btn-admin" onClick={() => setView('client')} style={{ marginBottom: 0 }}>
                     <i className="fas fa-arrow-left"></i> Voltar
                 </button>
-                {searchedClient && (
-                    <button className="refresh-btn" onClick={refreshData} title="Atualizar lista de agendamentos">
+                {displayClient && (
+                    <button className="refresh-btn" onClick={handleRefreshClick} title="Atualizar lista de agendamentos">
                         <i className="fas fa-sync-alt"></i>
                     </button>
                 )}
@@ -1316,7 +1337,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                 Informe o mesmo WhatsApp do cadastro e toque em <strong>Buscar</strong> para ver seus horários.
             </p>
 
-            <div className="form-group" style={{ marginBottom: searchedClient ? '14px' : '8px' }}>
+            <div className="form-group" style={{ marginBottom: displayClient ? '14px' : '8px' }}>
                 <label className="form-label">Telefone (WhatsApp)</label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'stretch' }}>
                     <input
@@ -1324,7 +1345,12 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                         className="form-control"
                         value={phoneInput}
                         onChange={(e) => setPhoneInput(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleSearch();
+                            }
+                        }}
                         placeholder="Ex: 11999999999"
                         style={{ flex: '1 1 200px', minWidth: '0' }}
                     />
@@ -1345,14 +1371,14 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                         Buscar
                     </button>
                 </div>
-                {loginError && (
+                {showLoginError && (
                     <div style={{ color: 'var(--danger)', fontSize: '13px', marginTop: '10px', lineHeight: 1.45 }}>
                         {loginError}
                     </div>
                 )}
             </div>
 
-            {searchedClient && (
+            {displayClient && (
                 <>
                     <div
                         style={{
@@ -1366,7 +1392,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                     >
                         <div style={{ fontSize: '12px', color: '#64748b', letterSpacing: '0.02em' }}>Agendamentos de</div>
                         <div style={{ fontSize: '17px', fontWeight: 650, color: '#0f172a', marginTop: '2px', lineHeight: 1.25 }}>
-                            {searchedClient.name}
+                            {displayClient.name}
                         </div>
                         <button
                             type="button"
@@ -1389,13 +1415,18 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                 </>
             )}
 
-            <div className="appointments-list" style={{ marginTop: searchedClient ? '4px' : '8px' }}>
-                {!searchedClient && !searchAttempted && (
+            <div className="appointments-list" style={{ marginTop: displayClient ? '4px' : '8px' }}>
+                {!searchAttempted && searchedPhoneDigits === null && (
                     <div style={{ fontSize: '13px', color: '#94a3b8', fontStyle: 'italic', padding: '8px 0 4px' }}>
                         Os agendamentos aparecem aqui depois que você buscar pelo número.
                     </div>
                 )}
-                {searchedClient ? (
+                {searchAttempted && searchedPhoneDigits !== null && !showCommittedResults && (
+                    <div style={{ fontSize: '12px', color: '#94a3b8', padding: '6px 0 8px', lineHeight: 1.45 }}>
+                        O número no campo mudou em relação à última busca — toque em <strong>Buscar</strong> para consultar de novo.
+                    </div>
+                )}
+                {displayClient ? (
                     myApps.length === 0 ? (
                     <div className="empty-state" style={{ padding: '28px 16px' }}>
                         <i className="fas fa-calendar-plus"></i>
