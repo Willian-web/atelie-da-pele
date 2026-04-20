@@ -754,6 +754,9 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, admi
     const [reportData, setReportData] = useState(null);
     const [reportLoading, setReportLoading] = useState(false);
     const [reportError, setReportError] = useState('');
+    const [clientEditModal, setClientEditModal] = useState(null);
+    const [clientEditError, setClientEditError] = useState('');
+    const [clientEditSaving, setClientEditSaving] = useState(false);
 
     useEffect(() => {
         setProfPhoneInput(config?.profPhone || '');
@@ -769,6 +772,75 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, admi
             onAdminSessionInvalid();
         }
         return res;
+    };
+
+    const openEditClient = (c) => {
+        setClientEditError('');
+        setClientEditModal({
+            id: c.id,
+            name: c.name || '',
+            phone: c.phone || '',
+            address: c.address || '',
+            email: String(c.email || '').trim()
+        });
+    };
+
+    const saveClientEdit = async () => {
+        if (!clientEditModal) return;
+        setClientEditError('');
+        const em = String(clientEditModal.email || '').trim().toLowerCase();
+        if (!isValidEmailFormat(em)) {
+            setClientEditError('Informe um e-mail válido.');
+            return;
+        }
+        const cleanPhone = String(clientEditModal.phone || '').replace(/\D/g, '');
+        if (!cleanPhone) {
+            setClientEditError('Telefone inválido.');
+            return;
+        }
+        if (!(clientEditModal.name || '').trim()) {
+            setClientEditError('Nome é obrigatório.');
+            return;
+        }
+        setClientEditSaving(true);
+        try {
+            const res = await adminFetch(`${API_BASE_URL}/admin/clients/${encodeURIComponent(clientEditModal.id)}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: (clientEditModal.name || '').trim(),
+                    phone: cleanPhone,
+                    address: (clientEditModal.address || '').trim(),
+                    email: em
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setClientEditError(data.error || 'Não foi possível salvar.');
+                return;
+            }
+            setClientEditModal(null);
+            await refreshData();
+        } catch {
+            setClientEditError('Falha de rede ao salvar.');
+        } finally {
+            setClientEditSaving(false);
+        }
+    };
+
+    const handleDeleteClientRecord = async (c) => {
+        if (!window.confirm(`Remover o cadastro de "${(c.name || '').trim() || 'esta cliente'}"? Esta ação não pode ser desfeita.`)) return;
+        try {
+            const res = await adminFetch(`${API_BASE_URL}/admin/clients/${encodeURIComponent(c.id)}`, { method: 'DELETE' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.error || 'Não foi possível remover.');
+                return;
+            }
+            await refreshData();
+        } catch {
+            alert('Falha de rede ao remover.');
+        }
     };
 
     const formatBRL = (value) => {
@@ -1041,27 +1113,41 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, admi
                 const name = c.name || 'Cliente';
                 const phone = c.phone || '';
                 const address = c.address || '';
+                const em = c.email || '';
                 const cleanPhone = phone ? String(phone).replace(/\D/g, '') : '';
                 const waLink = cleanPhone ? `https://wa.me/55${cleanPhone}` : null;
 
                 return (
-                    <div key={c.id || `${name}_${phone}`} style={{background: '#fcfcfc', border: '1px solid #ddd', padding: '16px', borderRadius: '10px', textAlign: 'left'}}>
-                        <div style={{fontWeight: '700', marginBottom: '6px'}}>{name}</div>
-                        <div style={{fontSize: '13px', color: 'var(--text-muted)'}}>
-                            <strong>Telefone:</strong> {phone || 'N/A'}
-                        </div>
-                        {address && (
-                            <div style={{fontSize: '13px', color: 'var(--text-muted)', marginTop: '6px'}}>
-                                <strong>Endereço:</strong><br />{address}
+                    <div key={c.id || `${name}_${phone}`} style={{background: '#fcfcfc', border: '1px solid #ddd', padding: '16px', borderRadius: '10px', textAlign: 'left', display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'space-between', alignItems: 'flex-start'}}>
+                        <div style={{flex: '1 1 200px', minWidth: 0}}>
+                            <div style={{fontWeight: '700', marginBottom: '6px'}}>{name}</div>
+                            <div style={{fontSize: '13px', color: 'var(--text-muted)'}}>
+                                <strong>Telefone:</strong> {phone || 'N/A'}
                             </div>
-                        )}
-                        {waLink && (
-                            <div style={{marginTop: '10px'}}>
-                                <a href={waLink} target="_blank" rel="noreferrer" className="wa-btn">
+                            {em && (
+                                <div style={{fontSize: '13px', color: 'var(--text-muted)', marginTop: '6px'}}>
+                                    <strong>E-mail:</strong> {em}
+                                </div>
+                            )}
+                            {address && (
+                                <div style={{fontSize: '13px', color: 'var(--text-muted)', marginTop: '6px'}}>
+                                    <strong>Endereço:</strong><br />{address}
+                                </div>
+                            )}
+                        </div>
+                        <div style={{display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center'}}>
+                            {waLink && (
+                                <a href={waLink} target="_blank" rel="noreferrer" className="wa-btn" style={{marginTop: 0}}>
                                     <i className="fab fa-whatsapp"></i> Conversar
                                 </a>
-                            </div>
-                        )}
+                            )}
+                            <button type="button" className="btn-cancel" onClick={() => openEditClient(c)} style={{padding: '10px 14px', fontSize: '13px'}}>
+                                <i className="fas fa-pen"></i> Editar
+                            </button>
+                            <button type="button" className="btn-cancel" onClick={() => handleDeleteClientRecord(c)} style={{padding: '10px 14px', fontSize: '13px', borderColor: '#ef4444', color: '#b91c1c'}}>
+                                <i className="fas fa-trash-alt"></i> Apagar
+                            </button>
+                        </div>
                     </div>
                 );
             })}
@@ -1142,7 +1228,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, admi
                         </div>
 
                         <div style={{background: '#fff', border: '1px solid #ddd', borderRadius: '10px', overflowX: 'auto', maxWidth: '100%', boxSizing: 'border-box'}}>
-                            <table style={{width: '100%', borderCollapse: 'collapse', minWidth: '860px'}}>
+                            <table style={{width: '100%', borderCollapse: 'collapse', minWidth: '960px'}}>
                                 <thead>
                                     <tr style={{background: '#f8fafc'}}>
                                         <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Cliente</th>
@@ -1151,6 +1237,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, admi
                                         <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Hora</th>
                                         <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Status</th>
                                         <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Tipo pagamento</th>
+                                        <th style={{textAlign: 'right', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Valor total procedimento</th>
                                         <th style={{textAlign: 'right', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Valor pago</th>
                                         <th style={{textAlign: 'right', padding: '10px 18px 10px 10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Valor restante</th>
                                     </tr>
@@ -1158,7 +1245,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, admi
                                 <tbody>
                                     {items.length === 0 ? (
                                         <tr>
-                                            <td colSpan="8" style={{padding: '12px', fontSize: '13px', color: 'var(--text-muted)'}}>
+                                            <td colSpan="9" style={{padding: '12px', fontSize: '13px', color: 'var(--text-muted)'}}>
                                                 Nenhum item no período.
                                             </td>
                                         </tr>
@@ -1173,6 +1260,8 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, admi
                                                 ? 'Total'
                                                 : '-';
 
+                                        const procTotal = (it.procedureTotal === null || it.procedureTotal === undefined) ? null : Number(it.procedureTotal);
+
                                         return (
                                             <tr key={it.id || idx} style={{borderBottom: '1px solid #f1f5f9'}}>
                                                 <td style={{padding: '10px', fontSize: '13px'}}>{it.clientName || '-'}</td>
@@ -1181,6 +1270,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, admi
                                                 <td style={{padding: '10px', fontSize: '13px'}}>{it.time || '-'}</td>
                                                 <td style={{padding: '10px', fontSize: '13px'}}><StatusBadge status={it.status} /></td>
                                                 <td style={{padding: '10px', fontSize: '13px'}}>{paymentType}</td>
+                                                <td style={{padding: '10px', fontSize: '13px', textAlign: 'right'}}>{procTotal != null && Number.isFinite(procTotal) ? formatBRL(procTotal) : '—'}</td>
                                                 <td style={{padding: '10px', fontSize: '13px', textAlign: 'right'}}>{amountCharged != null ? formatBRL(amountCharged) : '-'}</td>
                                                 <td style={{padding: '10px 18px 10px 10px', fontSize: '13px', textAlign: 'right'}}>{remainingAmount != null ? formatBRL(remainingAmount) : '-'}</td>
                                             </tr>
@@ -1225,6 +1315,35 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, admi
                 {adminView === 'report' && renderReport()}
                 {adminView === 'settings' && renderSettings()}
             </div>
+
+            {clientEditModal && (
+                <div className="password-overlay" style={{zIndex: 10050}}>
+                    <div className="password-modal" style={{maxWidth: '420px', width: '100%', textAlign: 'left'}}>
+                        <h3 style={{marginBottom: '16px', textAlign: 'center'}}>Editar cliente</h3>
+                        <div className="form-group full-width">
+                            <label className="form-label">Nome</label>
+                            <input type="text" className="form-control" value={clientEditModal.name} onChange={e => setClientEditModal({ ...clientEditModal, name: e.target.value })} />
+                        </div>
+                        <div className="form-group full-width">
+                            <label className="form-label">WhatsApp (somente números)</label>
+                            <input type="text" className="form-control" value={clientEditModal.phone} onChange={e => setClientEditModal({ ...clientEditModal, phone: e.target.value })} />
+                        </div>
+                        <div className="form-group full-width">
+                            <label className="form-label">E-mail</label>
+                            <input type="email" className="form-control" autoComplete="email" value={clientEditModal.email} onChange={e => setClientEditModal({ ...clientEditModal, email: e.target.value })} />
+                        </div>
+                        <div className="form-group full-width">
+                            <label className="form-label">Endereço</label>
+                            <input type="text" className="form-control" value={clientEditModal.address} onChange={e => setClientEditModal({ ...clientEditModal, address: e.target.value })} />
+                        </div>
+                        {clientEditError && <div className="alert alert-error" style={{marginBottom: '12px', fontSize: '13px'}}>{clientEditError}</div>}
+                        <div className="modal-actions" style={{marginTop: '8px'}}>
+                            <button type="button" className="btn-cancel" onClick={() => { setClientEditModal(null); setClientEditError(''); }} disabled={clientEditSaving}>Cancelar</button>
+                            <button type="button" className="btn-submit" style={{flex: 1}} onClick={saveClientEdit} disabled={clientEditSaving}>{clientEditSaving ? 'Salvando…' : 'Salvar'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

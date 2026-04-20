@@ -408,6 +408,10 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
         return window.matchMedia('(max-width: 960px)').matches;
     });
 
+    const [clientEditModal, setClientEditModal] = useState(null);
+    const [clientEditError, setClientEditError] = useState('');
+    const [clientEditSaving, setClientEditSaving] = useState(false);
+
     const todayStr = getLocalTodayStr();
 
     const adminFetch = async (url, options = {}) => {
@@ -418,6 +422,75 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
             onAdminSessionInvalid();
         }
         return res;
+    };
+
+    const openEditClient = (c) => {
+        setClientEditError('');
+        setClientEditModal({
+            id: c.id,
+            name: c.name || '',
+            phone: c.phone || '',
+            address: c.address || '',
+            email: String(c.email || '').trim()
+        });
+    };
+
+    const saveClientEdit = async () => {
+        if (!clientEditModal) return;
+        setClientEditError('');
+        const em = String(clientEditModal.email || '').trim().toLowerCase();
+        if (!isValidEmailFormat(em)) {
+            setClientEditError('Informe um e-mail válido.');
+            return;
+        }
+        const cleanPhone = String(clientEditModal.phone || '').replace(/\D/g, '');
+        if (!cleanPhone) {
+            setClientEditError('Telefone inválido.');
+            return;
+        }
+        if (!(clientEditModal.name || '').trim()) {
+            setClientEditError('Nome é obrigatório.');
+            return;
+        }
+        setClientEditSaving(true);
+        try {
+            const res = await adminFetch(`${API_BASE_URL}/admin/clients/${encodeURIComponent(clientEditModal.id)}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: (clientEditModal.name || '').trim(),
+                    phone: cleanPhone,
+                    address: (clientEditModal.address || '').trim(),
+                    email: em
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setClientEditError(data.error || 'Não foi possível salvar.');
+                return;
+            }
+            setClientEditModal(null);
+            await refreshData();
+        } catch {
+            setClientEditError('Falha de rede ao salvar.');
+        } finally {
+            setClientEditSaving(false);
+        }
+    };
+
+    const handleDeleteClientRecord = async (c) => {
+        if (!window.confirm(`Remover o cadastro de "${(c.name || '').trim() || 'esta cliente'}"? Esta ação não pode ser desfeita.`)) return;
+        try {
+            const res = await adminFetch(`${API_BASE_URL}/admin/clients/${encodeURIComponent(c.id)}`, { method: 'DELETE' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.error || 'Não foi possível remover.');
+                return;
+            }
+            await refreshData();
+        } catch {
+            alert('Falha de rede ao remover.');
+        }
     };
 
     useEffect(() => {
@@ -587,8 +660,12 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
         const balRaw = (it.remainingAmount != null && it.remainingAmount !== '') ? it.remainingAmount : null;
         const balNum = balRaw == null ? null : Number(balRaw);
         const balance = balNum != null && Number.isFinite(balNum) && balNum > 0 ? balNum : null;
+        const procFromApi = it.procedureTotal != null && it.procedureTotal !== '' ? Number(it.procedureTotal) : null;
         const service = SERVICES.find(s => s.id === it.serviceId);
-        const procedureListPrice = (service && typeof service.price === 'number') ? service.price : null;
+        const procedureListPrice =
+            procFromApi != null && Number.isFinite(procFromApi)
+                ? procFromApi
+                : (service && typeof service.price === 'number' ? service.price : null);
         return {
             payLabel,
             dateLabel,
@@ -829,18 +906,25 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                 <div className="appointments-list" style={{marginTop: '15px'}}>
                     {(!clients || clients.length === 0) ? <div className="empty-state"><i className="fas fa-users-slash"></i><p>Nenhuma cliente na base de dados (SQLite/PG).</p></div> : 
                         clients.map(client => (
-                            <div key={client.id} className="appointment-item" style={{alignItems: 'center'}}>
-                                <div className="appointment-info" style={{flex: 1}}>
+                            <div key={client.id} className="appointment-item" style={{alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px'}}>
+                                <div className="appointment-info" style={{flex: 1, minWidth: '200px'}}>
                                     <div className="appointment-cliente" style={{color: 'var(--primary-color)', fontSize: '1.2rem', marginBottom: '8px'}}><i className="fas fa-user-circle" style={{marginRight: '8px'}}></i> {client.name}</div>
                                     <div className="appointment-details">
                                         <div className="detail-badge"><i className="fab fa-whatsapp"></i> {client.phone}</div>
+                                        {client.email && <div className="detail-badge"><i className="fas fa-envelope"></i> {client.email}</div>}
                                         {client.address && <div className="detail-badge"><i className="fas fa-map-marker-alt"></i> {client.address}</div>}
                                     </div>
                                 </div>
-                                <div className="appointment-actions">
-                                    <a href={`https://wa.me/55${String(client.phone || '').replace(/\D/g, '')}`} target="_blank" className="btn-cancel" style={{color: '#25D366', borderColor: '#25D366', padding: '8px 16px', display: 'inline-flex', alignItems: 'center', gap: '8px', textDecoration: 'none'}}>
+                                <div className="appointment-actions" style={{display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center'}}>
+                                    <a href={`https://wa.me/55${String(client.phone || '').replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="btn-cancel" style={{color: '#25D366', borderColor: '#25D366', padding: '8px 16px', display: 'inline-flex', alignItems: 'center', gap: '8px', textDecoration: 'none'}}>
                                         <i className="fab fa-whatsapp" style={{fontSize: '18px'}}></i> Conversar
                                     </a>
+                                    <button type="button" className="btn-cancel" onClick={() => openEditClient(client)} title="Editar cadastro" style={{padding: '8px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px'}}>
+                                        <i className="fas fa-pen"></i> Editar
+                                    </button>
+                                    <button type="button" className="btn-delete" onClick={() => handleDeleteClientRecord(client)} title="Apagar cadastro" style={{padding: '8px 14px'}}>
+                                        <i className="fas fa-trash-alt"></i>
+                                    </button>
                                 </div>
                             </div>
                         ))
@@ -964,7 +1048,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                                                     <div style={{ fontWeight: 800, color: m.balance != null ? '#9a3412' : '#0f172a' }}>{m.balance != null ? formatCurrencyBRL(m.balance) : '—'}</div>
                                                 </div>
                                                 <div style={{ textAlign: 'right' }}>
-                                                    <div style={{ color: '#94a3b8', fontWeight: 700, fontSize: '11px', marginBottom: '2px' }}>Proc. (tabela)</div>
+                                                    <div style={{ color: '#94a3b8', fontWeight: 700, fontSize: '11px', marginBottom: '2px' }}>Total procedimento</div>
                                                     <div style={{ fontWeight: 800, color: '#0f172a' }}>{m.procedureListPrice != null ? formatCurrencyBRL(m.procedureListPrice) : '—'}</div>
                                                 </div>
                                             </div>
@@ -984,11 +1068,12 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                         }}>
                             <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
                                 <colgroup>
-                                    <col style={{ width: '20%' }} />
-                                    <col style={{ width: '26%' }} />
+                                    <col style={{ width: '18%' }} />
+                                    <col style={{ width: '22%' }} />
+                                    <col style={{ width: '12%' }} />
                                     <col style={{ width: '13%' }} />
-                                    <col style={{ width: '15%' }} />
-                                    <col style={{ width: '26%' }} />
+                                    <col style={{ width: '12%' }} />
+                                    <col style={{ width: '23%' }} />
                                 </colgroup>
                                 <thead>
                                     <tr>
@@ -997,6 +1082,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                                             { h: 'Serviço', align: 'left' },
                                             { h: 'Quando', align: 'left' },
                                             { h: 'Status', align: 'left' },
+                                            { h: 'Valor total procedimento', align: 'right' },
                                             { h: 'Valores', align: 'right' }
                                         ].map(({ h, align }) => (
                                             <th
@@ -1026,7 +1112,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                                 <tbody>
                                     {(!reportData?.items || reportData.items.length === 0) ? (
                                         <tr>
-                                            <td colSpan="5" style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>
+                                            <td colSpan="6" style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>
                                                 {reportLoading ? 'Carregando...' : 'Busque um período para carregar a tabela.'}
                                             </td>
                                         </tr>
@@ -1081,12 +1167,14 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                                                         {getStatusLabel(m.status)}
                                                     </span>
                                                 </td>
+                                                <td style={{ ...tdText, textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                                    {m.procedureListPrice != null ? formatCurrencyBRL(m.procedureListPrice) : '—'}
+                                                </td>
                                                 <td style={{ ...tdText, textAlign: 'right' }}>
                                                     <div style={{ display: 'inline-block', width: '100%', maxWidth: '220px', marginLeft: 'auto' }}>
                                                         {financeLine('Tipo', m.payLabel)}
                                                         {financeLine('Recebido', m.received != null ? formatCurrencyBRL(m.received) : '—')}
                                                         {financeLine('Saldo', m.balance != null ? formatCurrencyBRL(m.balance) : '—', { emphasize: m.balance != null })}
-                                                        {financeLine('Proc.', m.procedureListPrice != null ? formatCurrencyBRL(m.procedureListPrice) : '—')}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -1096,6 +1184,35 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                             </table>
                         </div>
                     )}
+                </div>
+            )}
+
+            {clientEditModal && (
+                <div className="password-overlay" style={{ zIndex: 10050 }}>
+                    <div className="password-modal" style={{ maxWidth: '420px', width: '100%', textAlign: 'left' }}>
+                        <h3 style={{ marginBottom: '16px', textAlign: 'center' }}>Editar cliente</h3>
+                        <div className="form-group full-width">
+                            <label className="form-label">Nome</label>
+                            <input type="text" className="form-control" value={clientEditModal.name} onChange={e => setClientEditModal({ ...clientEditModal, name: e.target.value })} />
+                        </div>
+                        <div className="form-group full-width">
+                            <label className="form-label">WhatsApp (somente números)</label>
+                            <input type="text" className="form-control" value={clientEditModal.phone} onChange={e => setClientEditModal({ ...clientEditModal, phone: e.target.value })} />
+                        </div>
+                        <div className="form-group full-width">
+                            <label className="form-label">E-mail</label>
+                            <input type="email" className="form-control" autoComplete="email" value={clientEditModal.email} onChange={e => setClientEditModal({ ...clientEditModal, email: e.target.value })} />
+                        </div>
+                        <div className="form-group full-width">
+                            <label className="form-label">Endereço</label>
+                            <input type="text" className="form-control" value={clientEditModal.address} onChange={e => setClientEditModal({ ...clientEditModal, address: e.target.value })} />
+                        </div>
+                        {clientEditError && <div className="alert alert-error" style={{ marginBottom: '12px', fontSize: '13px' }}>{clientEditError}</div>}
+                        <div className="modal-actions" style={{ marginTop: '8px' }}>
+                            <button type="button" className="btn-cancel" onClick={() => { setClientEditModal(null); setClientEditError(''); }} disabled={clientEditSaving}>Cancelar</button>
+                            <button type="button" className="btn-submit" style={{ flex: 1 }} onClick={saveClientEdit} disabled={clientEditSaving}>{clientEditSaving ? 'Salvando…' : 'Salvar'}</button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

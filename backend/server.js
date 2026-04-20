@@ -433,6 +433,51 @@ function normalizeAppointmentFinancials(row) {
     };
 }
 
+/**
+ * Valor recebido no relatório (apenas confirmado/concluído).
+ * Prioriza paid_amount do registro; se ausente/≤0, usa amount_charged como fallback único.
+ */
+function reportEffectiveReceivedPaid(row) {
+    if (row.status !== 'confirmed' && row.status !== 'completed') {
+        return 0;
+    }
+    let p = toMoneyNumber(row.paid_amount);
+    if (p == null || p <= 0) {
+        p = toMoneyNumber(row.amount_charged);
+    }
+    if (p == null || p < 0) {
+        return 0;
+    }
+    return roundMoney2(p);
+}
+
+/**
+ * Classificação parcial vs integral para agregação do relatório (evita “tudo parcial” por default da normalização).
+ */
+function reportPaymentKindForAggregation(row, fin) {
+    const raw = row.payment_type != null ? String(row.payment_type).toLowerCase().trim() : '';
+    if (raw === 'full' || raw === 'partial') {
+        return raw;
+    }
+    const tot = fin.totalServicePrice || 0;
+    const paid = toMoneyNumber(row.paid_amount);
+    const charged = toMoneyNumber(row.amount_charged);
+    const ref = paid != null && paid > 0 ? paid : charged;
+    if (tot > 0 && ref != null && Math.abs(ref - tot) < 0.01) {
+        return 'full';
+    }
+    return 'partial';
+}
+
+/** Saldo a receber (só parcial), ≥ 0. */
+function reportEffectiveRemainingPartial(row, fin) {
+    let rem = toMoneyNumber(row.remaining_amount);
+    if (rem == null || rem < 0) {
+        rem = fin.remainingAmount != null ? fin.remainingAmount : 0;
+    }
+    return Math.max(0, roundMoney2(rem));
+}
+
 function buildPaymentSummary(row) {
     const fin = normalizeAppointmentFinancials(row);
     const status = row.status;
@@ -805,6 +850,100 @@ app.post('/clients', async (req, res) => {
     }
 });
 
+app.patch('/admin/clients/:id', requireAdminAuth, async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+
+    const rawId = req.params.id;
+    const id = rawId != null ? String(rawId).trim() : '';
+    if (!id) {
+        return res.status(400).json({ error: 'ID inválido.' });
+    }
+
+    try {
+        const { name, phone, address, email } = req.body || {};
+
+        if (!name || !phone) {
+            return res.status(400).json({ error: 'Nome e telefone são obrigatórios.' });
+        }
+
+        const cleanPhone = String(phone).replace(/\D/g, '');
+        if (!cleanPhone) {
+            return res.status(400).json({ error: 'Telefone inválido.' });
+        }
+
+        const normEmail = normalizeEmail(email);
+        if (!isValidEmailBasic(normEmail)) {
+            return res.status(400).json({ error: 'Informe um e-mail válido.' });
+        }
+
+        const cur = await pool.query('SELECT id FROM clients WHERE id = $1', [id]);
+        if (cur.rows.length === 0) {
+            return res.status(404).json({ error: 'Cliente não encontrada.' });
+        }
+
+        const conflict = await pool.query(
+            'SELECT id FROM clients WHERE phone = $1 AND id <> $2',
+            [cleanPhone, id]
+        );
+        if (conflict.rows.length > 0) {
+            return res.status(409).json({ error: 'Já existe outro cadastro com este telefone.' });
+        }
+
+        const upd = await pool.query(
+            `
+            UPDATE clients
+            SET name = $1,
+                phone = $2,
+                address = $3,
+                email = $4
+            WHERE id = $5
+            RETURNING *
+        `,
+            [name, cleanPhone, address || '', normEmail, id]
+        );
+
+        await pool.query(
+            `UPDATE appointments SET client_name = $1, client_phone = $2 WHERE client_id = $3`,
+            [name, cleanPhone, id]
+        );
+
+        return res.json(upd.rows[0]);
+    } catch (error) {
+        console.error('[PATCH /admin/clients/:id] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao atualizar cliente.' });
+    }
+});
+
+app.delete('/admin/clients/:id', requireAdminAuth, async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+
+    const rawId = req.params.id;
+    const id = rawId != null ? String(rawId).trim() : '';
+    if (!id) {
+        return res.status(400).json({ error: 'ID inválido.' });
+    }
+
+    try {
+        const del = await pool.query('DELETE FROM clients WHERE id = $1 RETURNING id', [id]);
+        if (del.rowCount === 0) {
+            return res.status(404).json({ error: 'Cliente não encontrada.' });
+        }
+        return res.json({ ok: true, id: del.rows[0].id });
+    } catch (error) {
+        if (error && error.code === '23503') {
+            return res.status(409).json({
+                error: 'Não é possível apagar: existem agendamentos vinculados a esta cliente. Cancele ou remova os agendamentos antes.'
+            });
+        }
+        console.error('[DELETE /admin/clients/:id] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao remover cliente.' });
+    }
+});
+
 // ====================== API AGENDAMENTOS ======================
 
 app.get('/appointments', async (req, res) => {
@@ -890,7 +1029,8 @@ app.get('/admin/report', requireAdminAuth, async (req, res) => {
                 amountCharged: fin.amountCharged,
                 remainingAmount: fin.remainingAmount,
                 captureMethod: r.capture_method,
-                paidAmount: fin.paidAmount
+                paidAmount: fin.paidAmount,
+                procedureTotal: fin.totalServicePrice != null ? roundMoney2(fin.totalServicePrice) : null
             };
         });
 
@@ -922,17 +1062,16 @@ app.get('/admin/report', requireAdminAuth, async (req, res) => {
             if (!isPaidStatus) continue;
 
             const fin = normalizeAppointmentFinancials(r);
-            const received = fin.paidAmount != null && fin.paidAmount > 0
-                ? fin.paidAmount
-                : (fin.amountCharged != null ? fin.amountCharged : 0);
+            const received = reportEffectiveReceivedPaid(r);
+            const kind = reportPaymentKindForAggregation(r, fin);
 
             summary.totalRevenue += received;
             summary.totalExpectedRevenue += fin.totalServicePrice || 0;
 
-            if (fin.paymentType === 'partial') {
+            if (kind === 'partial') {
                 summary.totalPartialReceived += received;
-                summary.totalRemainingToReceive += fin.remainingAmount || 0;
-            } else if (fin.paymentType === 'full') {
+                summary.totalRemainingToReceive += reportEffectiveRemainingPartial(r, fin);
+            } else if (kind === 'full') {
                 summary.totalFullReceived += received;
             }
         }
