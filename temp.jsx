@@ -51,13 +51,14 @@ const getStatusLabel = (status) => {
     }
 };
 
+/** Cores de status alinhadas à marca (pendente em tons roxo/rosa; demais legíveis em cards/tabela). */
 const getStatusColor = (status) => {
     switch (status) {
-        case 'pending_payment': return '#d97706';
-        case 'confirmed': return '#059669';
-        case 'cancelled': return '#dc2626';
-        case 'completed': return '#2563eb';
-        default: return '#64748b';
+        case 'pending_payment': return '#7A5494';
+        case 'confirmed': return '#2d8660';
+        case 'cancelled': return '#c45c6a';
+        case 'completed': return '#5a4d7a';
+        default: return '#6b5d7a';
     }
 };
 
@@ -131,8 +132,8 @@ const AppointmentFinanceBlock = ({ app, mode = 'card' }) => {
 
     const row = (label, value, { emphasize = false, muted = false } = {}) => (
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'baseline' }}>
-            <div style={{ fontSize: '12px', color: muted ? '#64748b' : '#334155', fontWeight: 600 }}>{label}</div>
-            <div style={{ fontSize: valueSize, fontWeight: emphasize ? 800 : 700, color: emphasize ? '#0f172a' : '#0f172a', textAlign: 'right', whiteSpace: 'nowrap' }}>
+            <div style={{ fontSize: '12px', color: muted ? 'var(--text-muted)' : 'var(--text-dark)', fontWeight: 600 }}>{label}</div>
+            <div style={{ fontSize: valueSize, fontWeight: emphasize ? 800 : 700, color: 'var(--text-dark)', textAlign: 'right', whiteSpace: 'nowrap' }}>
                 {value}
             </div>
         </div>
@@ -143,19 +144,19 @@ const AppointmentFinanceBlock = ({ app, mode = 'card' }) => {
             marginTop: '10px',
             padding: pad,
             borderRadius: '10px',
-            border: '1px solid #e2e8f0',
-            background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)'
+            border: '1px solid var(--border-color)',
+            background: 'linear-gradient(180deg, var(--card-bg) 0%, var(--bg-color) 100%)'
         }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                <div style={{ fontSize: titleSize, fontWeight: 900, color: '#0f172a', letterSpacing: '0.2px' }}>Pagamento</div>
+                <div style={{ fontSize: titleSize, fontWeight: 900, color: 'var(--text-dark)', letterSpacing: '0.2px' }}>Pagamento</div>
                 <div style={{
                     fontSize: '11px',
                     fontWeight: 800,
                     padding: '4px 8px',
                     borderRadius: '999px',
-                    border: '1px solid #e2e8f0',
-                    background: '#fff',
-                    color: '#0f172a',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--card-bg)',
+                    color: 'var(--text-dark)',
                     whiteSpace: 'nowrap'
                 }}>
                     {ptLabel === '—' ? '—' : `Tipo: ${ptLabel}`}
@@ -263,6 +264,16 @@ const generateTimeSlots = (dateString, existingAppointments, blockedSlotsList = 
 
     return slots.map((time) => {
         const slotStartMins = parseTimeToMinutes(time);
+        if (slotStartMins == null) {
+            return {
+                time,
+                available: false,
+                isPast: false,
+                isBooked: true,
+                isBlockedManual: false,
+                hasAppointmentAtTime: false
+            };
+        }
         const slotEndMins = slotStartMins + 30;
         const isPast = isToday && slotStartMins <= currentTotalMinutes;
         const isBlockedManual = blockedSet.has(time);
@@ -405,7 +416,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
     const [blockManageDate, setBlockManageDate] = useState(getLocalTodayStr());
     const [reportLayoutNarrow, setReportLayoutNarrow] = useState(() => {
         if (typeof window === 'undefined' || !window.matchMedia) return false;
-        return window.matchMedia('(max-width: 960px)').matches;
+        return window.matchMedia('(max-width: 900px)').matches;
     });
 
     const [clientEditModal, setClientEditModal] = useState(null);
@@ -499,7 +510,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
 
     useEffect(() => {
         if (typeof window === 'undefined' || !window.matchMedia) return;
-        const mq = window.matchMedia('(max-width: 960px)');
+        const mq = window.matchMedia('(max-width: 900px)');
         const apply = () => setReportLayoutNarrow(!!mq.matches);
         apply();
         if (mq.addEventListener) mq.addEventListener('change', apply);
@@ -627,22 +638,22 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
     const sortedApps = [...filteredApps].sort((a, b) => new Date(a.date + 'T' + a.time) - new Date(b.date + 'T' + b.time));
 
     const reportCardShell = {
-        background: '#ffffff',
-        border: '1px solid #e5e7eb',
+        background: 'var(--card-bg)',
+        border: '1px solid var(--border-color)',
         borderRadius: '12px',
         padding: '14px',
         minWidth: 0,
         flex: '1 1 158px',
         maxWidth: '100%',
-        boxShadow: '0 1px 0 rgba(15, 23, 42, 0.04)',
+        boxShadow: 'var(--shadow-card)',
         boxSizing: 'border-box'
     };
 
     const ReportCard = ({ title, value, hint }) => (
         <div style={reportCardShell}>
-            <div style={{fontSize: '12px', color: '#64748b', marginBottom: '6px', lineHeight: 1.35}}>{title}</div>
-            <div style={{fontSize: '18px', fontWeight: 800, color: '#0f172a', letterSpacing: '-0.2px', wordBreak: 'break-word'}}>{value}</div>
-            {hint && <div style={{fontSize: '12px', color: '#94a3b8', marginTop: '8px', lineHeight: 1.4}}>{hint}</div>}
+            <div style={{fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', lineHeight: 1.35}}>{title}</div>
+            <div style={{fontSize: '18px', fontWeight: 800, color: 'var(--text-dark)', letterSpacing: '-0.2px', wordBreak: 'break-word'}}>{value}</div>
+            {hint && <div style={{fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px', lineHeight: 1.4}}>{hint}</div>}
         </div>
     );
 
@@ -682,13 +693,13 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
     };
 
     return (
-        <div className="booking-section step-container">
-            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+        <div className="booking-section step-container" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px'}}>
                 <h2 className="section-title" style={{margin:0}}>Painel Profissional</h2>
                 <button className="refresh-btn" onClick={refreshData} title="Atualizar agora"><i className="fas fa-sync-alt"></i></button>
             </div>
             
-            <div className="filter-tabs" style={{marginTop: '20px', borderBottom: '1px solid #eee', paddingBottom: '15px'}}>
+            <div className="filter-tabs" style={{marginTop: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '15px'}}>
                 <button className={`tab-btn ${adminView === 'agenda' ? 'active' : ''}`} onClick={() => setAdminView('agenda')}><i className="fas fa-calendar-alt"></i> Agenda Geral</button>
                 <button className={`tab-btn ${adminView === 'clientes' ? 'active' : ''}`} onClick={() => setAdminView('clientes')}><i className="fas fa-users"></i> Radar de Clientes</button>
                 <button className={`tab-btn ${adminView === 'relatorio' ? 'active' : ''}`} onClick={() => setAdminView('relatorio')}><i className="fas fa-chart-line"></i> Relatório Financeiro</button>
@@ -696,10 +707,10 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
             </div>
 
             {adminView === 'config' && (
-                <div style={{padding: '15px', backgroundColor: '#f9f9f9', borderRadius: '8px', border: '1px solid #eee'}}>
+                <div style={{padding: '15px', backgroundColor: 'var(--bg-color)', borderRadius: '8px', border: '1px solid var(--border-color)'}}>
                     <label className="form-label">Telefone da Profissional (Para links do WhatsApp)</label>
-                    <div style={{display: 'flex', gap: '10px'}}>
-                        <input type="text" className="form-control" value={profPhoneInput} onChange={e => setProfPhoneInput(e.target.value)} placeholder="Ex: 41984928985" style={{maxWidth: '300px'}} />
+                    <div style={{display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'stretch'}}>
+                        <input type="text" className="form-control" value={profPhoneInput} onChange={e => setProfPhoneInput(e.target.value)} placeholder="Ex: 41984928985" style={{flex: '1 1 200px', maxWidth: '100%', minWidth: 0}} />
                         <button className="btn-submit" onClick={saveConfig} style={{width: 'auto', padding: '10px 20px'}}>Salvar</button>
                     </div>
                 </div>
@@ -713,11 +724,11 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                         <button className={`tab-btn ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>Todos</button>
                     </div>
 
-                    <div style={{ marginTop: '14px', padding: '14px 16px', borderRadius: '12px', border: '1px solid #e5e7eb', background: '#fafafa' }}>
+                    <div style={{ marginTop: '14px', padding: '14px 16px', borderRadius: '12px', border: '1px solid var(--border-color)', background: 'var(--bg-color)' }}>
                         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '12px', marginBottom: '8px' }}>
                             <div>
-                                <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>Bloquear horários</div>
-                                <div style={{ fontSize: '12px', color: '#64748b', lineHeight: 1.4, maxWidth: '520px' }}>
+                                <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text-dark)', marginBottom: '6px' }}>Bloquear horários</div>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.4, maxWidth: 'min(100%, 520px)' }}>
                                     A grade respeita intervalo mínimo de <strong>1 hora</strong> entre agendamentos. Toque em um horário livre para bloquear; em <strong>Bloqueado</strong> para liberar.
                                 </div>
                             </div>
@@ -758,7 +769,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                                                     : ''
                                         }
                                         style={{
-                                            minWidth: '92px',
+                                            minWidth: 'min(92px, 28vw)',
                                             flexDirection: 'column',
                                             alignItems: 'stretch',
                                             gap: '4px',
@@ -769,8 +780,8 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                                                     : slot.isBlockedManual || canTryBlock
                                                       ? 'pointer'
                                                       : 'default',
-                                            borderColor: slot.isBlockedManual ? '#c4b5fd' : undefined,
-                                            background: slot.isBlockedManual ? '#f5f3ff' : undefined
+                                            borderColor: slot.isBlockedManual ? 'var(--brand-light)' : undefined,
+                                            background: slot.isBlockedManual ? 'var(--secondary-color)' : undefined
                                         }}
                                         onClick={() => {
                                             if (slot.isPast || slot.hasAppointmentAtTime) return;
@@ -786,7 +797,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                                             style={{
                                                 fontSize: '10px',
                                                 fontWeight: 700,
-                                                color: slot.isBlockedManual ? '#5b21b6' : slot.hasAppointmentAtTime ? '#0369a1' : '#64748b',
+                                                color: slot.isBlockedManual ? 'var(--brand-primary)' : slot.hasAppointmentAtTime ? '#1d6b8a' : 'var(--text-muted)',
                                                 textTransform: 'uppercase',
                                                 letterSpacing: '0.3px'
                                             }}
@@ -853,31 +864,31 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                                                     marginTop: '10px',
                                                     padding: '10px 12px',
                                                     borderRadius: '10px',
-                                                    border: '1px solid #e5e7eb',
-                                                    background: '#ffffff'
+                                                    border: '1px solid var(--border-color)',
+                                                    background: 'var(--card-bg)'
                                                 }}>
                                                     {!!paymentLabel && (
-                                                        <div style={{fontSize: '13px', color: '#0f172a', marginBottom: '6px'}}>
+                                                        <div style={{fontSize: '13px', color: 'var(--text-dark)', marginBottom: '6px'}}>
                                                             <strong>Pagamento:</strong> {paymentLabel}
                                                         </div>
                                                     )}
-                                                    <div style={{display: 'flex', flexWrap: 'wrap', gap: '10px', fontSize: '13px', color: '#334155'}}>
+                                                    <div style={{display: 'flex', flexWrap: 'wrap', gap: '10px', fontSize: '13px', color: 'var(--text-dark)'}}>
                                                         {paid != null && (
-                                                            <div style={{border: '1px solid #e2e8f0', borderRadius: '10px', padding: '8px 10px', background: '#f8fafc'}}>
-                                                                <div style={{fontSize: '11px', color: '#64748b', fontWeight: 700}}>Recebido</div>
+                                                            <div style={{border: '1px solid var(--border-color)', borderRadius: '10px', padding: '8px 10px', background: 'var(--surface-muted)', flex: '1 1 120px', minWidth: 0}}>
+                                                                <div style={{fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700}}>Recebido</div>
                                                                 <div style={{fontWeight: 800}}>{formatCurrencyBRL(paid)}</div>
                                                             </div>
                                                         )}
                                                         {(charged != null && charged !== '' && paid == null) && (
-                                                            <div style={{border: '1px solid #e2e8f0', borderRadius: '10px', padding: '8px 10px', background: '#f8fafc'}}>
-                                                                <div style={{fontSize: '11px', color: '#64748b', fontWeight: 700}}>Valor no checkout</div>
+                                                            <div style={{border: '1px solid var(--border-color)', borderRadius: '10px', padding: '8px 10px', background: 'var(--surface-muted)', flex: '1 1 120px', minWidth: 0}}>
+                                                                <div style={{fontSize: '11px', color: 'var(--text-muted)', fontWeight: 700}}>Valor no checkout</div>
                                                                 <div style={{fontWeight: 800}}>{formatCurrencyBRL(charged)}</div>
                                                             </div>
                                                         )}
                                                         {(remaining != null && remaining !== '') && (
-                                                            <div style={{border: '1px solid #e2e8f0', borderRadius: '10px', padding: '8px 10px', background: '#fff7ed'}}>
-                                                                <div style={{fontSize: '11px', color: '#9a3412', fontWeight: 700}}>Saldo restante</div>
-                                                                <div style={{fontWeight: 800, color: '#9a3412'}}>{formatCurrencyBRL(remaining)}</div>
+                                                            <div style={{border: '1px solid rgba(196, 92, 106, 0.35)', borderRadius: '10px', padding: '8px 10px', background: 'var(--danger-soft)', flex: '1 1 120px', minWidth: 0}}>
+                                                                <div style={{fontSize: '11px', color: 'var(--danger)', fontWeight: 700}}>Saldo restante</div>
+                                                                <div style={{fontWeight: 800, color: 'var(--danger)'}}>{formatCurrencyBRL(remaining)}</div>
                                                             </div>
                                                         )}
                                                     </div>
@@ -933,11 +944,11 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
             )}
 
             {adminView === 'relatorio' && (
-                <div style={{marginTop: '15px'}}>
+                <div style={{marginTop: '15px', width: '100%', maxWidth: '100%', boxSizing: 'border-box'}}>
                     <div style={{display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '12px'}}>
-                        <div>
-                            <h3 className="section-title" style={{margin: 0, fontSize: '20px'}}>Relatório Financeiro</h3>
-                            <div style={{fontSize: '13px', color: '#64748b', marginTop: '6px'}}>
+                        <div style={{minWidth: 0, flex: '1 1 220px'}}>
+                            <h3 className="section-title" style={{margin: 0, fontSize: 'clamp(17px, 3vw, 20px)'}}>Relatório Financeiro</h3>
+                            <div style={{fontSize: '13px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.45}}>
                                 Consolidação por período (confirmados/concluídos entram nos totais de receita conforme backend).
                             </div>
                         </div>
@@ -957,19 +968,19 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                     </div>
 
                     {!!reportError && (
-                        <div style={{marginBottom: '12px', padding: '10px 12px', borderRadius: '10px', border: '1px solid #fecaca', background: '#fef2f2', color: '#991b1b', fontSize: '13px'}}>
+                        <div style={{marginBottom: '12px', padding: '10px 12px', borderRadius: '10px', border: '1px solid rgba(196, 92, 106, 0.35)', background: 'var(--danger-soft)', color: '#7a2f38', fontSize: '13px'}}>
                             {reportError}
                         </div>
                     )}
 
                     {reportData?.summary && (
                         <>
-                            <div style={{fontSize: '13px', color: '#64748b', marginBottom: '12px'}}>
+                            <div style={{fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px'}}>
                                 Período: <strong>{new Date(reportStartDate + 'T12:00:00').toLocaleDateString('pt-BR')}</strong> até{' '}
                                 <strong>{new Date(reportEndDate + 'T12:00:00').toLocaleDateString('pt-BR')}</strong>
                             </div>
 
-                            <div style={{display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '10px'}}>
+                            <div style={{display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '10px', width: '100%'}}>
                                 <ReportCard
                                     title="Total recebido (efetivo)"
                                     value={formatCurrencyBRL(reportData.summary.totalRevenue)}
@@ -986,7 +997,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                                     hint="Restante em agendamentos parciais já confirmados ou concluídos."
                                 />
                             </div>
-                            <div style={{display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '14px'}}>
+                            <div style={{display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '14px', width: '100%'}}>
                                 <ReportCard title="Sinais recebidos" value={formatCurrencyBRL(reportData.summary.totalPartialReceived)} hint="Parcela recebida em pagamentos parciais." />
                                 <ReportCard title="Integrais recebidos" value={formatCurrencyBRL(reportData.summary.totalFullReceived)} hint="Recebido em pagamentos integrais." />
                                 <ReportCard title="Agendamentos (período)" value={String(reportData.summary.totalAppointments || 0)} hint="Todos os status no intervalo." />
@@ -996,9 +1007,9 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                     )}
 
                     {reportLayoutNarrow ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
                             {(!reportData?.items || reportData.items.length === 0) ? (
-                                <div style={{ ...reportCardShell, padding: '16px', fontSize: '13px', color: '#64748b' }}>
+                                <div style={{ ...reportCardShell, padding: '16px', fontSize: '13px', color: 'var(--text-muted)' }}>
                                     {reportLoading ? 'Carregando...' : 'Busque um período para carregar o relatório.'}
                                 </div>
                             ) : (
@@ -1008,8 +1019,8 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                                         <div key={m.id || idx} style={reportCardShell}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start', marginBottom: '10px' }}>
                                                 <div style={{ minWidth: 0, flex: 1 }}>
-                                                    <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a', lineHeight: 1.3, wordBreak: 'break-word' }}>{m.clientName}</div>
-                                                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '4px', lineHeight: 1.35, wordBreak: 'break-word' }}>{m.serviceName}</div>
+                                                    <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-dark)', lineHeight: 1.3, wordBreak: 'break-word' }}>{m.clientName}</div>
+                                                    <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px', lineHeight: 1.35, wordBreak: 'break-word' }}>{m.serviceName}</div>
                                                 </div>
                                                 <span style={{
                                                     flexShrink: 0,
@@ -1028,28 +1039,28 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                                                     {getStatusLabel(m.status)}
                                                 </span>
                                             </div>
-                                            <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px' }}>
-                                                <strong style={{ color: '#334155' }}>{m.dateLabel}</strong> às <strong style={{ color: '#334155' }}>{m.time}</strong>
+                                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '10px' }}>
+                                                <strong style={{ color: 'var(--text-dark)' }}>{m.dateLabel}</strong> às <strong style={{ color: 'var(--text-dark)' }}>{m.time}</strong>
                                                 {m.capture !== '—' && (
                                                     <span style={{ display: 'block', marginTop: '6px', fontSize: '11px' }}>Captura: {m.capture}</span>
                                                 )}
                                             </div>
-                                            <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '10px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px', fontSize: '12px' }}>
+                                            <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '10px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px 12px', fontSize: '12px' }}>
                                                 <div>
-                                                    <div style={{ color: '#94a3b8', fontWeight: 700, fontSize: '11px', marginBottom: '2px' }}>Pagamento</div>
-                                                    <div style={{ fontWeight: 700, color: '#0f172a' }}>{m.payLabel}</div>
+                                                    <div style={{ color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', marginBottom: '2px' }}>Pagamento</div>
+                                                    <div style={{ fontWeight: 700, color: 'var(--text-dark)' }}>{m.payLabel}</div>
                                                 </div>
                                                 <div style={{ textAlign: 'right' }}>
-                                                    <div style={{ color: '#94a3b8', fontWeight: 700, fontSize: '11px', marginBottom: '2px' }}>Recebido</div>
-                                                    <div style={{ fontWeight: 800, color: '#0f172a' }}>{m.received != null ? formatCurrencyBRL(m.received) : '—'}</div>
+                                                    <div style={{ color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', marginBottom: '2px' }}>Recebido</div>
+                                                    <div style={{ fontWeight: 800, color: 'var(--text-dark)' }}>{m.received != null ? formatCurrencyBRL(m.received) : '—'}</div>
                                                 </div>
                                                 <div>
-                                                    <div style={{ color: '#94a3b8', fontWeight: 700, fontSize: '11px', marginBottom: '2px' }}>Saldo</div>
-                                                    <div style={{ fontWeight: 800, color: m.balance != null ? '#9a3412' : '#0f172a' }}>{m.balance != null ? formatCurrencyBRL(m.balance) : '—'}</div>
+                                                    <div style={{ color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', marginBottom: '2px' }}>Saldo</div>
+                                                    <div style={{ fontWeight: 800, color: m.balance != null ? 'var(--danger)' : 'var(--text-dark)' }}>{m.balance != null ? formatCurrencyBRL(m.balance) : '—'}</div>
                                                 </div>
                                                 <div style={{ textAlign: 'right' }}>
-                                                    <div style={{ color: '#94a3b8', fontWeight: 700, fontSize: '11px', marginBottom: '2px' }}>Total procedimento</div>
-                                                    <div style={{ fontWeight: 800, color: '#0f172a' }}>{m.procedureListPrice != null ? formatCurrencyBRL(m.procedureListPrice) : '—'}</div>
+                                                    <div style={{ color: 'var(--text-muted)', fontWeight: 700, fontSize: '11px', marginBottom: '2px' }}>Total procedimento</div>
+                                                    <div style={{ fontWeight: 800, color: 'var(--text-dark)' }}>{m.procedureListPrice != null ? formatCurrencyBRL(m.procedureListPrice) : '—'}</div>
                                                 </div>
                                             </div>
                                         </div>
@@ -1058,14 +1069,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                             )}
                         </div>
                     ) : (
-                        <div style={{
-                            background: '#ffffff',
-                            border: '1px solid #e5e7eb',
-                            borderRadius: '12px',
-                            maxWidth: '100%',
-                            boxSizing: 'border-box',
-                            overflow: 'hidden'
-                        }}>
+                        <div className="report-table-wrap">
                             <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
                                 <colgroup>
                                     <col style={{ width: '18%' }} />
@@ -1091,13 +1095,13 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                                                     position: 'sticky',
                                                     top: 0,
                                                     zIndex: 2,
-                                                    background: '#f8fafc',
-                                                    color: '#0f172a',
+                                                    background: 'var(--surface-muted)',
+                                                    color: 'var(--text-dark)',
                                                     fontSize: '11px',
                                                     letterSpacing: '0.4px',
                                                     textTransform: 'uppercase',
                                                     padding: '10px 10px',
-                                                    borderBottom: '1px solid #e2e8f0',
+                                                    borderBottom: '1px solid var(--border-color)',
                                                     textAlign: align,
                                                     whiteSpace: 'normal',
                                                     lineHeight: 1.25,
@@ -1112,7 +1116,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                                 <tbody>
                                     {(!reportData?.items || reportData.items.length === 0) ? (
                                         <tr>
-                                            <td colSpan="6" style={{ padding: '14px', fontSize: '13px', color: '#64748b' }}>
+                                            <td colSpan="6" style={{ padding: '14px', fontSize: '13px', color: 'var(--text-muted)' }}>
                                                 {reportLoading ? 'Carregando...' : 'Busque um período para carregar a tabela.'}
                                             </td>
                                         </tr>
@@ -1120,9 +1124,9 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                                         const m = buildReportRowModel(it);
                                         const tdText = {
                                             padding: '10px 10px',
-                                            borderBottom: '1px solid #f1f5f9',
+                                            borderBottom: '1px solid var(--border-color)',
                                             fontSize: '13px',
-                                            color: '#0f172a',
+                                            color: 'var(--text-dark)',
                                             verticalAlign: 'top',
                                             textAlign: 'left',
                                             whiteSpace: 'normal',
@@ -1131,8 +1135,8 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                                         };
                                         const financeLine = (label, value, { emphasize = false } = {}) => (
                                             <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '12px', marginTop: label === 'Tipo' ? 0 : '4px' }}>
-                                                <span style={{ color: '#64748b', fontWeight: 600 }}>{label}</span>
-                                                <span style={{ fontWeight: emphasize ? 800 : 700, color: emphasize ? '#9a3412' : '#0f172a', textAlign: 'right', whiteSpace: 'nowrap' }}>{value}</span>
+                                                <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{label}</span>
+                                                <span style={{ fontWeight: emphasize ? 800 : 700, color: emphasize ? 'var(--danger)' : 'var(--text-dark)', textAlign: 'right', whiteSpace: 'nowrap' }}>{value}</span>
                                             </div>
                                         );
                                         return (
@@ -1140,13 +1144,13 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                                                 <td style={tdText}>
                                                     <div style={{ fontWeight: 700 }}>{m.clientName}</div>
                                                     {m.capture !== '—' && (
-                                                        <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px', lineHeight: 1.3, wordBreak: 'break-word' }}>{m.capture}</div>
+                                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.3, wordBreak: 'break-word' }}>{m.capture}</div>
                                                     )}
                                                 </td>
                                                 <td style={tdText}>{m.serviceName}</td>
                                                 <td style={tdText}>
                                                     <div style={{ fontWeight: 600 }}>{m.dateLabel}</div>
-                                                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{m.time}</div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>{m.time}</div>
                                                 </td>
                                                 <td style={tdText}>
                                                     <span style={{
@@ -1320,7 +1324,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
         (showCommittedResults || (searchAttempted && searchedPhoneDigits === null));
 
     return (
-        <div className="booking-section step-container">
+        <div className="booking-section step-container" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
                 <button className="btn-admin" onClick={() => setView('client')} style={{ marginBottom: 0 }}>
                     <i className="fas fa-arrow-left"></i> Voltar
@@ -1386,12 +1390,12 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                             marginBottom: '16px',
                             padding: '10px 12px',
                             borderRadius: '10px',
-                            background: '#f8fafc',
-                            border: '1px solid #e2e8f0'
+                            background: 'var(--surface-muted)',
+                            border: '1px solid var(--border-color)'
                         }}
                     >
-                        <div style={{ fontSize: '12px', color: '#64748b', letterSpacing: '0.02em' }}>Agendamentos de</div>
-                        <div style={{ fontSize: '17px', fontWeight: 650, color: '#0f172a', marginTop: '2px', lineHeight: 1.25 }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', letterSpacing: '0.02em' }}>Agendamentos de</div>
+                        <div style={{ fontSize: '17px', fontWeight: 650, color: 'var(--text-dark)', marginTop: '2px', lineHeight: 1.25 }}>
                             {displayClient.name}
                         </div>
                         <button
@@ -1417,12 +1421,12 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
 
             <div className="appointments-list" style={{ marginTop: displayClient ? '4px' : '8px' }}>
                 {!searchAttempted && searchedPhoneDigits === null && (
-                    <div style={{ fontSize: '13px', color: '#94a3b8', fontStyle: 'italic', padding: '8px 0 4px' }}>
+                    <div style={{ fontSize: '13px', color: 'var(--text-muted)', fontStyle: 'italic', padding: '8px 0 4px' }}>
                         Os agendamentos aparecem aqui depois que você buscar pelo número.
                     </div>
                 )}
                 {searchAttempted && searchedPhoneDigits !== null && !showCommittedResults && (
-                    <div style={{ fontSize: '12px', color: '#94a3b8', padding: '6px 0 8px', lineHeight: 1.45 }}>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', padding: '6px 0 8px', lineHeight: 1.45 }}>
                         O número no campo mudou em relação à última busca — toque em <strong>Buscar</strong> para consultar de novo.
                     </div>
                 )}
@@ -1512,9 +1516,9 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                                             marginTop: '10px',
                                             padding: '10px 12px',
                                             borderRadius: '10px',
-                                            border: '1px solid #e2e8f0',
-                                            background: '#f8fafc',
-                                            color: '#475569',
+                                            border: '1px solid var(--border-color)',
+                                            background: 'var(--surface-muted)',
+                                            color: 'var(--text-muted)',
                                             fontSize: '12px',
                                             lineHeight: 1.45
                                         }}>
@@ -1524,7 +1528,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
 
                                     {app.location && <div className="obs-text"><strong>Endereço do Local:</strong> {app.location}</div>}
                                 </div>
-                                <div className="appointment-actions" style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 200px', minWidth: '200px' }}>
+                                <div className="appointment-actions" style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1 1 200px', minWidth: 'min(100%, 200px)' }}>
                                     {isPending && !isCancelled && !isPast && (
                                         <>
                                             {hasPayLink ? (
@@ -1546,7 +1550,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                                             <button className="btn-cancel" onClick={() => simulaPagamento(app.id)} style={{ fontSize: '12px', padding: '8px' }}>
                                                 Simular pagamento (teste)
                                             </button>
-                                            <div style={{ fontSize: '11px', color: '#64748b', textAlign: 'center', lineHeight: 1.35 }}>
+                                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.35 }}>
                                                 Abre em uma nova aba. Se já pagou, aguarde alguns instantes e atualize — o status muda automaticamente.
                                             </div>
                                         </>
@@ -1557,7 +1561,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                                         </button>
                                     )}
                                     {!canCancel && !isPast && !isCancelled && (
-                                        <span style={{ fontSize: '11px', color: '#777', textAlign: 'center', lineHeight: 1.35 }}>
+                                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.35 }}>
                                             Cancelamento indisponível aqui com menos de 2 horas para o horário. Fale com a profissional pelo WhatsApp.
                                         </span>
                                     )}
@@ -1737,9 +1741,9 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
     const createdIsPartial = String(createdApp?.paymentType || '').toLowerCase() === 'partial';
 
     return (
-        <div>
+        <div style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
             {step === 1 && (
-                <div className="booking-section step-container">
+                <div className="booking-section step-container" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
                     <h2 className="section-title">O que deseja agendar?</h2>
                     <div className="services-grid">
                         {SERVICES.map(s => (
@@ -1805,7 +1809,7 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
                     
                     {!isCreatingNew ? (
                         <>
-                            <div className="form-group" style={{background: '#f9f9f9', padding: '15px', borderRadius: '8px', border: '1px solid var(--border-color)'}}>
+                            <div className="form-group" style={{background: 'var(--bg-color)', padding: '15px', borderRadius: '8px', border: '1px solid var(--border-color)'}}>
                                 <label className="form-label" style={{fontWeight: 600}}>Já sou cliente (Número do seu WhatsApp)</label>
                                 <input type="text" className="form-control" placeholder="Ex: 11999999999..." value={loginPhone} onChange={e => setLoginPhone(e.target.value)} />
                                 {loginError && <div style={{color: 'var(--danger)', fontSize: '13px', marginTop: '8px'}}>{loginError}</div>}
@@ -1827,7 +1831,7 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
                             </button>
                         </>
                     ) : (
-                        <div className="form-grid" style={{background: '#f9f9f9', padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)'}}>
+                        <div className="form-grid" style={{background: 'var(--bg-color)', padding: '20px', borderRadius: '8px', border: '1px solid var(--border-color)'}}>
                             <div className="form-group full-width" style={{marginBottom: '5px'}}>
                                 <h3 style={{fontSize: '18px', color: 'var(--text-dark)'}}>Novo Perfil</h3>
                                 <p style={{fontSize: '13px', color: 'var(--text-muted)'}}>Rapidamente configure seus dados que serão salvos no sistema para agilizar na próxima vez.</p>
@@ -1855,16 +1859,16 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
                     <h2 className="section-title" style={{marginBottom: '10px'}}>Confirme seu Horário</h2>
                     <p style={{fontSize: '18px', color: 'var(--text-dark)', marginBottom: '20px'}}>Por favor <strong>{selectedClient.name.split(' ')[0]}</strong>, verifique atentamente.</p>
 
-                    <div style={{background: '#fcfcfc', padding: '25px', borderRadius: '12px', textAlign: 'left', marginBottom: '20px', display: 'inline-block', maxWidth: '400px', width: '100%', border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.03)'}}>
+                    <div style={{background: 'var(--card-bg)', padding: '25px', borderRadius: '12px', textAlign: 'left', marginBottom: '20px', display: 'inline-block', maxWidth: 'min(100%, 400px)', width: '100%', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-card)'}}>
                         <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Serviço (Estética/Epilação):</strong> {priceObj.name}</div>
                         <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Agendamento para:</strong> {new Date(bookingData.date + 'T12:00:00').toLocaleDateString('pt-BR')} às {bookingData.time}</div>
                         {bookingData.location && <div style={{marginBottom: '10px', fontSize: '14px', fontStyle: 'italic'}}><strong style={{color: 'var(--primary-color)'}}>Em:</strong> {bookingData.location}</div>}
-                        <div style={{fontSize: '16px', borderTop: '1px solid #ddd', paddingTop: '10px', marginTop: '15px'}}><strong style={{color: '#00A676'}}>Valor do procedimento:</strong> {formatPrice(priceObj.price)}</div>
-                        <div style={{fontSize: '16px', color: '#eab308', fontWeight: 'bold'}}>
+                        <div style={{fontSize: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '10px', marginTop: '15px'}}><strong style={{color: 'var(--success)'}}>Valor do procedimento:</strong> {formatPrice(priceObj.price)}</div>
+                        <div style={{fontSize: '16px', color: 'var(--brand-primary)', fontWeight: 'bold'}}>
                             {isBookingFull ? (
-                                <><strong style={{color: '#eab308'}}>Pagamento agora (integral):</strong> {formatPrice(priceObj.price)}</>
+                                <><strong style={{color: 'var(--brand-primary)'}}>Pagamento agora (integral):</strong> {formatPrice(priceObj.price)}</>
                             ) : (
-                                <><strong style={{color: '#eab308'}}>Pagamento agora (sinal):</strong> {signalDisplayBRL}</>
+                                <><strong style={{color: 'var(--brand-primary)'}}>Pagamento agora (sinal):</strong> {signalDisplayBRL}</>
                             )}
                         </div>
                     </div>
@@ -1887,8 +1891,8 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
                         <p style={{fontSize: '12px', color: 'var(--text-muted)', margin: '6px 0 0'}}>Enviaremos um resumo amigável assim que o pagamento for confirmado.</p>
                     </div>
 
-                    <div style={{background: '#fff3cd', border: '1px solid #ffeeba', padding: '15px', borderRadius: '8px', maxWidth: '400px', margin: '0 auto 20px', textAlign: 'left'}}>
-                        <label style={{display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer', fontSize: '14px', color: '#856404'}}>
+                    <div style={{background: 'var(--pending-bg)', border: '1px solid var(--border-color)', padding: '15px', borderRadius: '8px', maxWidth: 'min(100%, 400px)', margin: '0 auto 20px', textAlign: 'left'}}>
+                        <label style={{display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer', fontSize: '14px', color: 'var(--pending-text)'}}>
                             <input type="checkbox" checked={checkedTerms} onChange={e => setCheckedTerms(e.target.checked)} style={{marginTop: '3px', transform: 'scale(1.2)'}} />
                             <span>
                                 {isBookingFull ? (
@@ -1916,15 +1920,15 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
             )}
 
             {step === 4 && completedAppInfo && (
-                <div className="booking-section step-container" style={{textAlign: 'center'}}>
-                    <i className="fas fa-shield-halved" style={{fontSize: '46px', color: '#f59e0b', marginBottom: '12px' }}></i>
-                    <h2 style={{ color: '#c2410c', marginBottom: '8px' }}>Quase lá — falta confirmar o pagamento</h2>
+                <div className="booking-section step-container" style={{textAlign: 'center', width: '100%', maxWidth: '100%', boxSizing: 'border-box'}}>
+                    <i className="fas fa-shield-halved" style={{fontSize: '46px', color: 'var(--brand-light)', marginBottom: '12px' }}></i>
+                    <h2 style={{ color: 'var(--brand-primary)', marginBottom: '8px' }}>Quase lá — falta confirmar o pagamento</h2>
                     <p style={{ color: 'var(--text-muted)', marginBottom: '18px', maxWidth: '520px', marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.55 }}>
                         Seu horário foi reservado como <strong>pendente</strong> até o pagamento ser identificado. Para não perder o espaço, finalize agora — em geral o sistema libera o horário após <strong>15 minutos</strong> sem pagamento.
                     </p>
 
-                    <div style={{ background: '#fcfcfc', border: '1px solid var(--border-color)', padding: '18px', borderRadius: '12px', textAlign: 'left', marginBottom: '16px', display: 'inline-block', maxWidth: '520px', width: '100%', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
-                        <div style={{ fontSize: '12px', fontWeight: 800, color: '#64748b', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '10px' }}>Resumo do agendamento</div>
+                    <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', padding: '18px', borderRadius: '12px', textAlign: 'left', marginBottom: '16px', display: 'inline-block', maxWidth: 'min(100%, 520px)', width: '100%', boxShadow: 'var(--shadow-card)' }}>
+                        <div style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '10px' }}>Resumo do agendamento</div>
 
                         <div style={{ display: 'grid', gap: '10px' }}>
                             <div style={{ fontSize: '15px' }}>
@@ -1943,24 +1947,24 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
                             </div>
                         </div>
 
-                        <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #e5e7eb' }}>
-                            <div style={{ fontSize: '12px', fontWeight: 800, color: '#64748b', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '10px' }}>Pagamento</div>
+                        <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid var(--border-color)' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '10px' }}>Pagamento</div>
                             <div style={{ display: 'grid', gap: '8px', fontSize: '14px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
                                     <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>Forma escolhida</span>
-                                    <strong style={{ color: '#0f172a' }}>{createdPaymentTypeLabel}</strong>
+                                    <strong style={{ color: 'var(--text-dark)' }}>{createdPaymentTypeLabel}</strong>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
                                     <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>Valor cobrado agora</span>
-                                    <strong style={{ color: '#0f172a' }}>{formatCurrencyBRL(createdDueNow)}</strong>
+                                    <strong style={{ color: 'var(--text-dark)' }}>{formatCurrencyBRL(createdDueNow)}</strong>
                                 </div>
                                 {createdIsPartial && createdRemaining > 0 && (
                                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
                                         <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>Saldo restante</span>
-                                        <strong style={{ color: '#0f172a' }}>{formatCurrencyBRL(createdRemaining)}</strong>
+                                        <strong style={{ color: 'var(--text-dark)' }}>{formatCurrencyBRL(createdRemaining)}</strong>
                                     </div>
                                 )}
-                                <div style={{ fontSize: '12px', color: '#64748b', lineHeight: 1.45 }}>
+                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.45 }}>
                                     {createdIsPartial
                                         ? <>O valor do sinal é <strong>{signalDisplayBRL}</strong> (fixo). O valor acima em “Valor cobrado agora” é o que será cobrado no InfinitePay.</>
                                         : <>Você escolheu pagamento integral; o valor acima corresponde ao procedimento completo.</>}
@@ -1970,9 +1974,9 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
                     </div>
 
                     {createdHasPayLink ? (
-                        <div style={{ margin: '0 auto 18px', background: 'linear-gradient(180deg, #e0f2fe 0%, #f0f9ff 100%)', padding: '18px', borderRadius: '12px', maxWidth: '520px', width: '100%', border: '1px solid #bae6fd' }}>
-                            <div style={{ fontSize: '12px', fontWeight: 900, color: '#075985', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '10px' }}>Próximo passo</div>
-                            <div style={{ fontSize: '22px', fontWeight: 950, color: '#0c4a6e', marginBottom: '12px' }}>
+                        <div style={{ margin: '0 auto 18px', background: 'linear-gradient(180deg, rgba(166, 120, 180, 0.15) 0%, var(--surface-muted) 100%)', padding: '18px', borderRadius: '12px', maxWidth: 'min(100%, 520px)', width: '100%', border: '1px solid var(--border-color)' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 900, color: 'var(--brand-primary)', letterSpacing: '0.6px', textTransform: 'uppercase', marginBottom: '10px' }}>Próximo passo</div>
+                            <div style={{ fontSize: 'clamp(18px, 5vw, 22px)', fontWeight: 950, color: 'var(--text-dark)', marginBottom: '12px' }}>
                                 {formatCurrencyBRL(createdDueNow)}
                             </div>
                             <a
@@ -1985,7 +1989,7 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
                                 <i className="fas fa-lock" style={{ marginRight: '10px' }}></i>
                                 Pagar agora (abre em nova aba)
                             </a>
-                            <div style={{ marginTop: '10px', fontSize: '12px', color: '#075985', lineHeight: 1.45 }}>
+                            <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.45 }}>
                                 Depois de pagar, volte para <strong>Meus Agendamentos</strong> — o status atualiza automaticamente em alguns segundos.
                             </div>
                         </div>
@@ -2104,7 +2108,7 @@ const App = () => {
             <Header view={view} setView={navigateTo} />
             {showPassword && <PasswordModal onSuccess={handleAdminLoginSuccess} onCancel={() => setShowPassword(false)} />}
             
-            <div style={{textAlign: 'center', fontSize: '11px', padding: '4px', background: dbStatus.includes('Conectado') ? '#d4edda' : '#f8d7da', color: dbStatus.includes('Conectado') ? '#155724' : '#721c24', marginBottom: '20px', borderRadius: '4px'}}>
+            <div style={{textAlign: 'center', fontSize: '11px', padding: '8px 10px', background: dbStatus.includes('Conectado') ? 'var(--success-soft)' : 'var(--danger-soft)', color: dbStatus.includes('Conectado') ? 'var(--success)' : 'var(--danger)', marginBottom: '20px', borderRadius: '8px', border: `1px solid ${dbStatus.includes('Conectado') ? 'rgba(74, 155, 114, 0.35)' : 'rgba(196, 92, 106, 0.35)'}`}}>
                Status do Driver DB: {dbStatus} (Polling 10s)
             </div>
 

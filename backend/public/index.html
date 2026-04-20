@@ -76,12 +76,37 @@ const getLocalTodayStr = () => {
     return new Date(now.getTime() - offset).toISOString().split('T')[0];
 };
 
-const generateTimeSlots = (dateString, existingAppointments) => {
+/** Alinhado ao backend: duração na grade e intervalo mínimo entre inícios. */
+const DEFAULT_APPOINTMENT_DURATION_MIN = 60;
+const MIN_START_GAP_MINUTES = 60;
+
+const normalizeSlotTimeLabel = (t) => {
+    if (t == null) return null;
+    const s = String(t).trim();
+    const m = s.match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return null;
+    const hh = String(m[1]).padStart(2, '0');
+    return `${hh}:${m[2]}`;
+};
+
+const parseTimeToMinutes = (timeStr) => {
+    const n = normalizeSlotTimeLabel(timeStr);
+    if (!n) return null;
+    const [h, mm] = n.split(':').map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(mm)) return null;
+    return h * 60 + mm;
+};
+
+/**
+ * Grade de horários: ocupação por duração do serviço, intervalo mínimo de 1h entre inícios,
+ * bloqueios manuais (blocked_slots).
+ */
+const generateTimeSlots = (dateString, existingAppointments, blockedSlotsList = []) => {
     if (!dateString) return [];
-    
+
     const dateObj = new Date(dateString + 'T12:00:00');
-    const dayOfWeek = dateObj.getDay(); 
-    
+    const dayOfWeek = dateObj.getDay();
+
     const now = new Date();
     const todayStr = getLocalTodayStr();
     const isToday = dateString === todayStr;
@@ -102,25 +127,66 @@ const generateTimeSlots = (dateString, existingAppointments) => {
             min += 30; if (min >= 60) { hour += 1; min = 0; }
         }
     }
-    
-    const bookedIntervals = existingAppointments
-        .filter(app => app.date === dateString && ['pending_payment', 'confirmed', 'completed'].includes(app.status))
-        .map(app => {
-            const [h, m] = app.time.split(':');
-            const startMins = parseInt(h) * 60 + parseInt(m);
-            const service = SERVICES.find(s => s.id === app.serviceId);
-            const duration = service ? service.duration : 60;
+
+    const blockedSet = new Set(
+        (blockedSlotsList || [])
+            .filter((b) => b.date === dateString)
+            .map((b) => normalizeSlotTimeLabel(b.time))
+            .filter(Boolean)
+    );
+
+    const activeApps = existingAppointments.filter(
+        (app) => app.date === dateString && ['pending_payment', 'confirmed', 'completed'].includes(app.status)
+    );
+
+    const bookedIntervals = activeApps
+        .map((app) => {
+            const startMins = parseTimeToMinutes(app.time);
+            if (startMins == null) return null;
+            const service = SERVICES.find((s) => s.id === app.serviceId);
+            const duration =
+                service && typeof service.duration === 'number' ? service.duration : DEFAULT_APPOINTMENT_DURATION_MIN;
             return { start: startMins, end: startMins + duration };
-        });
-        
-    return slots.map(time => {
-        const [hStr, mStr] = time.split(':');
-        const slotStartMins = parseInt(hStr) * 60 + parseInt(mStr);
-        const slotEndMins = slotStartMins + 30; 
+        })
+        .filter(Boolean);
+
+    return slots.map((time) => {
+        const slotStartMins = parseTimeToMinutes(time);
+        if (slotStartMins == null) {
+            return {
+                time,
+                available: false,
+                isPast: false,
+                isBooked: true,
+                isBlockedManual: false,
+                hasAppointmentAtTime: false
+            };
+        }
+        const slotEndMins = slotStartMins + 30;
         const isPast = isToday && slotStartMins <= currentTotalMinutes;
-        const isBooked = bookedIntervals.some(booked => slotStartMins < booked.end && slotEndMins > booked.start);
-        
-        return { time, available: !isBooked && !isPast, isPast: isPast, isBooked: isBooked };
+        const isBlockedManual = blockedSet.has(time);
+
+        const isOverlapBooked = bookedIntervals.some(
+            (booked) => slotStartMins < booked.end && slotEndMins > booked.start
+        );
+
+        const tooCloseToStart = activeApps.some((app) => {
+            const S = parseTimeToMinutes(app.time);
+            if (S == null || slotStartMins == null) return false;
+            return Math.abs(slotStartMins - S) < MIN_START_GAP_MINUTES;
+        });
+
+        const isBooked = isOverlapBooked || tooCloseToStart;
+        const isUnavailable = isPast || isBlockedManual || isBooked;
+
+        return {
+            time,
+            available: !isUnavailable,
+            isPast,
+            isBooked,
+            isBlockedManual,
+            hasAppointmentAtTime: activeApps.some((a) => normalizeSlotTimeLabel(a.time) === time)
+        };
     });
 };
 
@@ -202,7 +268,7 @@ const StatusBadge = ({ status }) => {
 
 // ============== ÁREA NOVO AGENDAMENTO ==============
 
-const ClientArea = ({ appointments, refreshData, clients, config }) => {
+const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }) => {
     const [step, setStep] = useState(1);
     
     const [selectedService, setSelectedService] = useState('');
@@ -234,11 +300,11 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
 
     useEffect(() => {
         if (bookingData.date) {
-            setAvailableTimes(generateTimeSlots(bookingData.date, appointments));
+            setAvailableTimes(generateTimeSlots(bookingData.date, appointments, blockedSlots || []));
         } else {
             setAvailableTimes([]);
         }
-    }, [bookingData.date, appointments]);
+    }, [bookingData.date, appointments, blockedSlots]);
 
     useEffect(() => {
         setBookingData(prev => ({...prev, time: ''}));
@@ -744,10 +810,11 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
 
 // ============== ÁREA PROFISSIONAL e "MEUS AGENDAMENTOS" iguais ==============
 
-const AdminArea = ({ appointments, refreshData, clients, config, setConfig, adminToken, onAdminSessionInvalid }) => {
+const AdminArea = ({ appointments, refreshData, clients, config, setConfig, blockedSlots, adminToken, onAdminSessionInvalid }) => {
     const [adminView, setAdminView] = useState('agenda'); // agenda | clients | settings
     const [filter, setFilter] = useState('today'); // today | next | all
     const [filterDate, setFilterDate] = useState('');
+    const [blockManageDate, setBlockManageDate] = useState(() => getLocalTodayStr());
     const [profPhoneInput, setProfPhoneInput] = useState(config?.profPhone || '');
     const [reportStartDate, setReportStartDate] = useState('');
     const [reportEndDate, setReportEndDate] = useState('');
@@ -858,20 +925,19 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, admi
         return s ? s.price : null;
     };
 
-    const parseTimeToMinutes = (timeStr) => {
-        if (!timeStr || typeof timeStr !== 'string' || !timeStr.includes(':')) return 0;
-        const [h, m] = timeStr.split(':');
-        return (parseInt(h, 10) || 0) * 60 + (parseInt(m, 10) || 0);
-    };
-
     const sortedApps = useMemo(() => {
         return [...(appointments || [])].sort((a, b) => {
             const da = a.date || '';
             const db = b.date || '';
             if (da !== db) return da.localeCompare(db);
-            return parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time);
+            return (parseTimeToMinutes(a.time) ?? 0) - (parseTimeToMinutes(b.time) ?? 0);
         });
     }, [appointments]);
+
+    const adminBlockSlots = useMemo(
+        () => generateTimeSlots(blockManageDate, appointments, blockedSlots || []),
+        [blockManageDate, appointments, blockedSlots]
+    );
 
     const filteredApps = useMemo(() => {
         const base = sortedApps;
@@ -960,6 +1026,43 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, admi
         }
     };
 
+    const handleAdminBlockSlot = async (time) => {
+        const reason = window.prompt('Motivo do bloqueio (opcional)?');
+        if (reason === null) return;
+        try {
+            const res = await adminFetch(`${API_BASE_URL}/admin/blocked-slots`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date: blockManageDate, time, reason: reason || undefined })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.error || 'Não foi possível bloquear este horário.');
+                return;
+            }
+            await refreshData();
+        } catch (e) {
+            console.error(e);
+            alert('Erro de rede ao bloquear.');
+        }
+    };
+
+    const handleAdminUnblockSlot = async (slotId) => {
+        if (!window.confirm('Remover este bloqueio e liberar o horário?')) return;
+        try {
+            const res = await adminFetch(`${API_BASE_URL}/admin/blocked-slots/${slotId}`, { method: 'DELETE' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.error || 'Não foi possível remover o bloqueio.');
+                return;
+            }
+            await refreshData();
+        } catch (e) {
+            console.error(e);
+            alert('Erro de rede ao remover bloqueio.');
+        }
+    };
+
     const renderAgenda = () => (
         <>
             <div className="filter-tabs" style={{marginBottom: '14px'}}>
@@ -998,6 +1101,92 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, admi
                         Exibindo apenas: <strong>{new Date(filterDate + 'T12:00:00').toLocaleDateString('pt-BR')}</strong>
                     </div>
                 )}
+            </div>
+
+            <div style={{ marginTop: '8px', marginBottom: '20px', padding: '14px 16px', borderRadius: '12px', border: '1px solid #e5e7eb', background: '#fafafa', textAlign: 'left' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '12px', marginBottom: '8px' }}>
+                    <div>
+                        <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>Bloquear horários</div>
+                        <div style={{ fontSize: '12px', color: '#64748b', lineHeight: 1.45, maxWidth: '520px' }}>
+                            A grade respeita intervalo mínimo de <strong>1 hora</strong> entre agendamentos. Toque em um horário <strong>Livre</strong> para bloquear; em <strong>Bloqueado</strong> para liberar.
+                        </div>
+                    </div>
+                    <div>
+                        <label className="form-label" style={{ marginBottom: '6px', display: 'block' }}>Dia</label>
+                        <input type="date" className="form-control" value={blockManageDate} onChange={(e) => setBlockManageDate(e.target.value)} style={{ maxWidth: '200px' }} />
+                    </div>
+                </div>
+                <div className="time-slots" style={{ marginTop: '10px' }}>
+                    {adminBlockSlots.map((slot, idx) => {
+                        const blockRow = (blockedSlots || []).find(
+                            (b) => b.date === blockManageDate && normalizeSlotTimeLabel(b.time) === slot.time
+                        );
+                        let label = 'Livre';
+                        if (slot.isPast) label = 'Passado';
+                        else if (slot.isBlockedManual) label = 'Bloqueado';
+                        else if (slot.hasAppointmentAtTime) label = 'Agendado';
+                        else if (!slot.available) label = 'Indisponível';
+
+                        let className = 'time-slot';
+                        if (slot.isPast) className += ' past-slot';
+                        else if (slot.isBlockedManual) className += ' disabled';
+                        else if (!slot.available) className += ' disabled';
+
+                        const canTryBlock = !slot.isPast && !slot.isBlockedManual && !slot.hasAppointmentAtTime;
+
+                        return (
+                            <div
+                                key={idx}
+                                className={className}
+                                title={
+                                    slot.isBlockedManual
+                                        ? 'Clique para desbloquear'
+                                        : canTryBlock
+                                            ? 'Clique para bloquear'
+                                            : slot.hasAppointmentAtTime
+                                                ? 'Horário com agendamento'
+                                                : ''
+                                }
+                                style={{
+                                    minWidth: '92px',
+                                    flexDirection: 'column',
+                                    alignItems: 'stretch',
+                                    gap: '4px',
+                                    padding: '8px 6px',
+                                    cursor:
+                                        slot.isPast || slot.hasAppointmentAtTime
+                                            ? 'default'
+                                            : slot.isBlockedManual || canTryBlock
+                                                ? 'pointer'
+                                                : 'default',
+                                    borderColor: slot.isBlockedManual ? '#c4b5fd' : undefined,
+                                    background: slot.isBlockedManual ? '#f5f3ff' : undefined
+                                }}
+                                onClick={() => {
+                                    if (slot.isPast || slot.hasAppointmentAtTime) return;
+                                    if (slot.isBlockedManual) {
+                                        if (blockRow && blockRow.id != null) handleAdminUnblockSlot(blockRow.id);
+                                        return;
+                                    }
+                                    if (canTryBlock) handleAdminBlockSlot(slot.time);
+                                }}
+                            >
+                                <span style={{ fontWeight: 800, fontSize: '14px' }}>{slot.time}</span>
+                                <span
+                                    style={{
+                                        fontSize: '10px',
+                                        fontWeight: 700,
+                                        color: slot.isBlockedManual ? '#5b21b6' : slot.hasAppointmentAtTime ? '#0369a1' : '#64748b',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.3px'
+                                    }}
+                                >
+                                    {label}
+                                </span>
+                            </div>
+                        );
+                    })}
+                </div>
             </div>
 
             <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
@@ -1506,6 +1695,7 @@ const App = () => {
     
     const [appointments, setAppointments] = useState([]);
     const [clients, setClients] = useState([]);
+    const [blockedSlots, setBlockedSlots] = useState([]);
     const [config, setConfig] = useState({ profPhone: '' });
 
     const handleAdminLoginSuccess = (token) => {
@@ -1526,6 +1716,7 @@ const App = () => {
     }, []);
 
     const refreshData = useCallback(async () => {
+        const blkHeaders = adminToken ? { Authorization: `Bearer ${adminToken}` } : {};
         try {
             const resAps = await fetch(`${API_BASE_URL}/appointments`);
             if (resAps.ok) {
@@ -1542,10 +1733,26 @@ const App = () => {
                     setClients(cls);
                 }
             }
+
+            const resBlk = await fetch(`${API_BASE_URL}/admin/blocked-slots`, { headers: blkHeaders });
+            if (resBlk.status === 401) {
+                if (adminToken) {
+                    try {
+                        sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+                    } catch (_) { /* ignore */ }
+                    setAdminToken('');
+                }
+                setBlockedSlots([]);
+            } else if (resBlk.ok) {
+                const blk = await resBlk.json();
+                setBlockedSlots(Array.isArray(blk) ? blk : []);
+            } else {
+                setBlockedSlots([]);
+            }
         } catch(e) { 
             console.error(e);
         }
-    }, []);
+    }, [adminToken]);
 
     useEffect(() => {
         refreshData();
@@ -1575,7 +1782,7 @@ const App = () => {
             <Header view={view} setView={navigateTo} />
             {showPassword && <PasswordModal onSuccess={handleAdminLoginSuccess} onCancel={() => setShowPassword(false)} />}
             <main>
-                {view === 'client' && <ClientArea appointments={appointments} refreshData={refreshData} clients={clients} config={config} />}
+                {view === 'client' && <ClientArea appointments={appointments} refreshData={refreshData} clients={clients} config={config} blockedSlots={blockedSlots} />}
                 {view === 'my_apps' && <MyAppointmentsArea appointments={appointments} refreshData={refreshData} clients={clients} setView={setView} />}
                 {view === 'admin' && (
                     <AdminArea
@@ -1584,6 +1791,7 @@ const App = () => {
                         clients={clients}
                         config={config}
                         setConfig={setConfig}
+                        blockedSlots={blockedSlots}
                         adminToken={adminToken}
                         onAdminSessionInvalid={handleAdminSessionInvalid}
                     />
