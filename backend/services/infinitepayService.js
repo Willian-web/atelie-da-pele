@@ -11,6 +11,11 @@ async function createCheckoutLink(appointment) {
         ? Number(appointment.paymentCents)
         : 3000;
 
+    const isFull = String(appointment?.paymentType || '').toLowerCase() === 'full';
+    const itemDescription = isFull
+        ? 'Pagamento integral do procedimento (Ateliê da Pele)'
+        : 'Sinal do agendamento (Ateliê da Pele)';
+
     const payload = {
         handle,
         order_nsu: String(appointment.id),
@@ -20,7 +25,7 @@ async function createCheckoutLink(appointment) {
             {
                 quantity: 1,
                 price: amountInCents,
-                description: 'Sinal do agendamento (Ateliê da Pele)'
+                description: itemDescription
             }
         ],
         customer: {
@@ -42,6 +47,7 @@ async function createCheckoutLink(appointment) {
         body: JSON.stringify(payload)
     });
 
+    console.log(`[InfinitePayService] checkout/links HTTP status=${response.status}`);
     const data = await response.json();
 
     if (!response.ok) {
@@ -82,6 +88,7 @@ async function checkPaymentStatus({ orderNsu, transactionNsu, slug }) {
         body: JSON.stringify(payload)
     });
 
+    console.log(`[InfinitePayService] payment_check HTTP status=${response.status}`);
     const data = await response.json();
 
     if (!response.ok) {
@@ -89,7 +96,12 @@ async function checkPaymentStatus({ orderNsu, transactionNsu, slug }) {
         throw new Error(`Falha ao consultar pagamento InfinitePay: ${response.status} - ${JSON.stringify(data)}`);
     }
 
-    console.log('[InfinitePayService] Status retornado:', JSON.stringify(data));
+    console.log('[InfinitePayService] Status retornado (resumo):', JSON.stringify({
+        success: data?.success,
+        paid: data?.paid,
+        paid_amount: data?.paid_amount,
+        capture_method: data?.capture_method
+    }));
     return data;
 }
 

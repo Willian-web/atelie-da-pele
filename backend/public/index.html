@@ -49,6 +49,8 @@ const API_BASE_URL = window.location.hostname === 'localhost' || window.location
     ? 'http://localhost:8080'
     : 'https://' + window.location.hostname;
 
+const ADMIN_TOKEN_STORAGE_KEY = 'atelie_admin_token';
+
 const SERVICES = [
     { id: 'limpeza_pele', name: 'Limpeza de Pele', price: 119.90, category: 'Estética Facial', duration: 60 },
     { id: 'dep_intima', name: 'Depilação Íntima Completa', price: 59.90, category: 'Depilação', duration: 60 },
@@ -61,6 +63,12 @@ const SERVICES = [
 const FIXED_SIGNAL_AMOUNT = 30.00;
 
 const formatPrice = (price) => price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const isValidEmailFormat = (s) => {
+    const t = String(s || '').trim().toLowerCase();
+    if (!t || t.length > 254) return false;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t);
+};
 
 const getLocalTodayStr = () => {
     const now = new Date();
@@ -135,16 +143,46 @@ const Header = ({ setView, view }) => (
 
 const PasswordModal = ({ onSuccess, onCancel }) => {
     const [pwd, setPwd] = useState('');
-    const [error, setError] = useState(false);
-    const checkPassword = () => { pwd === '1234' ? onSuccess() : (setError(true), setPwd('')); };
+    const [errorMsg, setErrorMsg] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    const submit = async () => {
+        setErrorMsg('');
+        setLoading(true);
+        try {
+            const res = await fetch(`${API_BASE_URL}/admin/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: pwd })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setPwd('');
+                setErrorMsg(data.error || 'Não foi possível acessar. Tente novamente.');
+                return;
+            }
+            if (!data.token) {
+                setErrorMsg('Resposta inválida do servidor.');
+                return;
+            }
+            setPwd('');
+            onSuccess(data.token);
+        } catch {
+            setPwd('');
+            setErrorMsg('Falha de conexão. Verifique a internet e tente de novo.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <div className="password-overlay">
             <div className="password-modal">
                 <i className="fas fa-shield-alt" style={{fontSize: '40px', color: 'var(--primary-color)', marginBottom: '15px'}}></i>
                 <h3 style={{marginBottom: '20px'}}>Administração</h3>
-                {error && <div className="alert alert-error" style={{padding: '8px', marginBottom: '15px', fontSize: '13px'}}>Senha Incorreta.</div>}
-                <input type="password" className="form-control password-input" placeholder="****" value={pwd} onChange={e => setPwd(e.target.value)} onKeyDown={e => e.key === 'Enter' && checkPassword()} autoFocus />
-                <div className="modal-actions"><button className="btn-cancel" onClick={onCancel}>Voltar</button><button className="btn-submit" style={{flex: 1}} onClick={checkPassword}>Acessar</button></div>
+                {errorMsg && <div className="alert alert-error" style={{padding: '8px', marginBottom: '15px', fontSize: '13px'}}>{errorMsg}</div>}
+                <input type="password" className="form-control password-input" placeholder="Senha do painel" value={pwd} onChange={e => setPwd(e.target.value)} onKeyDown={e => e.key === 'Enter' && !loading && submit()} autoFocus disabled={loading} />
+                <div className="modal-actions"><button className="btn-cancel" onClick={onCancel} disabled={loading}>Voltar</button><button className="btn-submit" style={{flex: 1}} onClick={submit} disabled={loading}>{loading ? 'Validando…' : 'Acessar'}</button></div>
             </div>
         </div>
     );
@@ -174,13 +212,19 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
     const [loginPhone, setLoginPhone] = useState('');
     const [loginError, setLoginError] = useState('');
     const [selectedClient, setSelectedClient] = useState(null);
-    const [newClient, setNewClient] = useState({ name: '', phone: '', address: '' });
+    const [newClient, setNewClient] = useState({ name: '', phone: '', address: '', email: '' });
     const [isCreatingNew, setIsCreatingNew] = useState(false);
+    const [newClientFormError, setNewClientFormError] = useState('');
+    const [clientEmailForBooking, setClientEmailForBooking] = useState('');
 
     const [checkedTerms, setCheckedTerms] = useState(false);
 
     // Novo state: tipo de pagamento
     const [paymentType, setPaymentType] = useState("partial"); // "partial" (sinal) padrão
+
+    useEffect(() => {
+        setCheckedTerms(false);
+    }, [paymentType]);
 
     const [completedAppInfo, setCompletedAppInfo] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -200,8 +244,22 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
         setBookingData(prev => ({...prev, time: ''}));
     }, [bookingData.date]);
 
+    useEffect(() => {
+        if (selectedClient?.id) {
+            setClientEmailForBooking(String(selectedClient.email || '').trim());
+        }
+    }, [selectedClient?.id]);
+
     const handleCreateClient = async () => {
-        if(!newClient.name || !newClient.phone) return alert('Nome e Telefone são obrigatórios.');
+        setNewClientFormError('');
+        if (!newClient.name || !newClient.phone) {
+            setNewClientFormError('Nome e telefone são obrigatórios.');
+            return;
+        }
+        if (!isValidEmailFormat(newClient.email)) {
+            setNewClientFormError('Informe um e-mail válido. Usaremos para enviar a confirmação após o pagamento.');
+            return;
+        }
         const cleanPhone = newClient.phone.replace(/\D/g, '');
         
         setIsLoading(true);
@@ -209,23 +267,45 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
             const res = await fetch(`${API_BASE_URL}/clients`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: Date.now().toString(), name: newClient.name, phone: cleanPhone, address: newClient.address })
+                body: JSON.stringify({
+                    id: Date.now().toString(),
+                    name: newClient.name,
+                    phone: cleanPhone,
+                    address: newClient.address,
+                    email: newClient.email.trim().toLowerCase()
+                })
             });
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Erro na API Backend');
+            if (!res.ok) {
+                setNewClientFormError(data.error || 'Não foi possível salvar seu cadastro.');
+                return;
+            }
             
             setSelectedClient(data);
+            setClientEmailForBooking(String(data.email || newClient.email.trim()).toLowerCase());
             setIsCreatingNew(false);
             setStep(3);
             refreshData();
         } catch (e) {
-            alert('Falha ao registrar seu perfil: ' + e.message);
+            setNewClientFormError('Falha de conexão ao registrar. Tente novamente.');
         }
         setIsLoading(false);
     };
 
     const handleConfirmBooking = async () => {
-        if(!checkedTerms) return alert("Você precisa aceitar os termos de pagamento do sinal.");
+        if (!checkedTerms) {
+            return alert(
+                paymentType === 'full'
+                    ? 'Você precisa aceitar os termos de pagamento do valor total.'
+                    : 'Você precisa aceitar os termos de pagamento do sinal.'
+            );
+        }
+
+        const emailTrim = clientEmailForBooking.trim().toLowerCase();
+        if (!isValidEmailFormat(emailTrim)) {
+            setApiError('Informe um e-mail válido. Enviaremos a confirmação do agendamento para esse endereço após o pagamento.');
+            return;
+        }
 
         setIsLoading(true);
         setApiError('');
@@ -242,11 +322,12 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
                     clientId: selectedClient.id,
                     clientName: selectedClient.name,
                     clientPhone: selectedClient.phone,
+                    clientEmail: emailTrim,
                     date: bookingData.date,
                     time: bookingData.time,
                     notes: bookingData.notes,
-                    location: bookingData.location
-                    // NÃO ENVIAR paymentType ainda!
+                    location: bookingData.location,
+                    paymentType: paymentType === 'full' ? 'full' : 'partial'
                 })
             });
 
@@ -371,7 +452,9 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
                             </div>
                             <div className="form-group full-width"><label className="form-label">Nome Completo *</label><input type="text" className="form-control" value={newClient.name} onChange={e=>setNewClient({...newClient, name: e.target.value})}/></div>
                             <div className="form-group"><label className="form-label">Seu Contato (WhatsApp) *</label><input type="text" className="form-control" placeholder="Apenas Números" value={newClient.phone} onChange={e=>setNewClient({...newClient, phone: e.target.value})}/></div>
+                            <div className="form-group full-width"><label className="form-label">E-mail *</label><input type="email" autoComplete="email" className="form-control" placeholder="seu@email.com" value={newClient.email} onChange={e=>setNewClient({...newClient, email: e.target.value})}/><p style={{fontSize: '12px', color: 'var(--text-muted)', margin: '6px 0 0'}}>Para a confirmação após o pagamento.</p></div>
                             <div className="form-group"><label className="form-label">Endereço Residencial</label><input type="text" className="form-control" value={newClient.address} onChange={e=>setNewClient({...newClient, address: e.target.value})}/></div>
+                            {newClientFormError && <div className="form-group full-width" style={{color: 'var(--danger)', fontSize: '13px'}}>{newClientFormError}</div>}
                             <div className="form-group full-width" style={{display:'flex', gap:'10px', marginTop: '10px'}}>
                                 <button className="btn-cancel" onClick={() => setIsCreatingNew(false)} disabled={isLoading}>Desistir</button>
                                 <button className="btn-submit" style={{flex: 1}} onClick={handleCreateClient} disabled={isLoading}>{isLoading ? 'Salvando BD...' : 'Finalizar Perfil'}</button>
@@ -395,8 +478,20 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
                         <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Agendamento para:</strong> {new Date(bookingData.date + 'T12:00:00').toLocaleDateString('pt-BR')} às {bookingData.time}</div>
                         {bookingData.location && <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Endereço Cliente:</strong> {bookingData.location}</div>}
                         <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Local do atendimento:</strong> Ateliê da Pele — Rua Rio Jaguaribe, nº 274</div>
-                        <div style={{fontSize: '16px', borderTop: '1px solid #ddd', paddingTop: '10px', marginTop: '15px'}}><strong style={{color: '#00A676'}}>Valor Serviço:</strong> {formatPrice(priceObj.price)}</div>
-                        <div style={{fontSize: '16px', color: '#eab308', fontWeight: 'bold'}}><strong style={{color: '#eab308'}}>Sinal Fixo:</strong> {adiantamento}</div>
+                        <div style={{fontSize: '16px', borderTop: '1px solid #ddd', paddingTop: '10px', marginTop: '15px'}}><strong style={{color: '#00A676'}}>Valor do procedimento:</strong> {formatPrice(priceObj.price)}</div>
+                        <div style={{fontSize: '16px', color: '#eab308', fontWeight: 'bold'}}>
+                            {paymentType === "full" ? (
+                                <><strong style={{color: '#eab308'}}>Pagamento agora (integral):</strong> {formatPrice(priceObj.price)}</>
+                            ) : (
+                                <><strong style={{color: '#eab308'}}>Pagamento agora (sinal):</strong> {adiantamento}</>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="form-group full-width" style={{maxWidth: '400px', margin: '0 auto 16px', textAlign: 'left'}}>
+                        <label className="form-label">E-mail para confirmação *</label>
+                        <input type="email" autoComplete="email" className="form-control" placeholder="seu@email.com" value={clientEmailForBooking} onChange={e => setClientEmailForBooking(e.target.value)} />
+                        <p style={{fontSize: '12px', color: 'var(--text-muted)', margin: '6px 0 0'}}>Enviaremos um resumo amigável assim que o pagamento for confirmado.</p>
                     </div>
 
                     {/* Bloco UI: Escolher tipo de pagamento */}
@@ -442,8 +537,17 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
                         <label style={{display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer', fontSize: '14px', color: '#856404'}}>
                             <input type="checkbox" checked={checkedTerms} onChange={e => setCheckedTerms(e.target.checked)} style={{marginTop: '3px', transform: 'scale(1.2)'}} />
                             <span>
-                                <strong>Estou ciente</strong> de que o agendamento só será confirmado em definitivo após o pagamento do sinal na próxima tela via InfinitePay. <br/><br/>
-                                <i className="fas fa-exclamation-triangle"></i> Sem o pagamento em até 15 minutos, o horário será cancelado e o espaço liberado para outra cliente.
+                                {paymentType === "full" ? (
+                                    <>
+                                        <strong>Estou ciente</strong> de que o agendamento só será confirmado em definitivo após o pagamento do valor total na próxima tela via InfinitePay. <br/><br/>
+                                        <i className="fas fa-exclamation-triangle"></i> Sem o pagamento em até 15 minutos, o horário será cancelado e o espaço liberado para outra cliente.
+                                    </>
+                                ) : (
+                                    <>
+                                        <strong>Estou ciente</strong> de que o agendamento só será confirmado em definitivo após o pagamento do sinal na próxima tela via InfinitePay. <br/><br/>
+                                        <i className="fas fa-exclamation-triangle"></i> Sem o pagamento em até 15 minutos, o horário será cancelado e o espaço liberado para outra cliente.
+                                    </>
+                                )}
                             </span>
                         </label>
                     </div>
@@ -640,7 +744,7 @@ const ClientArea = ({ appointments, refreshData, clients, config }) => {
 
 // ============== ÁREA PROFISSIONAL e "MEUS AGENDAMENTOS" iguais ==============
 
-const AdminArea = ({ appointments, refreshData, clients, config, setConfig }) => {
+const AdminArea = ({ appointments, refreshData, clients, config, setConfig, adminToken, onAdminSessionInvalid }) => {
     const [adminView, setAdminView] = useState('agenda'); // agenda | clients | settings
     const [filter, setFilter] = useState('today'); // today | next | all
     const [filterDate, setFilterDate] = useState('');
@@ -656,6 +760,16 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig }) =>
     }, [config?.profPhone]);
 
     const todayStr = getLocalTodayStr();
+
+    const adminFetch = async (url, options = {}) => {
+        const headers = { ...(options.headers || {}) };
+        if (adminToken) headers.Authorization = `Bearer ${adminToken}`;
+        const res = await fetch(url, { ...options, headers });
+        if (res.status === 401 && typeof onAdminSessionInvalid === 'function') {
+            onAdminSessionInvalid();
+        }
+        return res;
+    };
 
     const formatBRL = (value) => {
         const n = Number(value || 0);
@@ -710,7 +824,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig }) =>
         if (!window.confirm('Tem certeza que deseja apagar este agendamento? Esta ação não pode ser desfeita.')) return;
 
         try {
-            const res = await fetch(`${API_BASE_URL}/appointments/${appointmentId}`, { method: 'DELETE' });
+            const res = await adminFetch(`${API_BASE_URL}/appointments/${appointmentId}`, { method: 'DELETE' });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.error || 'Erro ao apagar agendamento.');
             await refreshData();
@@ -725,7 +839,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig }) =>
         if (reason === null) return;
 
         try {
-            const res = await fetch(`${API_BASE_URL}/appointments/${appointmentId}/cancel`, {
+            const res = await adminFetch(`${API_BASE_URL}/appointments/${appointmentId}/cancel`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -759,7 +873,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig }) =>
 
         setReportLoading(true);
         try {
-            const res = await fetch(`/admin/report?start=${reportStartDate}&end=${reportEndDate}`);
+            const res = await adminFetch(`${API_BASE_URL}/admin/report?start=${encodeURIComponent(reportStartDate)}&end=${encodeURIComponent(reportEndDate)}`);
             const data = await res.json().catch(() => ({}));
 
             if (!res.ok) {
@@ -1260,10 +1374,37 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
 const App = () => {
     const [view, setView] = useState('client'); 
     const [showPassword, setShowPassword] = useState(false);
+
+    const readStoredAdminToken = () => {
+        try {
+            return sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) || '';
+        } catch {
+            return '';
+        }
+    };
+
+    const [adminToken, setAdminToken] = useState(readStoredAdminToken);
     
     const [appointments, setAppointments] = useState([]);
     const [clients, setClients] = useState([]);
     const [config, setConfig] = useState({ profPhone: '' });
+
+    const handleAdminLoginSuccess = (token) => {
+        try {
+            sessionStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, token);
+        } catch (_) { /* ignore */ }
+        setAdminToken(token);
+        setShowPassword(false);
+        setView('admin');
+    };
+
+    const handleAdminSessionInvalid = useCallback(() => {
+        try {
+            sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+        } catch (_) { /* ignore */ }
+        setAdminToken('');
+        setShowPassword(true);
+    }, []);
 
     const refreshData = useCallback(async () => {
         try {
@@ -1297,18 +1438,37 @@ const App = () => {
     }, [refreshData]);
 
     const navigateTo = (tView) => {
-        if(tView === 'admin' && view !== 'admin') setShowPassword(true);
-        else setView(tView);
+        if (tView === 'admin' && view !== 'admin') {
+            const t = readStoredAdminToken();
+            if (t) {
+                setAdminToken(t);
+                setView('admin');
+            } else {
+                setShowPassword(true);
+            }
+        } else {
+            setView(tView);
+        }
     };
 
     return (
         <div className="container">
             <Header view={view} setView={navigateTo} />
-            {showPassword && <PasswordModal onSuccess={() => { setShowPassword(false); setView('admin'); }} onCancel={() => setShowPassword(false)} />}
+            {showPassword && <PasswordModal onSuccess={handleAdminLoginSuccess} onCancel={() => setShowPassword(false)} />}
             <main>
                 {view === 'client' && <ClientArea appointments={appointments} refreshData={refreshData} clients={clients} config={config} />}
                 {view === 'my_apps' && <MyAppointmentsArea appointments={appointments} refreshData={refreshData} clients={clients} setView={setView} />}
-                {view === 'admin' && <AdminArea appointments={appointments} refreshData={refreshData} clients={clients} config={config} setConfig={setConfig} />}
+                {view === 'admin' && (
+                    <AdminArea
+                        appointments={appointments}
+                        refreshData={refreshData}
+                        clients={clients}
+                        config={config}
+                        setConfig={setConfig}
+                        adminToken={adminToken}
+                        onAdminSessionInvalid={handleAdminSessionInvalid}
+                    />
+                )}
             </main>
         </div>
     );

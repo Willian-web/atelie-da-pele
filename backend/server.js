@@ -21,10 +21,11 @@ const cors = require('cors');
  * ==============================================================
  */
 const path = require('path');
+const crypto = require('crypto');
 const { Pool } = require('pg');
 require('dotenv').config();
 
-const { sendConfirmationEmail } = require('./services/emailService');
+const { sendConfirmationEmail, sendClientConfirmationEmail } = require('./services/emailService');
 const { createCheckoutLink, checkPaymentStatus } = require('./services/infinitepayService');
 
 const app = express();
@@ -35,6 +36,87 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 const isPostgresSetup = !!process.env.DATABASE_URL;
+
+/** TTL do token admin (segundos), entre 5 min e 30 dias. */
+const ADMIN_SESSION_TTL_SEC = (() => {
+    const raw = parseInt(String(process.env.ADMIN_SESSION_TTL_SECONDS || '86400'), 10);
+    if (!Number.isFinite(raw)) return 86400;
+    return Math.min(Math.max(raw, 300), 2592000);
+})();
+
+function adminSigningSecret() {
+    const explicit = process.env.ADMIN_SESSION_SECRET;
+    if (explicit && String(explicit).length >= 16) {
+        return String(explicit);
+    }
+    const pwd = process.env.ADMIN_PASSWORD;
+    if (pwd && String(pwd).length >= 1) {
+        return crypto.createHash('sha256').update(`atelie-admin-token-v1|${pwd}`, 'utf8').digest('hex');
+    }
+    return '';
+}
+
+function signAdminToken() {
+    const secret = adminSigningSecret();
+    if (!secret) return null;
+    const exp = Math.floor(Date.now() / 1000) + ADMIN_SESSION_TTL_SEC;
+    const rnd = crypto.randomBytes(12).toString('hex');
+    const payload = JSON.stringify({ exp, rnd, v: 1 });
+    const payloadB64 = Buffer.from(payload, 'utf8').toString('base64url');
+    const sig = crypto.createHmac('sha256', secret).update(payloadB64).digest('base64url');
+    return `${payloadB64}.${sig}`;
+}
+
+function verifyAdminToken(token) {
+    if (!token || typeof token !== 'string') return false;
+    const secret = adminSigningSecret();
+    if (!secret) return false;
+    const dot = token.indexOf('.');
+    if (dot <= 0 || dot === token.length - 1) return false;
+    const payloadB64 = token.slice(0, dot);
+    const sig = token.slice(dot + 1);
+    const expected = crypto.createHmac('sha256', secret).update(payloadB64).digest('base64url');
+    const sigBuf = Buffer.from(sig, 'utf8');
+    const expBuf = Buffer.from(expected, 'utf8');
+    if (sigBuf.length !== expBuf.length) return false;
+    if (!crypto.timingSafeEqual(sigBuf, expBuf)) return false;
+    let payload;
+    try {
+        payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+    } catch {
+        return false;
+    }
+    if (!payload || payload.v !== 1 || typeof payload.exp !== 'number') return false;
+    if (Math.floor(Date.now() / 1000) > payload.exp) return false;
+    return true;
+}
+
+function extractAdminToken(req) {
+    const auth = req.headers.authorization;
+    if (auth && String(auth).startsWith('Bearer ')) {
+        return String(auth).slice(7).trim();
+    }
+    const x = req.headers['x-admin-token'];
+    if (x) return String(x).trim();
+    return '';
+}
+
+function requireAdminAuth(req, res, next) {
+    const tok = extractAdminToken(req);
+    if (!verifyAdminToken(tok)) {
+        return res.status(401).json({ error: 'Não autorizado.' });
+    }
+    return next();
+}
+
+function verifyAdminPasswordCandidate(pwd) {
+    const expected = process.env.ADMIN_PASSWORD;
+    if (!expected || typeof expected !== 'string') return false;
+    if (typeof pwd !== 'string') return false;
+    const hExp = crypto.createHash('sha256').update(expected, 'utf8').digest();
+    const hIn = crypto.createHash('sha256').update(pwd, 'utf8').digest();
+    return crypto.timingSafeEqual(hExp, hIn);
+}
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL || 'postgres://user:pass@localhost:5432/dbname',
@@ -53,6 +135,11 @@ const SERVICES = [
 ];
 
 const FIXED_SIGNAL_AMOUNT = 30.00;
+
+/** Duração usada na agenda para conflitos (alinhada ao frontend temp.jsx). */
+const DEFAULT_APPOINTMENT_DURATION_MIN = 60;
+/** Intervalo mínimo entre inícios de agendamentos (minutos). */
+const MIN_START_GAP_MINUTES = 60;
 
 // ======================= BANCO =======================
 
@@ -148,6 +235,32 @@ async function initDB() {
             ON appointments (date, time, status)
         `);
 
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS blocked_slots (
+                id SERIAL PRIMARY KEY,
+                date VARCHAR(10) NOT NULL,
+                time VARCHAR(5) NOT NULL,
+                reason TEXT,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(date, time)
+            )
+        `);
+
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_blocked_slots_date
+            ON blocked_slots (date)
+        `);
+
+        await client.query(`
+            ALTER TABLE clients
+            ADD COLUMN IF NOT EXISTS email VARCHAR(255)
+        `);
+
+        await client.query(`
+            ALTER TABLE appointments
+            ADD COLUMN IF NOT EXISTS client_confirmation_email_sent_at TIMESTAMPTZ
+        `);
+
         console.log('✅ Banco de dados sincronizado / migrado');
     } catch (err) {
         console.error('❌ Erro ao iniciar banco:', err);
@@ -160,7 +273,203 @@ initDB();
 
 // ======================= AUXILIARES =======================
 
+function normalizeSlotTimeHHMM(t) {
+    if (t == null) return null;
+    const s = String(t).trim();
+    const m = s.match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return null;
+    const hh = String(m[1]).padStart(2, '0');
+    const mm = m[2];
+    return `${hh}:${mm}`;
+}
+
+function timeStrToMinutes(timeStr) {
+    const n = normalizeSlotTimeHHMM(timeStr);
+    if (!n) return null;
+    const [h, mm] = n.split(':').map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(mm)) return null;
+    return h * 60 + mm;
+}
+
+function isValidReportDateYmd(s) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+}
+
+/**
+ * Valida se um horário pode receber novo agendamento (sobreposição + intervalo de 1h + bloqueio manual).
+ * @param {Array<{ time: string, status: string }>} existingRows
+ * @param {Set<string>|null} blockedTimesSet — horários normalizados HH:MM
+ */
+function normalizeEmail(s) {
+    if (s == null || s === '') return '';
+    return String(s).trim().toLowerCase();
+}
+
+function isValidEmailBasic(s) {
+    const t = normalizeEmail(s);
+    if (!t || t.length > 254) return false;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t);
+}
+
+function validateNewAppointmentSchedule({ time, existingRows, blockedTimesSet }) {
+    const T = timeStrToMinutes(time);
+    const tNorm = normalizeSlotTimeHHMM(time);
+    if (T == null || !tNorm) {
+        return 'Horário inválido.';
+    }
+
+    if (blockedTimesSet && blockedTimesSet.has(tNorm)) {
+        return 'Horário indisponível (bloqueado manualmente).';
+    }
+
+    for (const row of existingRows) {
+        if (!['pending_payment', 'confirmed', 'completed'].includes(row.status)) continue;
+        const S = timeStrToMinutes(row.time);
+        if (S == null) continue;
+
+        const existingEnd = S + DEFAULT_APPOINTMENT_DURATION_MIN;
+        const newEnd = T + DEFAULT_APPOINTMENT_DURATION_MIN;
+        if (T < existingEnd && newEnd > S) {
+            return 'Conflito com horário já reservado.';
+        }
+        if (Math.abs(T - S) < MIN_START_GAP_MINUTES) {
+            return 'É necessário intervalo mínimo de 1 hora entre agendamentos.';
+        }
+    }
+
+    return null;
+}
+
+function toMoneyNumber(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+}
+
+function roundMoney2(n) {
+    return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+function findServiceById(serviceId) {
+    return SERVICES.find(s => s.id === serviceId) || {
+        id: serviceId,
+        name: serviceId || 'Serviço',
+        price: 0
+    };
+}
+
+function normalizeAppointmentFinancials(row) {
+    const serviceObj = findServiceById(row.service_id);
+    const totalServicePrice = roundMoney2(serviceObj.price || 0);
+
+    const paymentAmount = roundMoney2(row.payment_amount ?? FIXED_SIGNAL_AMOUNT);
+
+    let paymentType = row.payment_type ? String(row.payment_type).toLowerCase() : null;
+    if (paymentType && !['partial', 'full'].includes(paymentType)) {
+        paymentType = null;
+    }
+
+    let amountCharged = toMoneyNumber(row.amount_charged);
+    let remainingAmount = toMoneyNumber(row.remaining_amount);
+
+    // Inferência segura para registros antigos / inconsistentes
+    if (!paymentType) {
+        if (amountCharged != null && totalServicePrice > 0) {
+            if (Math.abs(amountCharged - totalServicePrice) < 0.01) paymentType = 'full';
+            else if (Math.abs(amountCharged - FIXED_SIGNAL_AMOUNT) < 0.01) paymentType = 'partial';
+        }
+
+        if (!paymentType && amountCharged == null && paymentAmount != null) {
+            // legado: payment_amount costuma representar o sinal
+            if (Math.abs(paymentAmount - FIXED_SIGNAL_AMOUNT) < 0.01) {
+                paymentType = 'partial';
+                amountCharged = FIXED_SIGNAL_AMOUNT;
+            }
+        }
+
+        if (!paymentType) {
+            paymentType = 'partial';
+        }
+    }
+
+    if (paymentType === 'full') {
+        amountCharged = totalServicePrice > 0 ? totalServicePrice : (amountCharged ?? totalServicePrice);
+        remainingAmount = 0;
+    } else {
+        // partial
+        if (amountCharged == null) {
+            amountCharged = FIXED_SIGNAL_AMOUNT;
+        } else {
+            // coerência: sinal deve ser o valor fixo do produto
+            amountCharged = FIXED_SIGNAL_AMOUNT;
+        }
+
+        if (remainingAmount == null) {
+            remainingAmount = Math.max(0, roundMoney2(totalServicePrice - amountCharged));
+        }
+    }
+
+    remainingAmount = Math.max(0, roundMoney2(remainingAmount ?? 0));
+
+    let paidAmount = toMoneyNumber(row.paid_amount);
+    const status = row.status;
+
+    if (status === 'confirmed' || status === 'completed') {
+        if (paidAmount == null || paidAmount <= 0) {
+            paidAmount = amountCharged != null ? roundMoney2(amountCharged) : null;
+        } else {
+            paidAmount = roundMoney2(paidAmount);
+        }
+    } else if (paidAmount != null) {
+        paidAmount = roundMoney2(paidAmount);
+    }
+
+    return {
+        paymentType,
+        amountCharged: amountCharged != null ? roundMoney2(amountCharged) : null,
+        remainingAmount: remainingAmount != null ? roundMoney2(remainingAmount) : null,
+        paidAmount,
+        totalServicePrice
+    };
+}
+
+function buildPaymentSummary(row) {
+    const fin = normalizeAppointmentFinancials(row);
+    const status = row.status;
+
+    const isPartial = fin.paymentType === 'partial';
+    const isFull = fin.paymentType === 'full';
+
+    const paymentTypeLabel = isFull ? 'Total' : 'Parcial';
+
+    let paymentStatusLabel = 'Aguardando pagamento';
+    if (status === 'pending_payment') paymentStatusLabel = 'Aguardando pagamento';
+    else if (status === 'confirmed') paymentStatusLabel = 'Pagamento confirmado';
+    else if (status === 'completed') paymentStatusLabel = 'Concluído';
+    else if (status === 'cancelled') paymentStatusLabel = 'Cancelado';
+
+    const paidAmount = fin.paidAmount;
+    const isPaid = (status === 'confirmed' || status === 'completed')
+        && paidAmount != null
+        && paidAmount > 0;
+
+    return {
+        paymentStatusLabel,
+        paymentTypeLabel,
+        amountCharged: fin.amountCharged,
+        remainingAmount: fin.remainingAmount,
+        paidAmount,
+        totalServicePrice: fin.totalServicePrice,
+        isPaid,
+        isPartial,
+        isFull
+    };
+}
+
 function mapAppointmentRow(row) {
+    const fin = normalizeAppointmentFinancials(row);
+    const paymentSummary = buildPaymentSummary(row);
+
     return {
         id: row.id,
         serviceId: row.service_id,
@@ -175,25 +484,18 @@ function mapAppointmentRow(row) {
         status: row.status,
         paymentUrl: row.payment_url,
         paymentAmount: Number(row.payment_amount || FIXED_SIGNAL_AMOUNT),
-        paymentType: row.payment_type,
-        amountCharged: row.amount_charged ? Number(row.amount_charged) : null,
-        remainingAmount: row.remaining_amount ? Number(row.remaining_amount) : null,
+        paymentType: fin.paymentType,
+        amountCharged: fin.amountCharged,
+        remainingAmount: fin.remainingAmount,
         transactionNsu: row.transaction_nsu,
         invoiceSlug: row.invoice_slug,
         receiptUrl: row.receipt_url,
         captureMethod: row.capture_method,
-        paidAmount: row.paid_amount ? Number(row.paid_amount) : null,
+        paidAmount: fin.paidAmount,
         cancelledAt: row.cancelled_at,
         cancelledBy: row.cancelled_by,
-        cancelReason: row.cancel_reason
-    };
-}
-
-function findServiceById(serviceId) {
-    return SERVICES.find(s => s.id === serviceId) || {
-        id: serviceId,
-        name: serviceId || 'Serviço',
-        price: 0
+        cancelReason: row.cancel_reason,
+        paymentSummary
     };
 }
 
@@ -220,9 +522,128 @@ async function sweepExpiredPending() {
     }
 }
 
+/**
+ * Envia e-mail amigável à cliente após pagamento confirmado (uma vez por agendamento).
+ */
+async function trySendClientAppointmentConfirmationIfNeeded(appointmentRow) {
+    const appointmentId = appointmentRow.id;
+    if (appointmentRow.client_confirmation_email_sent_at) {
+        return;
+    }
+
+    const cid = appointmentRow.client_id;
+    if (!cid) {
+        return;
+    }
+
+    const cr = await pool.query('SELECT email FROM clients WHERE id = $1', [cid]);
+    const em = normalizeEmail(cr.rows[0]?.email);
+    if (!isValidEmailBasic(em)) {
+        console.warn(`[Payment] E-mail da cliente ausente ou inválido; não enviando confirmação ao cliente (${appointmentId}).`);
+        return;
+    }
+
+    const serviceObj = findServiceById(appointmentRow.service_id);
+    await sendClientConfirmationEmail(appointmentRow, serviceObj, em);
+
+    await pool.query(
+        `
+        UPDATE appointments
+        SET client_confirmation_email_sent_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+          AND client_confirmation_email_sent_at IS NULL
+    `,
+        [appointmentId]
+    );
+
+    console.log(`[Payment] E-mail ao cliente enviado (${em}) agendamento ${appointmentId}.`);
+}
+
 async function confirmAppointmentPayment({ appointmentId, transactionNsu, invoiceSlug, receiptUrl, captureMethod, paidAmount }) {
     if (!appointmentId) {
         throw new Error('appointmentId não informado para confirmação do pagamento');
+    }
+
+    const existing = await pool.query('SELECT * FROM appointments WHERE id = $1', [appointmentId]);
+    if (existing.rows.length === 0) {
+        throw new Error(`Agendamento ${appointmentId} não encontrado`);
+    }
+
+    const before = existing.rows[0];
+    const previousStatus = before.status;
+
+    const paidFromWebhook = (paidAmount === null || paidAmount === undefined)
+        ? null
+        : Number(paidAmount);
+
+    const paidResolved = (paidFromWebhook != null && Number.isFinite(paidFromWebhook) && paidFromWebhook > 0)
+        ? paidFromWebhook
+        : (before.amount_charged != null ? Number(before.amount_charged) : null);
+
+    // Cancelado: não confirmar pagamento (idempotente / seguro)
+    if (previousStatus === 'cancelled') {
+        console.log(`[Payment] Ignorando confirmação: agendamento ${appointmentId} está cancelado (status=${previousStatus}).`);
+        return {
+            appointment: before,
+            alreadyProcessed: false,
+            updated: false,
+            previousStatus
+        };
+    }
+
+    // Já processado: não reenviar e-mail, mas pode enriquecer metadados sem mudar status
+    if (previousStatus === 'confirmed' || previousStatus === 'completed') {
+        const metaUpdate = await pool.query(`
+            UPDATE appointments
+            SET transaction_nsu = COALESCE($2, transaction_nsu),
+                invoice_slug = COALESCE($3, invoice_slug),
+                receipt_url = COALESCE($4, receipt_url),
+                capture_method = COALESCE($5, capture_method),
+                paid_amount = COALESCE(
+                    NULLIF($6::numeric, 0::numeric),
+                    NULLIF(paid_amount, 0::numeric),
+                    paid_amount,
+                    amount_charged
+                )
+            WHERE id = $1
+            RETURNING *
+        `, [
+            appointmentId,
+            transactionNsu || null,
+            invoiceSlug || null,
+            receiptUrl || null,
+            captureMethod || null,
+            paidFromWebhook
+        ]);
+
+        const appointment = metaUpdate.rows[0] || before;
+        console.log(`[Payment] Webhook duplicado/reatribuição: agendamento ${appointmentId} já estava ${previousStatus} (sem reprocessar confirmação).`);
+
+        try {
+            if (!appointment.client_confirmation_email_sent_at) {
+                await trySendClientAppointmentConfirmationIfNeeded(appointment);
+            }
+        } catch (clientMailErr) {
+            console.error(`[Payment] Falha ao enviar e-mail à cliente (recuperação) ${appointmentId}:`, clientMailErr);
+        }
+
+        return {
+            appointment,
+            alreadyProcessed: true,
+            updated: metaUpdate.rowCount > 0,
+            previousStatus
+        };
+    }
+
+    // Fluxo principal: pending_payment -> confirmed
+    if (previousStatus !== 'pending_payment') {
+        console.log(`[Payment] Ignorando confirmação: agendamento ${appointmentId} com status inesperado (${previousStatus}).`);
+        return {
+            appointment: before,
+            alreadyProcessed: true,
+            updated: false,
+            previousStatus
+        };
     }
 
     const updateResult = await pool.query(`
@@ -232,7 +653,11 @@ async function confirmAppointmentPayment({ appointmentId, transactionNsu, invoic
             invoice_slug = COALESCE($3, invoice_slug),
             receipt_url = COALESCE($4, receipt_url),
             capture_method = COALESCE($5, capture_method),
-            paid_amount = COALESCE($6, paid_amount)
+            paid_amount = COALESCE(
+                NULLIF($6::numeric, 0::numeric),
+                NULLIF(paid_amount, 0::numeric),
+                amount_charged
+            )
         WHERE id = $1
           AND status = 'pending_payment'
         RETURNING *
@@ -242,22 +667,24 @@ async function confirmAppointmentPayment({ appointmentId, transactionNsu, invoic
         invoiceSlug || null,
         receiptUrl || null,
         captureMethod || null,
-        paidAmount || null
+        paidResolved
     ]);
 
     if (updateResult.rows.length === 0) {
-        const existing = await pool.query('SELECT * FROM appointments WHERE id = $1', [appointmentId]);
-        if (existing.rows.length === 0) {
-            throw new Error(`Agendamento ${appointmentId} não encontrado`);
-        }
-
-        const current = existing.rows[0];
-        console.log(`[Payment] Agendamento ${appointmentId} já estava com status ${current.status}.`);
-        return current;
+        // Race: alguém mudou o status entre o SELECT e o UPDATE
+        const again = await pool.query('SELECT * FROM appointments WHERE id = $1', [appointmentId]);
+        const current = again.rows[0] || before;
+        console.log(`[Payment] Concorrência detectada ao confirmar ${appointmentId}: status atual=${current.status}.`);
+        return {
+            appointment: current,
+            alreadyProcessed: current.status !== 'pending_payment',
+            updated: false,
+            previousStatus
+        };
     }
 
     const appointment = updateResult.rows[0];
-    console.log(`[Payment] Agendamento ${appointmentId} confirmado com sucesso.`);
+    console.log(`[Payment] Agendamento ${appointmentId} confirmado com sucesso (${previousStatus} -> confirmed). paid_amount_resolved=${paidResolved}`);
 
     try {
         const serviceObj = findServiceById(appointment.service_id);
@@ -267,7 +694,18 @@ async function confirmAppointmentPayment({ appointmentId, transactionNsu, invoic
         console.error(`[Payment] Falha ao enviar e-mail do agendamento ${appointmentId}:`, emailErr);
     }
 
-    return appointment;
+    try {
+        await trySendClientAppointmentConfirmationIfNeeded(appointment);
+    } catch (clientMailErr) {
+        console.error(`[Payment] Falha ao enviar e-mail à cliente do agendamento ${appointmentId}:`, clientMailErr);
+    }
+
+    return {
+        appointment,
+        alreadyProcessed: false,
+        updated: true,
+        previousStatus
+    };
 }
 
 // ======================= HEALTHCHECK =======================
@@ -307,7 +745,7 @@ app.post('/clients', async (req, res) => {
     }
 
     try {
-        const { id, name, phone, address } = req.body;
+        const { id, name, phone, address, email } = req.body;
 
         if (!name || !phone) {
             return res.status(400).json({ error: 'Nome e telefone são obrigatórios.' });
@@ -319,6 +757,11 @@ app.post('/clients', async (req, res) => {
             return res.status(400).json({ error: 'Telefone inválido.' });
         }
 
+        const normEmail = normalizeEmail(email);
+        if (!isValidEmailBasic(normEmail)) {
+            return res.status(400).json({ error: 'Informe um e-mail válido.' });
+        }
+
         const exist = await pool.query('SELECT * FROM clients WHERE phone = $1', [cleanPhone]);
 
         if (exist.rows.length > 0) {
@@ -327,12 +770,14 @@ app.post('/clients', async (req, res) => {
             const update = await pool.query(`
                 UPDATE clients
                 SET name = $1,
-                    address = $2
-                WHERE phone = $3
+                    address = $2,
+                    email = $3
+                WHERE phone = $4
                 RETURNING *
             `, [
                 name,
                 address || existingClient.address || '',
+                normEmail,
                 cleanPhone
             ]);
 
@@ -342,14 +787,15 @@ app.post('/clients', async (req, res) => {
         const clientId = id || Date.now().toString();
 
         const insert = await pool.query(`
-            INSERT INTO clients (id, name, phone, address)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO clients (id, name, phone, address, email)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING *
         `, [
             clientId,
             name,
             cleanPhone,
-            address || ''
+            address || '',
+            normEmail
         ]);
 
         return res.status(201).json(insert.rows[0]);
@@ -378,9 +824,32 @@ app.get('/appointments', async (req, res) => {
     }
 });
 
+// ====================== ADMIN AUTH (MVP) ======================
+
+app.post('/admin/login', (req, res) => {
+    if (!process.env.ADMIN_PASSWORD) {
+        return res.status(503).json({ error: 'Acesso administrativo não configurado no servidor.' });
+    }
+    const pwd = req.body && req.body.password;
+    if (!verifyAdminPasswordCandidate(pwd)) {
+        return res.status(401).json({ error: 'Credenciais inválidas.' });
+    }
+    if (!adminSigningSecret()) {
+        return res.status(503).json({ error: 'Configuração incompleta do servidor.' });
+    }
+    const token = signAdminToken();
+    if (!token) {
+        return res.status(500).json({ error: 'Não foi possível iniciar a sessão.' });
+    }
+    return res.json({
+        token,
+        expiresInSec: ADMIN_SESSION_TTL_SEC
+    });
+});
+
 // ====================== ADMIN REPORT ======================
 
-app.get('/admin/report', async (req, res) => {
+app.get('/admin/report', requireAdminAuth, async (req, res) => {
     if (!isPostgresSetup) {
         return res.status(500).json({ error: 'DB não configurado.' });
     }
@@ -407,6 +876,7 @@ app.get('/admin/report', async (req, res) => {
 
         const items = rows.map(r => {
             const serviceObj = findServiceById(r.service_id);
+            const fin = normalizeAppointmentFinancials(r);
             return {
                 id: r.id,
                 clientName: r.client_name,
@@ -416,11 +886,11 @@ app.get('/admin/report', async (req, res) => {
                 date: r.date,
                 time: r.time,
                 status: r.status,
-                paymentType: r.payment_type,
-                amountCharged: r.amount_charged ? Number(r.amount_charged) : null,
-                remainingAmount: r.remaining_amount ? Number(r.remaining_amount) : null,
+                paymentType: fin.paymentType,
+                amountCharged: fin.amountCharged,
+                remainingAmount: fin.remainingAmount,
                 captureMethod: r.capture_method,
-                paidAmount: r.paid_amount ? Number(r.paid_amount) : null
+                paidAmount: fin.paidAmount
             };
         });
 
@@ -434,7 +904,8 @@ app.get('/admin/report', async (req, res) => {
             totalRevenue: 0,
             totalPartialReceived: 0,
             totalFullReceived: 0,
-            totalRemainingToReceive: 0
+            totalRemainingToReceive: 0,
+            totalExpectedRevenue: 0
         };
 
         const uniqueClientKeys = new Set();
@@ -450,16 +921,19 @@ app.get('/admin/report', async (req, res) => {
             const isPaidStatus = r.status === 'confirmed' || r.status === 'completed';
             if (!isPaidStatus) continue;
 
-            const amountCharged = r.amount_charged != null ? Number(r.amount_charged) : 0;
-            const remainingAmount = r.remaining_amount != null ? Number(r.remaining_amount) : 0;
+            const fin = normalizeAppointmentFinancials(r);
+            const received = fin.paidAmount != null && fin.paidAmount > 0
+                ? fin.paidAmount
+                : (fin.amountCharged != null ? fin.amountCharged : 0);
 
-            summary.totalRevenue += amountCharged;
-            summary.totalRemainingToReceive += remainingAmount;
+            summary.totalRevenue += received;
+            summary.totalExpectedRevenue += fin.totalServicePrice || 0;
 
-            if (r.payment_type === 'partial') {
-                summary.totalPartialReceived += amountCharged;
-            } else if (r.payment_type === 'full') {
-                summary.totalFullReceived += amountCharged;
+            if (fin.paymentType === 'partial') {
+                summary.totalPartialReceived += received;
+                summary.totalRemainingToReceive += fin.remainingAmount || 0;
+            } else if (fin.paymentType === 'full') {
+                summary.totalFullReceived += received;
             }
         }
 
@@ -473,6 +947,100 @@ app.get('/admin/report', async (req, res) => {
     } catch (error) {
         console.error('[GET /admin/report] Erro:', error);
         return res.status(500).json({ error: 'Erro ao gerar relatório.' });
+    }
+});
+
+// ====================== ADMIN BLOQUEIOS DE HORÁRIO ======================
+
+app.get('/admin/blocked-slots', requireAdminAuth, async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+
+    try {
+        const { rows } = await pool.query(`
+            SELECT id, date, time, reason, created_at
+            FROM blocked_slots
+            ORDER BY date ASC, time ASC
+        `);
+        return res.json(
+            rows.map((r) => ({
+                id: r.id,
+                date: r.date,
+                time: normalizeSlotTimeHHMM(r.time) || r.time,
+                reason: r.reason,
+                createdAt: r.created_at
+            }))
+        );
+    } catch (error) {
+        console.error('[GET /admin/blocked-slots] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao listar bloqueios.' });
+    }
+});
+
+app.post('/admin/blocked-slots', requireAdminAuth, async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+
+    try {
+        const { date, time, reason } = req.body || {};
+
+        if (!isValidReportDateYmd(String(date || ''))) {
+            return res.status(400).json({ error: 'Data inválida. Use YYYY-MM-DD.' });
+        }
+
+        const tNorm = normalizeSlotTimeHHMM(time);
+        if (!tNorm) {
+            return res.status(400).json({ error: 'Horário inválido. Use HH:MM.' });
+        }
+
+        const ins = await pool.query(
+            `
+            INSERT INTO blocked_slots (date, time, reason)
+            VALUES ($1, $2, $3)
+            RETURNING id, date, time, reason, created_at
+        `,
+            [date, tNorm, reason || null]
+        );
+
+        const r = ins.rows[0];
+        return res.status(201).json({
+            id: r.id,
+            date: r.date,
+            time: normalizeSlotTimeHHMM(r.time) || r.time,
+            reason: r.reason,
+            createdAt: r.created_at
+        });
+    } catch (error) {
+        if (error && error.code === '23505') {
+            return res.status(409).json({ error: 'Já existe bloqueio para esta data e horário.' });
+        }
+        console.error('[POST /admin/blocked-slots] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao criar bloqueio.' });
+    }
+});
+
+app.delete('/admin/blocked-slots/:id', requireAdminAuth, async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+
+    const rawId = req.params.id;
+    const id = parseInt(String(rawId), 10);
+    if (!Number.isFinite(id) || id <= 0) {
+        return res.status(400).json({ error: 'ID inválido.' });
+    }
+
+    try {
+        const del = await pool.query('DELETE FROM blocked_slots WHERE id = $1 RETURNING id', [id]);
+        if (del.rowCount === 0) {
+            return res.status(404).json({ error: 'Bloqueio não encontrado.' });
+        }
+        return res.json({ ok: true, id });
+    } catch (error) {
+        console.error('[DELETE /admin/blocked-slots] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao remover bloqueio.' });
     }
 });
 
@@ -491,6 +1059,8 @@ app.post('/appointments', async (req, res) => {
             clientId,
             clientName,
             clientPhone,
+            clientEmail,
+            email,
             date,
             time,
             notes,
@@ -500,6 +1070,11 @@ app.post('/appointments', async (req, res) => {
 
         if (!clientName || !clientPhone || !serviceId || !date || !time) {
             return res.status(400).json({ error: 'Dados obrigatórios faltando.' });
+        }
+
+        const normClientEmail = normalizeEmail(clientEmail != null ? clientEmail : email);
+        if (!isValidEmailBasic(normClientEmail)) {
+            return res.status(400).json({ error: 'Informe um e-mail válido da cliente para contato e confirmação.' });
         }
 
         const paymentType = rawPaymentType ? String(rawPaymentType).toLowerCase() : 'partial';
@@ -535,39 +1110,57 @@ app.post('/appointments', async (req, res) => {
             await client.query(`
                 UPDATE clients
                 SET name = $1,
-                    address = $2
-                WHERE id = $3
+                    address = $2,
+                    email = $3
+                WHERE id = $4
             `, [
                 clientName,
                 location || existingClient.rows[0].address || '',
+                normClientEmail,
                 finalClientId
             ]);
         } else {
             finalClientId = finalClientId || `${Date.now()}_client`;
 
             await client.query(`
-                INSERT INTO clients (id, name, phone, address)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO clients (id, name, phone, address, email)
+                VALUES ($1, $2, $3, $4, $5)
             `, [
                 finalClientId,
                 clientName,
                 cleanPhone,
-                location || ''
+                location || '',
+                normClientEmail
             ]);
         }
 
-        const double = await client.query(`
-            SELECT id
+        const blockedRes = await client.query(
+            'SELECT time FROM blocked_slots WHERE date = $1',
+            [date]
+        );
+        const blockedSet = new Set(
+            blockedRes.rows.map((r) => normalizeSlotTimeHHMM(r.time)).filter(Boolean)
+        );
+
+        const dayLock = await client.query(
+            `
+            SELECT time, status
             FROM appointments
             WHERE date = $1
-              AND time = $2
               AND status IN ('pending_payment', 'confirmed', 'completed')
             FOR UPDATE
-        `, [date, time]);
+        `,
+            [date]
+        );
 
-        if (double.rows.length > 0) {
+        const scheduleErr = validateNewAppointmentSchedule({
+            time,
+            existingRows: dayLock.rows,
+            blockedTimesSet: blockedSet
+        });
+        if (scheduleErr) {
             await client.query('ROLLBACK');
-            return res.status(409).json({ error: 'Este horário acabou de ser reservado por outra pessoa.' });
+            return res.status(409).json({ error: scheduleErr });
         }
 
         const newId = Date.now().toString();
@@ -622,7 +1215,7 @@ app.post('/appointments', async (req, res) => {
             time,
             notes || '',
             paymentUrl,
-            FIXED_SIGNAL_AMOUNT,
+            amountCharged,
             paymentType,
             amountCharged,
             remainingAmount
@@ -649,6 +1242,13 @@ app.patch('/appointments/:id/cancel', async (req, res) => {
 
     const { id } = req.params;
     const { cancelledBy, cancelReason } = req.body;
+
+    if (String(cancelledBy || '') === 'admin') {
+        const tok = extractAdminToken(req);
+        if (!verifyAdminToken(tok)) {
+            return res.status(401).json({ error: 'Não autorizado.' });
+        }
+    }
 
     try {
         const check = await pool.query('SELECT * FROM appointments WHERE id = $1', [id]);
@@ -693,7 +1293,7 @@ app.patch('/appointments/:id/cancel', async (req, res) => {
     }
 });
 
-app.delete('/appointments/:id', async (req, res) => {
+app.delete('/appointments/:id', requireAdminAuth, async (req, res) => {
     if (!isPostgresSetup) {
         return res.status(500).json({ error: 'DB não configurado.' });
     }
@@ -735,24 +1335,72 @@ app.post('/webhook/infinitepay', async (req, res) => {
             return res.status(400).json({ error: 'order_nsu não informado no webhook.' });
         }
 
-        const confirmedAppointment = await confirmAppointmentPayment({
-            appointmentId: order_nsu,
+        const appointmentId = String(order_nsu);
+        const pre = await pool.query('SELECT id, status FROM appointments WHERE id = $1', [appointmentId]);
+        if (pre.rows.length === 0) {
+            console.warn(`[InfinitePay Webhook] order_nsu=${appointmentId} não encontrado no banco.`);
+            return res.status(400).json({ error: 'Agendamento não encontrado para o order_nsu informado.' });
+        }
+
+        const previousStatus = pre.rows[0].status;
+        console.log(`[InfinitePay Webhook] Agendamento localizado: id=${appointmentId} status_anterior=${previousStatus}`);
+
+        if (previousStatus === 'cancelled') {
+            console.log(`[InfinitePay Webhook] Ignorado: agendamento ${appointmentId} está cancelado.`);
+            return res.status(200).json({
+                received: true,
+                ignored: true,
+                reason: 'Agendamento cancelado; webhook ignorado.',
+                appointmentId,
+                status: previousStatus
+            });
+        }
+
+        if (previousStatus === 'confirmed' || previousStatus === 'completed') {
+            console.log(`[InfinitePay Webhook] Idempotência: agendamento ${appointmentId} já estava ${previousStatus}.`);
+        }
+
+        const paidFromWebhook = (paid_amount === null || paid_amount === undefined)
+            ? null
+            : Number(paid_amount) / 100;
+
+        const confirmResult = await confirmAppointmentPayment({
+            appointmentId,
             transactionNsu: transaction_nsu || null,
             invoiceSlug: invoice_slug || null,
             receiptUrl: receipt_url || null,
             captureMethod: capture_method || null,
-            paidAmount: paid_amount ? Number(paid_amount) / 100 : null
+            paidAmount: paidFromWebhook
         });
 
-        console.log(`[InfinitePay Webhook] Pagamento aprovado do agendamento ${order_nsu}.`);
+        const confirmedAppointment = confirmResult.appointment;
+        const finalStatus = confirmedAppointment.status;
+
+        if (confirmResult.alreadyProcessed) {
+            console.log(`[InfinitePay Webhook] Duplicidade/sem mudança: id=${appointmentId} status_final=${finalStatus} updated=${confirmResult.updated}`);
+        } else {
+            console.log(`[InfinitePay Webhook] Processado: id=${appointmentId} ${confirmResult.previousStatus} -> ${finalStatus} updated=${confirmResult.updated}`);
+        }
+
         console.log('[InfinitePay Webhook] Itens recebidos:', JSON.stringify(items || []));
         console.log('[InfinitePay Webhook] Parcela(s):', installments || 1);
         console.log('[InfinitePay Webhook] Valor cobrado (centavos):', amount || 0);
 
+        const ignoredBecauseProcessed =
+            !!confirmResult.alreadyProcessed &&
+            (finalStatus === 'confirmed' || finalStatus === 'completed');
+
         return res.status(200).json({
             received: true,
             appointmentId: confirmedAppointment.id,
-            status: confirmedAppointment.status
+            status: confirmedAppointment.status,
+            ignored: ignoredBecauseProcessed,
+            message: ignoredBecauseProcessed
+                ? 'Pagamento já processado anteriormente.'
+                : 'Pagamento processado.',
+            alreadyProcessed: !!confirmResult.alreadyProcessed,
+            updated: !!confirmResult.updated,
+            previousStatus: confirmResult.previousStatus
         });
     } catch (e) {
         console.error('[InfinitePay Webhook] Erro:', e);
@@ -791,19 +1439,26 @@ app.post('/payments/check', async (req, res) => {
         }
 
         if (result.paid) {
-            const appointment = await confirmAppointmentPayment({
+            const paidFromCheck = (result.paid_amount === null || result.paid_amount === undefined)
+                ? null
+                : Number(result.paid_amount) / 100;
+
+            const confirmResult = await confirmAppointmentPayment({
                 appointmentId: order_nsu,
                 transactionNsu: transaction_nsu,
                 invoiceSlug: slug,
                 receiptUrl: null,
                 captureMethod: result.capture_method || null,
-                paidAmount: result.paid_amount ? Number(result.paid_amount) / 100 : null
+                paidAmount: paidFromCheck
             });
 
             return res.status(200).json({
                 success: true,
                 paid: true,
-                appointment: mapAppointmentRow(appointment)
+                appointment: mapAppointmentRow(confirmResult.appointment),
+                alreadyProcessed: !!confirmResult.alreadyProcessed,
+                updated: !!confirmResult.updated,
+                previousStatus: confirmResult.previousStatus
             });
         }
 

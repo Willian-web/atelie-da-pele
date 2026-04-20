@@ -15,7 +15,7 @@ Devido à necessidade de alta disponibilidade local e zero dependência de confi
    - Calendário inteligente: oculta sábados de noite e domingos fechados.
    - Motor de colisão de horários: Se uma cliente agenda um serviço 15:00 de amanhã, este horário não é mais votável pela próxima que tentar agendar para amanhã.
 2. **Área da Profissional / Admin:**
-   - Protegida com senha simplificada (`1234`).
+   - Protegida por login no backend (`POST /admin/login`) com senha em variável de ambiente e token de sessão (sem senha no frontend).
    - Listagem completa ranqueada por temporalidade (quem vem primeiro em cima).
    - Possibilidade de exclusão (liberando a data e hora na tela original).
 
