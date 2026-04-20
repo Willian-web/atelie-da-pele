@@ -1,33 +1,40 @@
 :root {
-    /* —— Paleta marca Ateliê da Pele —— */
-    --brand-primary: #6E4B8B;
-    --brand-light: #A678B4;
-    --brand-rose: #D8A1C4;
-    --brand-rose-pale: #F2C6DE;
-    --brand-bg: #F8F4F9;
-    --brand-text: #3A2E4F;
+    /* —— Paleta premium Ateliê da Pele —— */
+    --brand-primary: #6F4CA5;
+    --brand-dark: #4B356E;
+    --brand-light: #B79AD9;
+    --accent: #E3A8C8;
+    --accent-soft: #F3D7E7;
+    --brand-bg: #FCF8FC;
+    --card-bg: #ffffff;
+    --brand-text: #3F315A;
 
-    /* Tokens semânticos (mapeiam para a paleta) */
+    /* Tokens semânticos */
     --primary-color: var(--brand-primary);
-    --primary-hover: #5a3d73;
-    --secondary-color: rgba(242, 198, 222, 0.42);
+    --primary-hover: var(--brand-dark);
+    --secondary-color: rgba(243, 215, 231, 0.72);
     --bg-color: var(--brand-bg);
     --text-dark: var(--brand-text);
-    --text-muted: #6b5d7a;
-    --card-bg: #ffffff;
-    --border-color: rgba(110, 75, 139, 0.2);
-    --surface-muted: #ede4f2;
+    --text-muted: #6a5b82;
+    --border-color: rgba(111, 76, 165, 0.22);
+    --surface-muted: #efe6f4;
     --danger: #c45c6a;
     --danger-soft: #fceeee;
-    --success: #4a9b72;
+    --success: #3d8f65;
     --success-soft: #e8f5ee;
-    --pending-bg: rgba(214, 161, 196, 0.38);
-    --pending-text: #5a3d6e;
+    --pending-bg: rgba(227, 168, 200, 0.42);
+    --pending-text: #4B356E;
     --font-heading: 'Playfair Display', serif;
     --font-body: 'Outfit', sans-serif;
-    --shadow-soft: 0 10px 32px -12px rgba(58, 46, 79, 0.12);
-    --shadow-card: 0 4px 18px -6px rgba(58, 46, 79, 0.14);
-    --focus-ring: rgba(110, 75, 139, 0.28);
+    --shadow-soft: 0 12px 40px -14px rgba(75, 53, 110, 0.18);
+    --shadow-card: 0 6px 24px -8px rgba(75, 53, 110, 0.16);
+    --shadow-btn: 0 6px 22px rgba(75, 53, 110, 0.38);
+    --focus-ring: rgba(111, 76, 165, 0.32);
+    --focus-glow: rgba(227, 168, 200, 0.55);
+    --gradient-primary: linear-gradient(135deg, var(--brand-primary) 0%, #8b5fc4 42%, var(--accent) 100%);
+    --gradient-primary-hover: linear-gradient(135deg, var(--brand-dark) 0%, var(--brand-primary) 48%, #c989b0 100%);
+    --gradient-tab-active: linear-gradient(135deg, var(--brand-dark) 0%, var(--brand-primary) 52%, #9a72c4 100%);
+    --gradient-time-selected: linear-gradient(135deg, var(--brand-dark) 0%, var(--brand-primary) 100%);
 }
 
 * {
@@ -38,10 +45,19 @@
 
 body {
     font-family: var(--font-body);
-    background-color: var(--bg-color);
     color: var(--text-dark);
     -webkit-font-smoothing: antialiased;
     min-height: 100vh;
+    background-color: var(--brand-bg);
+    background-image: linear-gradient(
+        168deg,
+        var(--accent-soft) 0%,
+        var(--brand-bg) 22%,
+        #ffffff 48%,
+        var(--brand-bg) 78%,
+        rgba(243, 215, 231, 0.55) 100%
+    );
+    background-attachment: fixed;
 }
 
 /* Typography */
@@ -114,8 +130,13 @@ main {
     padding: 6px 4px;
 }
 
-.btn-admin:hover, .btn-admin.active {
-    color: var(--primary-color);
+.btn-admin:hover,
+.btn-admin.active {
+    color: var(--brand-primary);
+}
+
+.btn-admin.active {
+    font-weight: 600;
 }
 
 .btn-admin:hover {
@@ -139,7 +160,7 @@ main {
 }
 
 .refresh-btn:hover {
-    background: var(--secondary-color);
+    background: var(--accent-soft);
     border-color: var(--brand-light);
     box-shadow: var(--shadow-card);
 }
@@ -169,14 +190,19 @@ main {
     min-height: 140px;
 }
 
-.service-card:hover, .service-card.selected {
+.service-card:hover {
     transform: translateY(-3px);
     box-shadow: var(--shadow-soft);
-    border-color: var(--primary-color);
+    border-color: var(--brand-light);
 }
 
 .service-card.selected {
-    background-color: var(--secondary-color);
+    transform: translateY(-4px);
+    border: 2px solid var(--brand-primary);
+    background: linear-gradient(165deg, rgba(243, 215, 231, 0.75) 0%, rgba(255, 255, 255, 0.98) 55%, var(--accent-soft) 100%);
+    box-shadow:
+        0 10px 32px rgba(75, 53, 110, 0.22),
+        0 0 0 1px rgba(183, 154, 217, 0.45);
 }
 
 .service-card-header {
@@ -192,11 +218,22 @@ main {
 }
 
 .service-price {
-    font-weight: 600;
-    color: var(--primary-color);
+    font-weight: 800;
     font-family: var(--font-body);
-    font-size: 1.1rem;
+    font-size: clamp(1.15rem, 2.8vw, 1.42rem);
     margin-top: 15px;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    color: var(--brand-primary);
+}
+
+@supports ((-webkit-background-clip: text) and (color: transparent)) or (background-clip: text) {
+    .service-price {
+        background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-dark) 45%, #a67fd4 85%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+    }
 }
 
 .service-check {
@@ -212,11 +249,11 @@ main {
 
 /* Booking Layout */
 .booking-section {
-    background-color: var(--card-bg);
+    background: linear-gradient(180deg, #ffffff 0%, rgba(252, 248, 252, 0.92) 100%);
     border-radius: 16px;
     padding: clamp(16px, 4vw, 30px);
     box-shadow: var(--shadow-card);
-    border: 1px solid var(--border-color);
+    border: 1px solid rgba(183, 154, 217, 0.28);
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
@@ -224,8 +261,9 @@ main {
 
 .section-title {
     margin-bottom: clamp(16px, 3vw, 25px);
-    color: var(--primary-color);
+    color: var(--brand-dark);
     text-align: center;
+    letter-spacing: -0.02em;
 }
 
 .form-grid {
@@ -262,15 +300,16 @@ main {
 }
 
 .tab-btn.active {
-    background: var(--primary-color);
+    background: var(--gradient-tab-active);
     color: #fff;
-    border-color: var(--primary-color);
-    box-shadow: 0 2px 10px rgba(110, 75, 139, 0.28);
+    border-color: transparent;
+    font-weight: 600;
+    box-shadow: 0 4px 18px rgba(75, 53, 110, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .tab-btn.active:hover {
-    background: var(--primary-hover);
-    border-color: var(--primary-hover);
+    filter: brightness(1.07);
+    box-shadow: 0 6px 22px rgba(75, 53, 110, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 /* Status (temp.jsx StatusBadge) */
@@ -291,7 +330,7 @@ main {
 .st-pending {
     background: var(--pending-bg);
     color: var(--pending-text);
-    border: 1px solid rgba(167, 120, 180, 0.45);
+    border: 1px solid rgba(183, 154, 217, 0.55);
 }
 
 .st-confirmed {
@@ -307,9 +346,9 @@ main {
 }
 
 .st-completed {
-    background: rgba(110, 75, 139, 0.12);
-    color: #5a3d73;
-    border: 1px solid rgba(110, 75, 139, 0.28);
+    background: rgba(111, 76, 165, 0.14);
+    color: var(--brand-dark);
+    border: 1px solid rgba(111, 76, 165, 0.32);
 }
 
 /* Relatório: tabela com scroll horizontal em telas estreitas */
@@ -441,19 +480,21 @@ main {
     width: 100%;
     padding: 12px 15px;
     border: 1px solid var(--border-color);
-    border-radius: 8px;
+    border-radius: 10px;
     font-family: var(--font-body);
     font-size: 15px;
     color: var(--text-dark);
-    background-color: var(--bg-color);
-    transition: border-color 0.3s, box-shadow 0.3s;
+    background-color: rgba(255, 255, 255, 0.92);
+    transition: border-color 0.25s, box-shadow 0.25s, background-color 0.25s;
     outline: none;
 }
 
 .form-control:focus {
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px var(--focus-ring);
-    background-color: #fff;
+    border-color: var(--brand-primary);
+    background-color: var(--card-bg);
+    box-shadow:
+        0 0 0 3px var(--focus-ring),
+        0 0 22px var(--focus-glow);
 }
 
 textarea.form-control {
@@ -485,42 +526,46 @@ textarea.form-control {
 }
 
 .time-slot.selected {
-    background-color: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
+    background: var(--gradient-time-selected);
+    color: #fff;
+    border-color: var(--brand-dark);
+    box-shadow: 0 4px 16px rgba(75, 53, 110, 0.38);
+    font-weight: 600;
 }
 
 .time-slot.disabled {
     opacity: 0.5;
     cursor: not-allowed;
     text-decoration: line-through;
-    background-color: #f3f4f6;
-    border-color: #e5e7eb;
+    background-color: var(--surface-muted);
+    border-color: var(--border-color);
 }
 
 .btn-submit {
-    background-color: var(--primary-color);
+    background: var(--gradient-primary);
     color: #fff;
     border: none;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 15px 30px;
     font-size: clamp(15px, 2.8vw, 16px);
     font-weight: 600;
     cursor: pointer;
     width: 100%;
     max-width: 100%;
-    transition: background-color 0.2s, transform 0.12s, box-shadow 0.2s;
+    transition: transform 0.12s, box-shadow 0.25s, filter 0.2s;
     display: flex;
     justify-content: center;
     align-items: center;
     gap: 10px;
     font-family: var(--font-body);
     box-sizing: border-box;
+    box-shadow: var(--shadow-btn), inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 .btn-submit:hover {
-    background-color: var(--primary-hover);
-    box-shadow: 0 4px 14px rgba(110, 75, 139, 0.35);
+    background: var(--gradient-primary-hover);
+    box-shadow: 0 10px 28px rgba(75, 53, 110, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    filter: brightness(1.02);
 }
 
 .btn-submit:active {
@@ -528,7 +573,9 @@ textarea.form-control {
 }
 
 .btn-submit:disabled {
-    background-color: #d1d5db;
+    background: linear-gradient(135deg, #c4bcd4 0%, #d8d2e4 100%);
+    box-shadow: none;
+    filter: none;
     cursor: not-allowed;
 }
 
@@ -623,20 +670,21 @@ textarea.form-control {
     display: flex;
     align-items: center;
     gap: 6px;
-    background-color: var(--secondary-color);
+    background: linear-gradient(180deg, rgba(243, 215, 231, 0.55) 0%, rgba(255, 255, 255, 0.85) 100%);
     color: var(--text-dark);
-    padding: 4px 10px;
-    border-radius: 6px;
+    padding: 5px 11px;
+    border-radius: 8px;
     font-weight: 500;
+    border: 1px solid rgba(183, 154, 217, 0.35);
 }
 
 .obs-text {
     font-size: 13px;
-    background-color: #f9f9f9;
-    padding: 10px;
-    border-left: 3px solid var(--border-color);
+    background: rgba(243, 215, 231, 0.35);
+    padding: 10px 12px;
+    border-left: 3px solid var(--brand-light);
     margin-top: 5px;
-    border-radius: 0 4px 4px 0;
+    border-radius: 0 8px 8px 0;
 }
 
 .btn-delete {
@@ -670,13 +718,14 @@ textarea.form-control {
 }
 
 .password-modal {
-    background-color: var(--card-bg);
+    background: linear-gradient(180deg, #ffffff 0%, var(--accent-soft) 100%);
     padding: 30px;
     border-radius: 16px;
     width: 100%;
     max-width: 350px;
     text-align: center;
-    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+    box-shadow: 0 25px 50px -12px rgba(75, 53, 110, 0.28);
+    border: 1px solid rgba(183, 154, 217, 0.35);
 }
 
 .password-input {

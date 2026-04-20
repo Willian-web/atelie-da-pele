@@ -54,11 +54,11 @@ const getStatusLabel = (status) => {
 /** Cores de status alinhadas à marca (pendente em tons roxo/rosa; demais legíveis em cards/tabela). */
 const getStatusColor = (status) => {
     switch (status) {
-        case 'pending_payment': return '#7A5494';
+        case 'pending_payment': return '#8461B3';
         case 'confirmed': return '#2d8660';
         case 'cancelled': return '#c45c6a';
-        case 'completed': return '#5a4d7a';
-        default: return '#6b5d7a';
+        case 'completed': return '#5B4A78';
+        default: return '#6a5b82';
     }
 };
 
