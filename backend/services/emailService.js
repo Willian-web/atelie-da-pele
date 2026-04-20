@@ -9,6 +9,30 @@ function formatCurrencyBRL(value) {
     });
 }
 
+/**
+ * Valor exibido nos e-mails: em pagamento integral o checkout correto está em `amount_charged`;
+ * o gateway às vezes envia `paid_amount` do sinal (ex.: R$ 30) — não priorizar isso sobre o total.
+ */
+function resolvePaidAmountForDisplay({ paymentType, paid_amount, amount_charged, servicePrice }) {
+    const paid = paid_amount != null && paid_amount !== '' ? Number(paid_amount) : null;
+    const charged = amount_charged != null && amount_charged !== '' ? Number(amount_charged) : null;
+    const pOk = paid != null && Number.isFinite(paid) && paid > 0;
+    const cOk = charged != null && Number.isFinite(charged) && charged > 0;
+    const svc =
+        servicePrice != null && Number.isFinite(Number(servicePrice)) && Number(servicePrice) > 0
+            ? Number(servicePrice)
+            : null;
+
+    if (String(paymentType || '').toLowerCase() === 'full') {
+        if (cOk) return charged;
+        if (pOk) return paid;
+        return svc;
+    }
+    if (pOk) return paid;
+    if (cOk) return charged;
+    return svc;
+}
+
 async function sendConfirmationEmail(appointmentData, serviceData) {
     console.log('[EmailService] Iniciando envio via HTTPS REST (Resend)...');
     console.log(
@@ -61,9 +85,15 @@ async function sendConfirmationEmail(appointmentData, serviceData) {
         const amountChargedValue = appointmentData.amount_charged ?? null;
         const remainingAmountValue = appointmentData.remaining_amount ?? null;
 
-        const paidNow = paidAmountValue != null
-            ? Number(paidAmountValue)
-            : (amountChargedValue != null ? Number(amountChargedValue) : null);
+        const servicePriceNum =
+            typeof serviceData?.price === 'number' && Number.isFinite(serviceData.price) ? serviceData.price : null;
+
+        const paidNow = resolvePaidAmountForDisplay({
+            paymentType,
+            paid_amount: paidAmountValue,
+            amount_charged: amountChargedValue,
+            servicePrice: servicePriceNum
+        });
 
         const remainingAmount = remainingAmountValue != null
             ? Number(remainingAmountValue)
@@ -174,12 +204,12 @@ async function sendClientConfirmationEmail(appointmentRow, serviceData, clientEm
             : null;
 
     const paymentType = String(appointmentRow.payment_type || '').toLowerCase();
-    const paidNow =
-        appointmentRow.paid_amount != null && appointmentRow.paid_amount !== ''
-            ? Number(appointmentRow.paid_amount)
-            : appointmentRow.amount_charged != null
-              ? Number(appointmentRow.amount_charged)
-              : null;
+    const paidNow = resolvePaidAmountForDisplay({
+        paymentType,
+        paid_amount: appointmentRow.paid_amount,
+        amount_charged: appointmentRow.amount_charged,
+        servicePrice: typeof serviceData?.price === 'number' ? serviceData.price : null
+    });
     const remaining =
         appointmentRow.remaining_amount != null && appointmentRow.remaining_amount !== ''
             ? Number(appointmentRow.remaining_amount)

@@ -811,7 +811,7 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
 // ============== ÁREA PROFISSIONAL e "MEUS AGENDAMENTOS" iguais ==============
 
 const AdminArea = ({ appointments, refreshData, clients, config, setConfig, blockedSlots, adminToken, onAdminSessionInvalid }) => {
-    const [adminView, setAdminView] = useState('agenda'); // agenda | clients | settings
+    const [adminView, setAdminView] = useState('agenda'); // agenda | clients | report | settings | blocks
     const [filter, setFilter] = useState('today'); // today | next | all
     const [filterDate, setFilterDate] = useState('');
     const [blockManageDate, setBlockManageDate] = useState(() => getLocalTodayStr());
@@ -1103,92 +1103,6 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                 )}
             </div>
 
-            <div style={{ marginTop: '8px', marginBottom: '20px', padding: '14px 16px', borderRadius: '12px', border: '1px solid #e5e7eb', background: '#fafafa', textAlign: 'left' }}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '12px', marginBottom: '8px' }}>
-                    <div>
-                        <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>Bloquear horários</div>
-                        <div style={{ fontSize: '12px', color: '#64748b', lineHeight: 1.45, maxWidth: '520px' }}>
-                            A grade respeita intervalo mínimo de <strong>1 hora</strong> entre agendamentos. Toque em um horário <strong>Livre</strong> para bloquear; em <strong>Bloqueado</strong> para liberar.
-                        </div>
-                    </div>
-                    <div>
-                        <label className="form-label" style={{ marginBottom: '6px', display: 'block' }}>Dia</label>
-                        <input type="date" className="form-control" value={blockManageDate} onChange={(e) => setBlockManageDate(e.target.value)} style={{ maxWidth: '200px' }} />
-                    </div>
-                </div>
-                <div className="time-slots" style={{ marginTop: '10px' }}>
-                    {adminBlockSlots.map((slot, idx) => {
-                        const blockRow = (blockedSlots || []).find(
-                            (b) => b.date === blockManageDate && normalizeSlotTimeLabel(b.time) === slot.time
-                        );
-                        let label = 'Livre';
-                        if (slot.isPast) label = 'Passado';
-                        else if (slot.isBlockedManual) label = 'Bloqueado';
-                        else if (slot.hasAppointmentAtTime) label = 'Agendado';
-                        else if (!slot.available) label = 'Indisponível';
-
-                        let className = 'time-slot';
-                        if (slot.isPast) className += ' past-slot';
-                        else if (slot.isBlockedManual) className += ' disabled';
-                        else if (!slot.available) className += ' disabled';
-
-                        const canTryBlock = !slot.isPast && !slot.isBlockedManual && !slot.hasAppointmentAtTime;
-
-                        return (
-                            <div
-                                key={idx}
-                                className={className}
-                                title={
-                                    slot.isBlockedManual
-                                        ? 'Clique para desbloquear'
-                                        : canTryBlock
-                                            ? 'Clique para bloquear'
-                                            : slot.hasAppointmentAtTime
-                                                ? 'Horário com agendamento'
-                                                : ''
-                                }
-                                style={{
-                                    minWidth: '92px',
-                                    flexDirection: 'column',
-                                    alignItems: 'stretch',
-                                    gap: '4px',
-                                    padding: '8px 6px',
-                                    cursor:
-                                        slot.isPast || slot.hasAppointmentAtTime
-                                            ? 'default'
-                                            : slot.isBlockedManual || canTryBlock
-                                                ? 'pointer'
-                                                : 'default',
-                                    borderColor: slot.isBlockedManual ? '#c4b5fd' : undefined,
-                                    background: slot.isBlockedManual ? '#f5f3ff' : undefined
-                                }}
-                                onClick={() => {
-                                    if (slot.isPast || slot.hasAppointmentAtTime) return;
-                                    if (slot.isBlockedManual) {
-                                        if (blockRow && blockRow.id != null) handleAdminUnblockSlot(blockRow.id);
-                                        return;
-                                    }
-                                    if (canTryBlock) handleAdminBlockSlot(slot.time);
-                                }}
-                            >
-                                <span style={{ fontWeight: 800, fontSize: '14px' }}>{slot.time}</span>
-                                <span
-                                    style={{
-                                        fontSize: '10px',
-                                        fontWeight: 700,
-                                        color: slot.isBlockedManual ? '#5b21b6' : slot.hasAppointmentAtTime ? '#0369a1' : '#64748b',
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.3px'
-                                    }}
-                                >
-                                    {label}
-                                </span>
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-
             <div style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
                 {filteredApps.length === 0 && (
                     <div className="alert" style={{background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155'}}>
@@ -1340,6 +1254,94 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                     </div>
                 );
             })}
+        </div>
+    );
+
+    const renderBlockedSlots = () => (
+        <div style={{ padding: '14px 16px', borderRadius: '12px', border: '1px solid #e5e7eb', background: '#fafafa', textAlign: 'left' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '12px', marginBottom: '8px' }}>
+                <div>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>Bloquear horários</div>
+                    <div style={{ fontSize: '12px', color: '#64748b', lineHeight: 1.45, maxWidth: '520px' }}>
+                        A grade respeita intervalo mínimo de <strong>1 hora</strong> entre agendamentos. Toque em um horário <strong>Livre</strong> para bloquear; em <strong>Bloqueado</strong> para liberar.
+                    </div>
+                </div>
+                <div>
+                    <label className="form-label" style={{ marginBottom: '6px', display: 'block' }}>Dia</label>
+                    <input type="date" className="form-control" value={blockManageDate} onChange={(e) => setBlockManageDate(e.target.value)} style={{ maxWidth: '200px' }} />
+                </div>
+            </div>
+            <div className="time-slots" style={{ marginTop: '10px' }}>
+                {adminBlockSlots.map((slot, idx) => {
+                    const blockRow = (blockedSlots || []).find(
+                        (b) => b.date === blockManageDate && normalizeSlotTimeLabel(b.time) === slot.time
+                    );
+                    let label = 'Livre';
+                    if (slot.isPast) label = 'Passado';
+                    else if (slot.isBlockedManual) label = 'Bloqueado';
+                    else if (slot.hasAppointmentAtTime) label = 'Agendado';
+                    else if (!slot.available) label = 'Indisponível';
+
+                    let className = 'time-slot';
+                    if (slot.isPast) className += ' past-slot';
+                    else if (slot.isBlockedManual) className += ' disabled';
+                    else if (!slot.available) className += ' disabled';
+
+                    const canTryBlock = !slot.isPast && !slot.isBlockedManual && !slot.hasAppointmentAtTime;
+
+                    return (
+                        <div
+                            key={idx}
+                            className={className}
+                            title={
+                                slot.isBlockedManual
+                                    ? 'Clique para desbloquear'
+                                    : canTryBlock
+                                        ? 'Clique para bloquear'
+                                        : slot.hasAppointmentAtTime
+                                            ? 'Horário com agendamento'
+                                            : ''
+                            }
+                            style={{
+                                minWidth: '92px',
+                                flexDirection: 'column',
+                                alignItems: 'stretch',
+                                gap: '4px',
+                                padding: '8px 6px',
+                                cursor:
+                                    slot.isPast || slot.hasAppointmentAtTime
+                                        ? 'default'
+                                        : slot.isBlockedManual || canTryBlock
+                                            ? 'pointer'
+                                            : 'default',
+                                borderColor: slot.isBlockedManual ? '#c4b5fd' : undefined,
+                                background: slot.isBlockedManual ? '#f5f3ff' : undefined
+                            }}
+                            onClick={() => {
+                                if (slot.isPast || slot.hasAppointmentAtTime) return;
+                                if (slot.isBlockedManual) {
+                                    if (blockRow && blockRow.id != null) handleAdminUnblockSlot(blockRow.id);
+                                    return;
+                                }
+                                if (canTryBlock) handleAdminBlockSlot(slot.time);
+                            }}
+                        >
+                            <span style={{ fontWeight: 800, fontSize: '14px' }}>{slot.time}</span>
+                            <span
+                                style={{
+                                    fontSize: '10px',
+                                    fontWeight: 700,
+                                    color: slot.isBlockedManual ? '#5b21b6' : slot.hasAppointmentAtTime ? '#0369a1' : '#64748b',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.3px'
+                                }}
+                            >
+                                {label}
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
         </div>
     );
 
@@ -1496,6 +1498,9 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                 <button className={`tab-btn ${adminView === 'settings' ? 'active' : ''}`} onClick={() => setAdminView('settings')}>
                     Ajustes
                 </button>
+                <button className={`tab-btn ${adminView === 'blocks' ? 'active' : ''}`} onClick={() => setAdminView('blocks')}>
+                    Bloquear horários
+                </button>
             </div>
 
             <div style={{marginTop: '18px'}}>
@@ -1503,6 +1508,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                 {adminView === 'clients' && renderClients()}
                 {adminView === 'report' && renderReport()}
                 {adminView === 'settings' && renderSettings()}
+                {adminView === 'blocks' && renderBlockedSlots()}
             </div>
 
             {clientEditModal && (

@@ -621,9 +621,31 @@ async function confirmAppointmentPayment({ appointmentId, transactionNsu, invoic
         ? null
         : Number(paidAmount);
 
-    const paidResolved = (paidFromWebhook != null && Number.isFinite(paidFromWebhook) && paidFromWebhook > 0)
+    const amountChargedBefore =
+        before.amount_charged != null && before.amount_charged !== ''
+            ? Number(before.amount_charged)
+            : null;
+    const paymentTypeNorm = String(before.payment_type || '').toLowerCase();
+
+    let paidResolved = (paidFromWebhook != null && Number.isFinite(paidFromWebhook) && paidFromWebhook > 0)
         ? paidFromWebhook
-        : (before.amount_charged != null ? Number(before.amount_charged) : null);
+        : (amountChargedBefore != null && Number.isFinite(amountChargedBefore) && amountChargedBefore > 0
+            ? amountChargedBefore
+            : null);
+
+    // Integral: o valor cobrado no checkout está em amount_charged; o webhook pode mandar paid_amount do sinal.
+    if (
+        paymentTypeNorm === 'full' &&
+        amountChargedBefore != null &&
+        Number.isFinite(amountChargedBefore) &&
+        amountChargedBefore > 0
+    ) {
+        if (paidResolved == null || !Number.isFinite(paidResolved) || paidResolved <= 0) {
+            paidResolved = amountChargedBefore;
+        } else {
+            paidResolved = Math.max(paidResolved, amountChargedBefore);
+        }
+    }
 
     // Cancelado: não confirmar pagamento (idempotente / seguro)
     if (previousStatus === 'cancelled') {
@@ -658,7 +680,7 @@ async function confirmAppointmentPayment({ appointmentId, transactionNsu, invoic
             invoiceSlug || null,
             receiptUrl || null,
             captureMethod || null,
-            paidFromWebhook
+            paidResolved
         ]);
 
         const appointment = metaUpdate.rows[0] || before;
