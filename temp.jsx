@@ -1955,23 +1955,6 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots }) => {
                                     >
                                         {s.category}
                                     </div>
-                                    {s.summary ? (
-                                        <div
-                                            title={s.summary}
-                                            style={{
-                                                marginTop: '10px',
-                                                fontSize: '13px',
-                                                color: 'var(--text-dark)',
-                                                lineHeight: 1.35,
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis',
-                                                whiteSpace: 'nowrap',
-                                                opacity: 0.88
-                                            }}
-                                        >
-                                            {s.summary}
-                                        </div>
-                                    ) : null}
                                     <div className="service-price">{formatPrice(s.price)}</div>
                                     <div style={{ marginTop: 'auto', paddingTop: '12px' }}>
                                         <button
@@ -1996,7 +1979,7 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots }) => {
                                                 letterSpacing: '0.02em'
                                             }}
                                         >
-                                            {detailsOpen ? 'Recolher' : 'Saiba mais'}
+                                            {detailsOpen ? 'Ocultar detalhes' : 'Ver detalhes'}
                                         </button>
                                         <div
                                             style={{
