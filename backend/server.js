@@ -136,8 +136,8 @@ const pool = new Pool({
         : { rejectUnauthorized: false }
 });
 
-/** Preços e nomes alinhados ao catálogo em temp.jsx (novos ids + legado para agendamentos antigos). */
-const SERVICES = [
+/** Catálogo ativo (novos agendamentos). Espelhar em backend/public/index.html e temp.jsx. */
+const SERVICES_CATALOG = [
     { id: 'limpeza_pele_profunda', name: 'Limpeza de pele profunda', price: 119 },
     { id: 'limpeza_pele_mascara', name: 'Limpeza de pele profunda + máscara facial específica', price: 150 },
     { id: 'dep_intima_com_anus', name: 'Depilação íntima completa com ânus', price: 95 },
@@ -149,7 +149,11 @@ const SERVICES = [
     { id: 'dep_coxa', name: 'Depilação coxa', price: 50 },
     { id: 'dep_perna_inteira', name: 'Depilação perna inteira', price: 89 },
     { id: 'combo_intima_axilas_meia', name: 'Combo: íntima completa com ânus + axilas + meia perna', price: 160 },
-    { id: 'reflexologia_podal', name: 'Reflexologia podal', price: 110 },
+    { id: 'reflexologia_podal', name: 'Reflexologia podal', price: 110 }
+];
+
+/** Só para agendamentos já gravados com ids antigos (relatório, e-mails, normalização). */
+const SERVICES_LEGACY = [
     { id: 'limpeza_pele', name: 'Limpeza de Pele', price: 119.9 },
     { id: 'dep_intima', name: 'Depilação Íntima Completa', price: 59.9 },
     { id: 'dep_axila', name: 'Depilação Axila', price: 29.9 },
@@ -382,11 +386,13 @@ function effectivePartialDownPayment(totalServicePrice) {
 }
 
 function findServiceById(serviceId) {
-    return SERVICES.find(s => s.id === serviceId) || {
-        id: serviceId,
-        name: serviceId || 'Serviço',
-        price: 0
-    };
+    return SERVICES_CATALOG.find((s) => s.id === serviceId)
+        || SERVICES_LEGACY.find((s) => s.id === serviceId)
+        || {
+            id: serviceId,
+            name: serviceId || 'Serviço',
+            price: 0
+        };
 }
 
 function normalizeAppointmentFinancials(row) {
@@ -1285,7 +1291,11 @@ app.post('/appointments', async (req, res) => {
             return res.status(400).json({ error: 'paymentType inválido. Use "partial" ou "full".' });
         }
 
-        const serviceObj = findServiceById(serviceId);
+        const serviceObj = SERVICES_CATALOG.find((s) => s.id === serviceId);
+        if (!serviceObj) {
+            return res.status(400).json({ error: 'Procedimento inválido ou não disponível para novo agendamento.' });
+        }
+
         const totalServicePrice = Number(serviceObj.price || 0);
 
         if (!Number.isFinite(totalServicePrice) || totalServicePrice <= 0) {

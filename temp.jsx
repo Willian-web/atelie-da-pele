@@ -11,7 +11,7 @@ const FIXED_SIGNAL_AMOUNT = 30;
 
 /**
  * Catálogo ativo (etapa 1 do agendamento).
- * Manter ids e preços espelhados em `backend/server.js` (const SERVICES) — o servidor calcula cobrança e saldo por `serviceId`.
+ * Manter ids e preços espelhados em `backend/server.js` (`SERVICES_CATALOG` + `SERVICES_LEGACY`) — o servidor calcula cobrança e saldo por `serviceId`.
  */
 const SERVICES = [
     {
@@ -549,7 +549,7 @@ const StatusBadge = ({ status, mode = 'default' }) => {
 
 // ============== ÁREA PROFISSIONAL ==============
 
-const AdminArea = ({ appointments, refreshData, clients, adminWhatsApp, blockedSlots, adminToken, onAdminSessionInvalid }) => {
+const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToken, onAdminSessionInvalid }) => {
     const [adminView, setAdminView] = useState('agenda'); // agenda | clientes | relatorio | config
     const [filter, setFilter] = useState('all');
 
@@ -849,22 +849,23 @@ const AdminArea = ({ appointments, refreshData, clients, adminWhatsApp, blockedS
                 <button className={`tab-btn ${adminView === 'config' ? 'active' : ''}`} onClick={() => setAdminView('config')}><i className="fas fa-cog"></i> Ajustes</button>
             </div>
 
-            {adminView === 'config' && (() => {
-                const digits = String(adminWhatsApp || '').replace(/\D/g, '');
-                return (
-                <div style={{padding: '15px', backgroundColor: 'var(--bg-color)', borderRadius: '8px', border: '1px solid var(--border-color)', textAlign: 'left', maxWidth: '520px', margin: '0 auto'}}>
-                    <label className="form-label">WhatsApp da profissional (links no app)</label>
-                    <p style={{ fontSize: '14px', color: 'var(--text-muted)', lineHeight: 1.55, margin: '8px 0 14px' }}>
-                        O número usado nos links <code>wa.me</code> vem da variável <strong>ADMIN_WHATSAPP</strong> no servidor (somente dígitos, com DDI), por exemplo <code>5541991234567</code>.
-                    </p>
-                    {digits ? (
-                        <div style={{ fontSize: '15px', fontWeight: 800, wordBreak: 'break-all' }}>Número ativo: {digits}</div>
-                    ) : (
-                        <div className="alert alert-error" style={{ margin: 0 }}>Nenhum número configurado. Defina <strong>ADMIN_WHATSAPP</strong> e reinicie o backend.</div>
-                    )}
+            {adminView === 'config' && (
+                <div style={{ padding: '24px 18px', maxWidth: '520px', margin: '0 auto', textAlign: 'center' }}>
+                    <div
+                        style={{
+                            background: 'var(--bg-color)',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '12px',
+                            padding: '28px 22px',
+                            color: 'var(--text-muted)',
+                            fontSize: '15px',
+                            lineHeight: 1.6
+                        }}
+                    >
+                        Configurações administrativas gerenciadas no servidor.
+                    </div>
                 </div>
-                );
-            })()}
+            )}
 
             {adminView === 'agenda' && (
                 <>
@@ -2329,7 +2330,6 @@ const App = () => {
     const [appointments, setAppointments] = useState([]);
     const [clients, setClients] = useState([]);
     const [blockedSlots, setBlockedSlots] = useState([]);
-    const [adminWhatsApp, setAdminWhatsApp] = useState('');
     const [dbStatus, setDbStatus] = useState('conectando...');
 
     const handleAdminLoginSuccess = (token) => {
@@ -2382,15 +2382,6 @@ const App = () => {
 
     useEffect(() => {
         refreshData();
-        (async () => {
-            try {
-                const res = await fetch(`${API_BASE_URL}/config/public`);
-                if (res.ok) {
-                    const j = await res.json();
-                    setAdminWhatsApp(String(j.adminWhatsApp || '').replace(/\D/g, ''));
-                }
-            } catch (_) { /* ignore */ }
-        })();
 
         // POLLING AUTOMÁTICO A CADA 10 SEGUNDOS
         const intervalId = setInterval(refreshData, 10000);
@@ -2428,7 +2419,6 @@ const App = () => {
                         appointments={appointments}
                         refreshData={refreshData}
                         clients={clients}
-                        adminWhatsApp={adminWhatsApp}
                         blockedSlots={blockedSlots}
                         adminToken={adminToken}
                         onAdminSessionInvalid={handleAdminSessionInvalid}
