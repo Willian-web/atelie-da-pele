@@ -9,14 +9,138 @@ const ADMIN_TOKEN_STORAGE_KEY = 'atelie_admin_token';
 /** Valor do sinal (R$) — manter alinhado a `FIXED_SIGNAL_AMOUNT` em backend/server.js */
 const FIXED_SIGNAL_AMOUNT = 30;
 
+/**
+ * Catálogo ativo (etapa 1 do agendamento).
+ * Manter ids e preços espelhados em `backend/server.js` (const SERVICES) — o servidor calcula cobrança e saldo por `serviceId`.
+ */
 const SERVICES = [
-    { id: 'limpeza_pele', name: 'Limpeza de Pele', price: 119.90, category: 'Estética Facial', duration: 60 },
-    { id: 'dep_intima', name: 'Depilação Íntima Completa', price: 59.90, category: 'Depilação', duration: 60 },
-    { id: 'dep_axila', name: 'Depilação Axila', price: 29.90, category: 'Depilação', duration: 60 },
-    { id: 'dep_buco', name: 'Depilação Buço', price: 29.90, category: 'Depilação', duration: 60 },
-    { id: 'dep_completa', name: 'Depilação Completa', price: 129.90, category: 'Depilação', duration: 60 },
-    { id: 'reflexologia', name: 'Reflexologia Podal', price: 89.90, category: 'Bem-Estar', duration: 60 }
+    {
+        id: 'limpeza_pele_profunda',
+        name: 'Limpeza de pele profunda',
+        price: 119,
+        category: 'Estética facial',
+        duration: 60,
+        summary: 'Protocolo completo com LED para pele equilibrada e luminosa.',
+        detail:
+            'Inclui limpeza profunda de cravos, peeling ultrassônico, revitalização facial com produto específico para seu tipo de pele e finalização com máscara de LED para estímulo de colágeno, equilíbrio da oleosidade e aceleração da cicatrização da acne.'
+    },
+    {
+        id: 'limpeza_pele_mascara',
+        name: 'Limpeza de pele profunda + máscara facial específica',
+        price: 150,
+        category: 'Estética facial',
+        duration: 60,
+        summary: 'Tudo da limpeza profunda e máscara facial sob medida.',
+        detail:
+            'Inclui limpeza profunda de cravos, peeling ultrassônico, revitalização facial com produto específico para seu tipo de pele, finalização com máscara de LED e máscara facial específica (antiacne, rejuvenescimento, lifting, colágeno ou vitamina C).'
+    },
+    {
+        id: 'dep_intima_com_anus',
+        name: 'Depilação íntima completa com ânus',
+        price: 95,
+        category: 'Depilação',
+        duration: 60,
+        summary: 'Acabamento completo com região anal.',
+        detail: 'Depilação completa da região íntima com acabamento incluindo a região anal.'
+    },
+    {
+        id: 'dep_intima_sem_anus',
+        name: 'Depilação íntima completa sem ânus',
+        price: 85,
+        category: 'Depilação',
+        duration: 60,
+        summary: 'Íntima completa sem inclusão da região anal.',
+        detail: 'Depilação completa da região íntima sem inclusão da região anal.'
+    },
+    {
+        id: 'dep_axilas',
+        name: 'Depilação axilas',
+        price: 35,
+        category: 'Depilação',
+        duration: 60,
+        summary: 'Pele lisa e uniforme nas axilas.',
+        detail: 'Remoção completa dos pelos da região das axilas.'
+    },
+    {
+        id: 'dep_nariz',
+        name: 'Depilação nariz',
+        price: 20,
+        category: 'Depilação',
+        duration: 60,
+        summary: 'Pelos nasais removidos com delicadeza.',
+        detail: 'Remoção delicada dos pelos da região nasal.'
+    },
+    {
+        id: 'dep_buco_facial',
+        name: 'Depilação buço',
+        price: 15,
+        category: 'Depilação',
+        duration: 60,
+        summary: 'Contorno suave e acabamento delicado no buço.',
+        detail: 'Remoção dos pelos da região do buço com acabamento delicado.'
+    },
+    {
+        id: 'dep_meia_perna',
+        name: 'Depilação meia perna',
+        price: 45,
+        category: 'Depilação',
+        duration: 60,
+        summary: 'Metade inferior das pernas com acabamento uniforme.',
+        detail: 'Depilação da região inferior das pernas com acabamento uniforme.'
+    },
+    {
+        id: 'dep_coxa',
+        name: 'Depilação coxa',
+        price: 50,
+        category: 'Depilação',
+        duration: 60,
+        summary: 'Coxas inteiras com resultado uniforme.',
+        detail: 'Depilação completa da região das coxas.'
+    },
+    {
+        id: 'dep_perna_inteira',
+        name: 'Depilação perna inteira',
+        price: 89,
+        category: 'Depilação',
+        duration: 60,
+        summary: 'Pernas completas com acabamento uniforme.',
+        detail: 'Depilação completa das pernas com acabamento uniforme.'
+    },
+    {
+        id: 'combo_intima_axilas_meia',
+        name: 'Combo: íntima completa com ânus + axilas + meia perna',
+        price: 160,
+        category: 'Combo depilação',
+        duration: 60,
+        summary: 'Pacote completo com ótimo custo-benefício.',
+        detail: 'Combo completo com excelente custo-benefício para cuidado corporal.'
+    },
+    {
+        id: 'reflexologia_podal',
+        name: 'Reflexologia podal',
+        price: 110,
+        category: 'Bem-estar',
+        duration: 60,
+        summary: 'Pés em sais mornos e massagem relaxante à base da reflexologia.',
+        detail:
+            'Inclui escalda pés com sais especiais, água morna e bolinhas de gel, seguido de massagem terapêutica e relaxante baseada na Medicina Milenar Chinesa, proporcionando alívio de dores, equilíbrio energético e relaxamento profundo.'
+    }
 ];
+
+/** Só para agendamentos antigos (grade, Meus Agendamentos, admin). Não listar na etapa 1. */
+const SERVICES_LEGACY = [
+    { id: 'limpeza_pele', name: 'Limpeza de Pele', price: 119.9, category: 'Legado', duration: 60, summary: '', detail: '' },
+    { id: 'dep_intima', name: 'Depilação Íntima Completa', price: 59.9, category: 'Legado', duration: 60, summary: '', detail: '' },
+    { id: 'dep_axila', name: 'Depilação Axila', price: 29.9, category: 'Legado', duration: 60, summary: '', detail: '' },
+    { id: 'dep_buco', name: 'Depilação Buço', price: 29.9, category: 'Legado', duration: 60, summary: '', detail: '' },
+    { id: 'dep_completa', name: 'Depilação Completa', price: 129.9, category: 'Legado', duration: 60, summary: '', detail: '' },
+    { id: 'reflexologia', name: 'Reflexologia Podal', price: 89.9, category: 'Legado', duration: 60, summary: '', detail: '' }
+];
+
+const getServiceMeta = (serviceId) => {
+    const sid = String(serviceId || '');
+    return SERVICES.find((s) => s.id === sid) || SERVICES_LEGACY.find((s) => s.id === sid) || null;
+};
 
 const formatPrice = (price) => price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -117,8 +241,30 @@ const getAppointmentRemainingAmount = (app) => {
     return null;
 };
 
+/** Procedimentos com valor até o sinal padrão só admitem (e exibem) cobrança integral no checkout. */
+const isProcedurePriceAtOrBelowSignal = (price) => {
+    const n = Number(price);
+    return Number.isFinite(n) && n > 0 && n <= FIXED_SIGNAL_AMOUNT;
+};
+
+/** Checkout / cópias: integral explícito no registro ou procedimento que só admite total agora. */
+const appointmentIsIntegralCheckout = (app, serviceCatalogPrice) => {
+    const pt = String(app?.paymentType || '').toLowerCase();
+    if (pt === 'full') return true;
+    if (serviceCatalogPrice != null && isProcedurePriceAtOrBelowSignal(serviceCatalogPrice)) return true;
+    return false;
+};
+
+/** Rótulo em telas (cliente e admin): “Integral” quando o fluxo é só valor total, inclusive procedimentos ≤ sinal. */
+const getAppointmentPaymentTypeLabelForDisplay = (app, serviceCatalogPrice) => {
+    if (appointmentIsIntegralCheckout(app, serviceCatalogPrice)) return 'Integral';
+    return getAppointmentPaymentTypeLabel(app) || '';
+};
+
 const AppointmentFinanceBlock = ({ app, mode = 'card' }) => {
-    const ptLabel = getAppointmentPaymentTypeLabel(app) || '—';
+    const meta = getServiceMeta(app?.serviceId);
+    const catalogPx = meta && typeof meta.price === 'number' ? meta.price : null;
+    const ptLabel = getAppointmentPaymentTypeLabelForDisplay(app, catalogPx) || '—';
     const dueNow = getAppointmentDueNowAmount(app);
     const received = getAppointmentReceivedAmount(app);
     const remaining = getAppointmentRemainingAmount(app);
@@ -209,7 +355,7 @@ const parseTimeToMinutes = (timeStr) => {
 
 /**
  * Gera slots da agenda considerando:
- * - ocupação por duração do serviço (SERVICES[].duration),
+ * - ocupação por duração do serviço (getServiceMeta(app.serviceId).duration),
  * - intervalo mínimo de 1h entre inícios de agendamentos ativos,
  * - bloqueios manuais (blocked_slots).
  */
@@ -255,7 +401,7 @@ const generateTimeSlots = (dateString, existingAppointments, blockedSlotsList = 
         .map((app) => {
             const startMins = parseTimeToMinutes(app.time);
             if (startMins == null) return null;
-            const service = SERVICES.find((s) => s.id === app.serviceId);
+            const service = getServiceMeta(app.serviceId);
             const duration =
                 service && typeof service.duration === 'number' ? service.duration : DEFAULT_APPOINTMENT_DURATION_MIN;
             return { start: startMins, end: startMins + duration };
@@ -403,10 +549,9 @@ const StatusBadge = ({ status, mode = 'default' }) => {
 
 // ============== ÁREA PROFISSIONAL ==============
 
-const AdminArea = ({ appointments, refreshData, clients, config, setConfig, blockedSlots, adminToken, onAdminSessionInvalid }) => {
+const AdminArea = ({ appointments, refreshData, clients, adminWhatsApp, blockedSlots, adminToken, onAdminSessionInvalid }) => {
     const [adminView, setAdminView] = useState('agenda'); // agenda | clientes | relatorio | config
     const [filter, setFilter] = useState('all');
-    const [profPhoneInput, setProfPhoneInput] = useState(config.profPhone || '');
 
     const [reportStartDate, setReportStartDate] = useState('');
     const [reportEndDate, setReportEndDate] = useState('');
@@ -505,10 +650,6 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
     };
 
     useEffect(() => {
-        setProfPhoneInput(config.profPhone || '');
-    }, [config.profPhone]);
-
-    useEffect(() => {
         if (typeof window === 'undefined' || !window.matchMedia) return;
         const mq = window.matchMedia('(max-width: 900px)');
         const apply = () => setReportLayoutNarrow(!!mq.matches);
@@ -552,13 +693,6 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                 refreshData();
             } catch(e) { console.error(e) }
         }
-    };
-
-    const saveConfig = () => {
-        const newConfig = { ...config, profPhone: profPhoneInput };
-        setConfig(newConfig);
-        localStorage.setItem('atelie_config', JSON.stringify(newConfig));
-        alert('Telefone salvo localmente!');
     };
 
     const fetchReport = async () => {
@@ -649,6 +783,15 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
         boxSizing: 'border-box'
     };
 
+    const reportKpiGridStyle = {
+        display: 'grid',
+        gap: '12px',
+        marginBottom: '14px',
+        width: '100%',
+        boxSizing: 'border-box',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))'
+    };
+
     const ReportCard = ({ title, value, hint }) => (
         <div style={reportCardShell}>
             <div style={{fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', lineHeight: 1.35}}>{title}</div>
@@ -658,8 +801,6 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
     );
 
     const buildReportRowModel = (it) => {
-        const pt = String(it.paymentType || '').toLowerCase();
-        const payLabel = getPaymentTypeLabel(pt) || '—';
         const dateLabel = it.date ? new Date(it.date + 'T12:00:00').toLocaleDateString('pt-BR') : '—';
         const paidRaw = (it.paidAmount != null && it.paidAmount !== '') ? it.paidAmount : null;
         const paidNum = paidRaw == null ? null : Number(paidRaw);
@@ -672,11 +813,13 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
         const balNum = balRaw == null ? null : Number(balRaw);
         const balance = balNum != null && Number.isFinite(balNum) && balNum > 0 ? balNum : null;
         const procFromApi = it.procedureTotal != null && it.procedureTotal !== '' ? Number(it.procedureTotal) : null;
-        const service = SERVICES.find(s => s.id === it.serviceId);
+        const service = getServiceMeta(it.serviceId);
         const procedureListPrice =
             procFromApi != null && Number.isFinite(procFromApi)
                 ? procFromApi
                 : (service && typeof service.price === 'number' ? service.price : null);
+        const payLabel =
+            getAppointmentPaymentTypeLabelForDisplay({ paymentType: it.paymentType }, procedureListPrice) || '—';
         return {
             payLabel,
             dateLabel,
@@ -706,15 +849,22 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                 <button className={`tab-btn ${adminView === 'config' ? 'active' : ''}`} onClick={() => setAdminView('config')}><i className="fas fa-cog"></i> Ajustes</button>
             </div>
 
-            {adminView === 'config' && (
-                <div style={{padding: '15px', backgroundColor: 'var(--bg-color)', borderRadius: '8px', border: '1px solid var(--border-color)'}}>
-                    <label className="form-label">Telefone da Profissional (Para links do WhatsApp)</label>
-                    <div style={{display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'stretch'}}>
-                        <input type="text" className="form-control" value={profPhoneInput} onChange={e => setProfPhoneInput(e.target.value)} placeholder="Ex: 41984928985" style={{flex: '1 1 200px', maxWidth: '100%', minWidth: 0}} />
-                        <button className="btn-submit" onClick={saveConfig} style={{width: 'auto', padding: '10px 20px'}}>Salvar</button>
-                    </div>
+            {adminView === 'config' && (() => {
+                const digits = String(adminWhatsApp || '').replace(/\D/g, '');
+                return (
+                <div style={{padding: '15px', backgroundColor: 'var(--bg-color)', borderRadius: '8px', border: '1px solid var(--border-color)', textAlign: 'left', maxWidth: '520px', margin: '0 auto'}}>
+                    <label className="form-label">WhatsApp da profissional (links no app)</label>
+                    <p style={{ fontSize: '14px', color: 'var(--text-muted)', lineHeight: 1.55, margin: '8px 0 14px' }}>
+                        O número usado nos links <code>wa.me</code> vem da variável <strong>ADMIN_WHATSAPP</strong> no servidor (somente dígitos, com DDI), por exemplo <code>5541991234567</code>.
+                    </p>
+                    {digits ? (
+                        <div style={{ fontSize: '15px', fontWeight: 800, wordBreak: 'break-all' }}>Número ativo: {digits}</div>
+                    ) : (
+                        <div className="alert alert-error" style={{ margin: 0 }}>Nenhum número configurado. Defina <strong>ADMIN_WHATSAPP</strong> e reinicie o backend.</div>
+                    )}
                 </div>
-            )}
+                );
+            })()}
 
             {adminView === 'agenda' && (
                 <>
@@ -813,12 +963,11 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                     <div className="appointments-list">
                         {sortedApps.length === 0 ? <div className="empty-state"><i className="fas fa-box-open"></i><p>Nada agendado neste filtro.</p></div> : 
                             sortedApps.map(app => {
-                                const service = SERVICES.find(s => s.id === app.serviceId) || {name: 'Serviço Removido'};
+                                const service = getServiceMeta(app.serviceId) || { name: 'Serviço removido' };
                                 const dateStr = new Date(app.date + 'T12:00:00').toLocaleDateString('pt-BR');
                                 const isCancelled = app.status === 'cancelled';
 
-                                const pt = (app.paymentType || app.paymentSummary?.paymentType || '').toString().toLowerCase();
-                                const paymentLabel = getPaymentTypeLabel(pt);
+                                const paymentLabel = getAppointmentPaymentTypeLabelForDisplay(app, service.price);
 
                                 const paidRaw = (app.paidAmount ?? app.paymentSummary?.paidAmount);
                                 const chargedRaw = (app.amountCharged ?? app.paymentSummary?.amountCharged);
@@ -949,7 +1098,7 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                         <div style={{minWidth: 0, flex: '1 1 220px'}}>
                             <h3 className="section-title" style={{margin: 0, fontSize: 'clamp(17px, 3vw, 20px)'}}>Relatório Financeiro</h3>
                             <div style={{fontSize: '13px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.45}}>
-                                Consolidação por período (confirmados/concluídos entram nos totais de receita conforme backend).
+                                Resumo do período; valores recebidos e a receber consideram apenas agendamentos confirmados ou concluídos. Detalhes na tabela abaixo.
                             </div>
                         </div>
                         <div style={{display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end'}}>
@@ -980,27 +1129,18 @@ const AdminArea = ({ appointments, refreshData, clients, config, setConfig, bloc
                                 <strong>{new Date(reportEndDate + 'T12:00:00').toLocaleDateString('pt-BR')}</strong>
                             </div>
 
-                            <div style={{display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '10px', width: '100%'}}>
+                            <div style={reportKpiGridStyle}>
                                 <ReportCard
-                                    title="Total recebido (efetivo)"
+                                    title="Total recebido"
                                     value={formatCurrencyBRL(reportData.summary.totalRevenue)}
-                                    hint="Somatório do que já entrou (apenas confirmados e concluídos)."
+                                    hint="Soma do que já entrou no caixa: integral ou parcial (inclui sinal), em confirmados ou concluídos."
                                 />
                                 <ReportCard
-                                    title="Total em procedimentos"
-                                    value={formatCurrencyBRL(reportData.summary.totalExpectedRevenue)}
-                                    hint="Soma do valor de tabela dos serviços (confirmados e concluídos)."
-                                />
-                                <ReportCard
-                                    title="Saldo a receber"
+                                    title="Valor a receber"
                                     value={formatCurrencyBRL(reportData.summary.totalRemainingToReceive)}
-                                    hint="Restante em agendamentos parciais já confirmados ou concluídos."
+                                    hint="Saldo ainda pendente nesses agendamentos (em geral, após parcial/sinal)."
                                 />
-                            </div>
-                            <div style={{display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '14px', width: '100%'}}>
-                                <ReportCard title="Sinais recebidos" value={formatCurrencyBRL(reportData.summary.totalPartialReceived)} hint="Parcela recebida em pagamentos parciais." />
-                                <ReportCard title="Integrais recebidos" value={formatCurrencyBRL(reportData.summary.totalFullReceived)} hint="Recebido em pagamentos integrais." />
-                                <ReportCard title="Agendamentos (período)" value={String(reportData.summary.totalAppointments || 0)} hint="Todos os status no intervalo." />
+                                <ReportCard title="Agendamentos no período" value={String(reportData.summary.totalAppointments || 0)} />
                                 <ReportCard title="Clientes únicos" value={String(reportData.summary.uniqueClients || 0)} />
                             </div>
                         </>
@@ -1440,7 +1580,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                     </div>
                     ) : (
                     myApps.map((app) => {
-                        const service = SERVICES.find(s => s.id === app.serviceId) || {name: 'Serviço'};
+                        const service = getServiceMeta(app.serviceId) || { name: 'Serviço' };
                         const dateStr = new Date(app.date + 'T12:00:00').toLocaleDateString('pt-BR');
                         const isPast = new Date(app.date + 'T' + app.time) < new Date();
                         const isCancelled = app.status === 'cancelled';
@@ -1453,15 +1593,19 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
 
                         const remaining = getAppointmentRemainingAmount(app) ?? 0;
                         const isPartial = String(app.paymentType || '').toLowerCase() === 'partial';
+                        const checkoutIntegral = appointmentIsIntegralCheckout(app, service.price);
 
                         const statusHint = (() => {
                             if (isCancelled) return 'Este agendamento foi cancelado.';
                             if (isCompleted) return 'Atendimento concluído. Obrigada pela confiança!';
                             if (isConfirmed) return 'Pagamento confirmado — seu horário está garantido.';
                             if (isPending) {
-                                return hasPayLink
-                                    ? 'Para confirmar de vez, finalize o pagamento agora (você tem até ~15 minutos).'
-                                    : 'Estamos preparando seu link de pagamento. Toque em “Atualizar” acima e tente novamente em alguns segundos.';
+                                if (!hasPayLink) {
+                                    return 'Estamos preparando seu link de pagamento. Toque em “Atualizar” acima e tente novamente em alguns segundos.';
+                                }
+                                return checkoutIntegral
+                                    ? 'Para confirmar de vez, finalize o pagamento integral agora (até ~15 minutos).'
+                                    : 'Para confirmar de vez, finalize o pagamento agora (você tem até ~15 minutos).';
                             }
                             return '';
                         })();
@@ -1511,7 +1655,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
 
                                     <AppointmentFinanceBlock app={app} />
 
-                                    {isPartial && remaining > 0 && (isConfirmed || isCompleted) && (
+                                    {isPartial && remaining > 0 && !checkoutIntegral && (isConfirmed || isCompleted) && (
                                         <div style={{
                                             marginTop: '10px',
                                             padding: '10px 12px',
@@ -1540,7 +1684,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                                                     style={{ padding: '10px', fontSize: '14px', textAlign: 'center', textDecoration: 'none', width: '100%' }}
                                                 >
                                                     <i className="fas fa-lock" style={{ marginRight: '8px' }}></i>
-                                                    Pagar agora
+                                                    {checkoutIntegral ? 'Pagar valor integral' : 'Pagar agora'}
                                                 </a>
                                             ) : (
                                                 <div style={{ fontSize: '12px', color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', padding: '10px', borderRadius: '10px' }}>
@@ -1551,7 +1695,15 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                                                 Simular pagamento (teste)
                                             </button>
                                             <div style={{ fontSize: '11px', color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.35 }}>
-                                                Abre em uma nova aba. Se já pagou, aguarde alguns instantes e atualize — o status muda automaticamente.
+                                                {checkoutIntegral ? (
+                                                    <>
+                                                        O InfinitePay cobra o <strong>valor integral</strong> deste procedimento. Abre em nova aba; depois de pagar, atualize a lista.
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        Abre em uma nova aba. Se já pagou, aguarde alguns instantes e atualize — o status muda automaticamente.
+                                                    </>
+                                                )}
                                             </div>
                                         </>
                                     )}
@@ -1578,11 +1730,12 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
 
 // ============== ÁREA NOVO AGENDAMENTO (FLOW PRINCIPAL) ==============
 
-const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }) => {
+const ClientArea = ({ appointments, refreshData, clients, blockedSlots }) => {
     const [step, setStep] = useState(1);
     
     // Step 1
     const [selectedService, setSelectedService] = useState('');
+    const [serviceDetailOpenId, setServiceDetailOpenId] = useState(null);
     const [bookingData, setBookingData] = useState({ date: '', time: '', notes: '', location: '' });
     const [availableTimes, setAvailableTimes] = useState([]);
     
@@ -1627,6 +1780,13 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
         setCheckedTerms(false);
     }, [bookingPaymentType]);
 
+    useEffect(() => {
+        const p = SERVICES.find((s) => s.id === selectedService);
+        if (p && Number(p.price) <= FIXED_SIGNAL_AMOUNT) {
+            setBookingPaymentType('full');
+        }
+    }, [selectedService]);
+
     const handleCreateClient = async () => {
         setNewClientFormError('');
         if (!newClient.name || !newClient.phone) {
@@ -1669,9 +1829,14 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
     };
 
     const handleConfirmBooking = async () => {
+        const serviceId = selectedService;
+        const serviceObj = SERVICES.find((s) => s.id === serviceId);
+        const forceFull = serviceObj && Number(serviceObj.price) <= FIXED_SIGNAL_AMOUNT;
+        const payType = forceFull || bookingPaymentType === 'full' ? 'full' : 'partial';
+
         if (!checkedTerms) {
             return alert(
-                bookingPaymentType === 'full'
+                payType === 'full'
                     ? 'Você precisa aceitar os termos de pagamento do valor total.'
                     : 'Você precisa aceitar os termos de pagamento do sinal.'
             );
@@ -1687,9 +1852,10 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
         setApiError('');
         
         try {
-            const serviceId = selectedService;
-            const serviceObj = SERVICES.find(s=>s.id === serviceId);
-            
+            if (!serviceObj) {
+                throw new Error('Selecione um procedimento válido.');
+            }
+
             const response = await fetch(`${API_BASE_URL}/appointments`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1704,7 +1870,7 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
                     notes: bookingData.notes,
                     location: bookingData.location,
                     price: serviceObj.price,
-                    paymentType: bookingPaymentType === 'full' ? 'full' : 'partial'
+                    paymentType: payType
                 })
             });
 
@@ -1728,17 +1894,23 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
         }
     };
 
-    const priceObj = SERVICES.find(s=>s.id === selectedService);
+    const priceObj = SERVICES.find((s) => s.id === selectedService);
     const signalDisplayBRL = formatPrice(FIXED_SIGNAL_AMOUNT);
-    const isBookingFull = bookingPaymentType === 'full';
+    const forceFullPayment = priceObj && Number(priceObj.price) <= FIXED_SIGNAL_AMOUNT;
+    const isBookingFull = forceFullPayment || bookingPaymentType === 'full';
 
     const createdApp = completedAppInfo?.app;
     const createdPayUrl = createdApp?.paymentUrl;
     const createdHasPayLink = typeof createdPayUrl === 'string' && /^https?:\/\//i.test(createdPayUrl);
-    const createdPaymentTypeLabel = getAppointmentPaymentTypeLabel(createdApp) || 'Sinal';
+    const createdPaymentTypeLabel =
+        getAppointmentPaymentTypeLabelForDisplay(createdApp, completedAppInfo?.service?.price) || '—';
     const createdDueNow = getAppointmentDueNowAmount(createdApp);
     const createdRemaining = getAppointmentRemainingAmount(createdApp) ?? 0;
-    const createdIsPartial = String(createdApp?.paymentType || '').toLowerCase() === 'partial';
+    const createdIntegralWording = appointmentIsIntegralCheckout(createdApp, completedAppInfo?.service?.price);
+    const createdShowsPartialSaldo =
+        !createdIntegralWording &&
+        String(createdApp?.paymentType || '').toLowerCase() === 'partial' &&
+        createdRemaining > 0;
 
     return (
         <div style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
@@ -1746,15 +1918,112 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
                 <div className="booking-section step-container" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
                     <h2 className="section-title">O que deseja agendar?</h2>
                     <div className="services-grid">
-                        {SERVICES.map(s => (
-                            <div key={s.id} className={`service-card ${selectedService === s.id ? 'selected' : ''}`} onClick={() => setSelectedService(s.id)}>
-                                <div className="service-card-header">
-                                    <h3>{s.name}</h3><i className="fas fa-check-circle service-check"></i>
+                        {SERVICES.map((s) => {
+                            const detailsOpen = serviceDetailOpenId === s.id;
+                            return (
+                                <div
+                                    key={s.id}
+                                    role="button"
+                                    tabIndex={0}
+                                    className={`service-card ${selectedService === s.id ? 'selected' : ''}`}
+                                    onClick={() => {
+                                        setSelectedService(s.id);
+                                        setServiceDetailOpenId(null);
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            setSelectedService(s.id);
+                                            setServiceDetailOpenId(null);
+                                        }
+                                    }}
+                                >
+                                    <div className="service-card-header">
+                                        <h3>{s.name}</h3>
+                                        <i className="fas fa-check-circle service-check" aria-hidden />
+                                    </div>
+                                    <div
+                                        style={{
+                                            fontSize: '11px',
+                                            fontWeight: 600,
+                                            color: 'var(--text-muted)',
+                                            textTransform: 'uppercase',
+                                            letterSpacing: '0.07em',
+                                            marginTop: '2px'
+                                        }}
+                                    >
+                                        {s.category}
+                                    </div>
+                                    {s.summary ? (
+                                        <div
+                                            title={s.summary}
+                                            style={{
+                                                marginTop: '10px',
+                                                fontSize: '13px',
+                                                color: 'var(--text-dark)',
+                                                lineHeight: 1.35,
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
+                                                opacity: 0.88
+                                            }}
+                                        >
+                                            {s.summary}
+                                        </div>
+                                    ) : null}
+                                    <div className="service-price">{formatPrice(s.price)}</div>
+                                    <div style={{ marginTop: 'auto', paddingTop: '12px' }}>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setServiceDetailOpenId((prev) => (prev === s.id ? null : s.id));
+                                            }}
+                                            aria-expanded={detailsOpen}
+                                            style={{
+                                                border: 'none',
+                                                background: 'transparent',
+                                                padding: '4px 0',
+                                                margin: 0,
+                                                fontSize: '12px',
+                                                fontWeight: 600,
+                                                color: 'var(--brand-primary)',
+                                                cursor: 'pointer',
+                                                textDecoration: 'none',
+                                                borderBottom: '1px solid rgba(166, 120, 180, 0.35)',
+                                                fontFamily: 'inherit',
+                                                letterSpacing: '0.02em'
+                                            }}
+                                        >
+                                            {detailsOpen ? 'Recolher' : 'Saiba mais'}
+                                        </button>
+                                        <div
+                                            style={{
+                                                maxHeight: detailsOpen ? 320 : 0,
+                                                opacity: detailsOpen ? 1 : 0,
+                                                overflow: 'hidden',
+                                                transition: 'max-height 0.38s ease, opacity 0.28s ease',
+                                                borderTop: detailsOpen ? '1px solid rgba(183, 154, 217, 0.25)' : '1px solid transparent',
+                                                marginTop: detailsOpen ? '10px' : 0,
+                                                paddingTop: detailsOpen ? '10px' : 0
+                                            }}
+                                        >
+                                            <p
+                                                style={{
+                                                    margin: 0,
+                                                    fontSize: '12.5px',
+                                                    lineHeight: 1.55,
+                                                    color: 'var(--text-muted)',
+                                                    fontWeight: 400
+                                                }}
+                                            >
+                                                {s.detail}
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div style={{fontSize: '13px', color: 'var(--text-muted)'}}>{s.category}</div>
-                                <div className="service-price">{formatPrice(s.price)}</div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
 
                     <form onSubmit={e => { e.preventDefault(); if(selectedService && bookingData.date && bookingData.time) setStep(2); }} className="form-grid" style={{marginTop: '40px'}}>
@@ -1874,15 +2143,33 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
                     </div>
 
                     <div className="payment-type-group" style={{ maxWidth: '400px', margin: '0 auto 16px', textAlign: 'left' }}>
-                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-dark)', marginBottom: '8px' }}>Como prefere pagar?</div>
-                        <label style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer', fontSize: '14px', marginBottom: '8px' }}>
-                            <input type="radio" name="bookingPaymentType" checked={bookingPaymentType === 'partial'} onChange={() => setBookingPaymentType('partial')} style={{ marginTop: '3px' }} />
-                            <span>Pagar apenas o sinal ({signalDisplayBRL}) — saldo no dia do atendimento.</span>
-                        </label>
-                        <label style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer', fontSize: '14px' }}>
-                            <input type="radio" name="bookingPaymentType" checked={bookingPaymentType === 'full'} onChange={() => setBookingPaymentType('full')} style={{ marginTop: '3px' }} />
-                            <span>Pagar o valor total agora ({formatPrice(priceObj.price)}).</span>
-                        </label>
+                        {forceFullPayment ? (
+                            <div
+                                style={{
+                                    fontSize: '13px',
+                                    lineHeight: 1.45,
+                                    color: 'var(--text-muted)',
+                                    padding: '10px 12px',
+                                    borderRadius: '10px',
+                                    border: '1px solid var(--border-color)',
+                                    background: 'var(--surface-muted)'
+                                }}
+                            >
+                                Este procedimento é confirmado com <strong style={{ color: 'var(--text-dark)' }}>pagamento integral</strong> agora ({formatPrice(priceObj.price)}).
+                            </div>
+                        ) : (
+                            <>
+                                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-dark)', marginBottom: '8px' }}>Como prefere pagar?</div>
+                                <label style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer', fontSize: '14px', marginBottom: '8px' }}>
+                                    <input type="radio" name="bookingPaymentType" checked={bookingPaymentType === 'partial'} onChange={() => setBookingPaymentType('partial')} style={{ marginTop: '3px' }} />
+                                    <span>Pagar apenas o sinal ({signalDisplayBRL}) — saldo no dia do atendimento.</span>
+                                </label>
+                                <label style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer', fontSize: '14px' }}>
+                                    <input type="radio" name="bookingPaymentType" checked={bookingPaymentType === 'full'} onChange={() => setBookingPaymentType('full')} style={{ marginTop: '3px' }} />
+                                    <span>Pagar o valor total agora ({formatPrice(priceObj.price)}).</span>
+                                </label>
+                            </>
+                        )}
                     </div>
 
                     <div className="form-group full-width" style={{maxWidth: '400px', margin: '0 auto 16px', textAlign: 'left'}}>
@@ -1897,7 +2184,7 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
                             <span>
                                 {isBookingFull ? (
                                     <>
-                                        <strong>Estou ciente</strong> de que o agendamento só será confirmado em definitivo após o pagamento do valor total na próxima tela via InfinitePay. <br/><br/>
+                                        <strong>Estou ciente</strong> de que o agendamento só será confirmado em definitivo após o <strong>pagamento integral</strong> (valor total do procedimento) na próxima tela via InfinitePay. <br/><br/>
                                         <i className="fas fa-exclamation-triangle"></i> Sem o pagamento em até 15 minutos, o horário será cancelado e o espaço liberado para outra cliente.
                                     </>
                                 ) : (
@@ -1924,7 +2211,15 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
                     <i className="fas fa-shield-halved" style={{fontSize: '46px', color: 'var(--brand-light)', marginBottom: '12px' }}></i>
                     <h2 style={{ color: 'var(--brand-primary)', marginBottom: '8px' }}>Quase lá — falta confirmar o pagamento</h2>
                     <p style={{ color: 'var(--text-muted)', marginBottom: '18px', maxWidth: '520px', marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.55 }}>
-                        Seu horário foi reservado como <strong>pendente</strong> até o pagamento ser identificado. Para não perder o espaço, finalize agora — em geral o sistema libera o horário após <strong>15 minutos</strong> sem pagamento.
+                        {createdIntegralWording ? (
+                            <>
+                                Seu horário está <strong>pendente</strong> até o InfinitePay confirmar o <strong>pagamento integral</strong> do procedimento. Finalize agora — em geral o sistema libera o horário após <strong>15 minutos</strong> sem pagamento.
+                            </>
+                        ) : (
+                            <>
+                                Seu horário foi reservado como <strong>pendente</strong> até o pagamento ser identificado. Para não perder o espaço, finalize agora — em geral o sistema libera o horário após <strong>15 minutos</strong> sem pagamento.
+                            </>
+                        )}
                     </p>
 
                     <div style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', padding: '18px', borderRadius: '12px', textAlign: 'left', marginBottom: '16px', display: 'inline-block', maxWidth: 'min(100%, 520px)', width: '100%', boxShadow: 'var(--shadow-card)' }}>
@@ -1958,16 +2253,22 @@ const ClientArea = ({ appointments, refreshData, clients, config, blockedSlots }
                                     <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>Valor cobrado agora</span>
                                     <strong style={{ color: 'var(--text-dark)' }}>{formatCurrencyBRL(createdDueNow)}</strong>
                                 </div>
-                                {createdIsPartial && createdRemaining > 0 && (
+                                {createdShowsPartialSaldo && (
                                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px' }}>
                                         <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>Saldo restante</span>
                                         <strong style={{ color: 'var(--text-dark)' }}>{formatCurrencyBRL(createdRemaining)}</strong>
                                     </div>
                                 )}
                                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.45 }}>
-                                    {createdIsPartial
-                                        ? <>O valor do sinal é <strong>{signalDisplayBRL}</strong> (fixo). O valor acima em “Valor cobrado agora” é o que será cobrado no InfinitePay.</>
-                                        : <>Você escolheu pagamento integral; o valor acima corresponde ao procedimento completo.</>}
+                                    {createdIntegralWording ? (
+                                        <>
+                                            O valor em <strong>Valor cobrado agora</strong> é o <strong>pagamento integral</strong> do procedimento e corresponde ao que será cobrado no InfinitePay.
+                                        </>
+                                    ) : (
+                                        <>
+                                            O sinal padrão é <strong>{signalDisplayBRL}</strong> (fixo). O valor acima em “Valor cobrado agora” é o que será cobrado no InfinitePay; o saldo restante, se houver, será acertado no atendimento.
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -2028,7 +2329,7 @@ const App = () => {
     const [appointments, setAppointments] = useState([]);
     const [clients, setClients] = useState([]);
     const [blockedSlots, setBlockedSlots] = useState([]);
-    const [config, setConfig] = useState({ profPhone: '' });
+    const [adminWhatsApp, setAdminWhatsApp] = useState('');
     const [dbStatus, setDbStatus] = useState('conectando...');
 
     const handleAdminLoginSuccess = (token) => {
@@ -2081,8 +2382,15 @@ const App = () => {
 
     useEffect(() => {
         refreshData();
-        const savedConfig = localStorage.getItem('atelie_config');
-        if (savedConfig) setConfig(JSON.parse(savedConfig));
+        (async () => {
+            try {
+                const res = await fetch(`${API_BASE_URL}/config/public`);
+                if (res.ok) {
+                    const j = await res.json();
+                    setAdminWhatsApp(String(j.adminWhatsApp || '').replace(/\D/g, ''));
+                }
+            } catch (_) { /* ignore */ }
+        })();
 
         // POLLING AUTOMÁTICO A CADA 10 SEGUNDOS
         const intervalId = setInterval(refreshData, 10000);
@@ -2113,15 +2421,14 @@ const App = () => {
             </div>
 
             <main>
-                {view === 'client' && <ClientArea appointments={appointments} refreshData={refreshData} clients={clients} config={config} blockedSlots={blockedSlots} />}
+                {view === 'client' && <ClientArea appointments={appointments} refreshData={refreshData} clients={clients} blockedSlots={blockedSlots} />}
                 {view === 'my_apps' && <MyAppointmentsArea appointments={appointments} refreshData={refreshData} clients={clients} setView={setView} />}
                 {view === 'admin' && (
                     <AdminArea
                         appointments={appointments}
                         refreshData={refreshData}
                         clients={clients}
-                        config={config}
-                        setConfig={setConfig}
+                        adminWhatsApp={adminWhatsApp}
                         blockedSlots={blockedSlots}
                         adminToken={adminToken}
                         onAdminSessionInvalid={handleAdminSessionInvalid}

@@ -11,8 +11,14 @@ async function createCheckoutLink(appointment) {
         ? Number(appointment.paymentCents)
         : 3000;
 
-    const isFull = String(appointment?.paymentType || '').toLowerCase() === 'full';
-    const itemDescription = isFull
+    const totalProcedureCents = Number(appointment?.totalProcedureCents);
+    const isFullType = String(appointment?.paymentType || '').toLowerCase() === 'full';
+    const coversFullProcedure =
+        Number.isFinite(totalProcedureCents) &&
+        totalProcedureCents > 0 &&
+        amountInCents >= totalProcedureCents - 1;
+    const isIntegralCheckout = isFullType || coversFullProcedure;
+    const itemDescription = isIntegralCheckout
         ? 'Pagamento integral do procedimento (Ateliê da Pele)'
         : 'Sinal do agendamento (Ateliê da Pele)';
 

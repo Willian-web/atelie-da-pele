@@ -33,6 +33,17 @@ const PORT = process.env.PORT || 8080;
 
 app.use(cors({ origin: '*' }));
 app.use(express.json());
+
+/** Somente dígitos (DDI + número), ex.: 5541991234567 — usado em links wa.me da profissional. */
+function getPublicAdminWhatsappDigits() {
+    return String(process.env.ADMIN_WHATSAPP || '').replace(/\D/g, '');
+}
+
+app.get('/config/public', (_req, res) => {
+    res.set('Cache-Control', 'public, max-age=60');
+    res.json({ adminWhatsApp: getPublicAdminWhatsappDigits() });
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 const isPostgresSetup = !!process.env.DATABASE_URL;
@@ -125,13 +136,26 @@ const pool = new Pool({
         : { rejectUnauthorized: false }
 });
 
+/** Preços e nomes alinhados ao catálogo em temp.jsx (novos ids + legado para agendamentos antigos). */
 const SERVICES = [
-    { id: 'limpeza_pele', name: 'Limpeza de Pele', price: 119.90 },
-    { id: 'dep_intima', name: 'Depilação Íntima Completa', price: 59.90 },
-    { id: 'dep_axila', name: 'Depilação Axila', price: 29.90 },
-    { id: 'dep_buco', name: 'Depilação Buço', price: 29.90 },
-    { id: 'dep_completa', name: 'Depilação Completa', price: 129.90 },
-    { id: 'reflexologia', name: 'Reflexologia Podal', price: 89.90 }
+    { id: 'limpeza_pele_profunda', name: 'Limpeza de pele profunda', price: 119 },
+    { id: 'limpeza_pele_mascara', name: 'Limpeza de pele profunda + máscara facial específica', price: 150 },
+    { id: 'dep_intima_com_anus', name: 'Depilação íntima completa com ânus', price: 95 },
+    { id: 'dep_intima_sem_anus', name: 'Depilação íntima completa sem ânus', price: 85 },
+    { id: 'dep_axilas', name: 'Depilação axilas', price: 35 },
+    { id: 'dep_nariz', name: 'Depilação nariz', price: 20 },
+    { id: 'dep_buco_facial', name: 'Depilação buço', price: 15 },
+    { id: 'dep_meia_perna', name: 'Depilação meia perna', price: 45 },
+    { id: 'dep_coxa', name: 'Depilação coxa', price: 50 },
+    { id: 'dep_perna_inteira', name: 'Depilação perna inteira', price: 89 },
+    { id: 'combo_intima_axilas_meia', name: 'Combo: íntima completa com ânus + axilas + meia perna', price: 160 },
+    { id: 'reflexologia_podal', name: 'Reflexologia podal', price: 110 },
+    { id: 'limpeza_pele', name: 'Limpeza de Pele', price: 119.9 },
+    { id: 'dep_intima', name: 'Depilação Íntima Completa', price: 59.9 },
+    { id: 'dep_axila', name: 'Depilação Axila', price: 29.9 },
+    { id: 'dep_buco', name: 'Depilação Buço', price: 29.9 },
+    { id: 'dep_completa', name: 'Depilação Completa', price: 129.9 },
+    { id: 'reflexologia', name: 'Reflexologia Podal', price: 89.9 }
 ];
 
 const FIXED_SIGNAL_AMOUNT = 30.00;
@@ -350,6 +374,13 @@ function roundMoney2(n) {
     return Math.round((Number(n) || 0) * 100) / 100;
 }
 
+/** Sinal na reserva parcial: no máximo o fixo do produto, e nunca acima do valor total do procedimento. */
+function effectivePartialDownPayment(totalServicePrice) {
+    const t = roundMoney2(Number(totalServicePrice) || 0);
+    if (t <= 0) return FIXED_SIGNAL_AMOUNT;
+    return roundMoney2(Math.min(FIXED_SIGNAL_AMOUNT, t));
+}
+
 function findServiceById(serviceId) {
     return SERVICES.find(s => s.id === serviceId) || {
         id: serviceId,
@@ -361,6 +392,7 @@ function findServiceById(serviceId) {
 function normalizeAppointmentFinancials(row) {
     const serviceObj = findServiceById(row.service_id);
     const totalServicePrice = roundMoney2(serviceObj.price || 0);
+    const partialSignal = effectivePartialDownPayment(totalServicePrice);
 
     const paymentAmount = roundMoney2(row.payment_amount ?? FIXED_SIGNAL_AMOUNT);
 
@@ -376,14 +408,19 @@ function normalizeAppointmentFinancials(row) {
     if (!paymentType) {
         if (amountCharged != null && totalServicePrice > 0) {
             if (Math.abs(amountCharged - totalServicePrice) < 0.01) paymentType = 'full';
-            else if (Math.abs(amountCharged - FIXED_SIGNAL_AMOUNT) < 0.01) paymentType = 'partial';
+            else if (
+                Math.abs(amountCharged - partialSignal) < 0.01 ||
+                Math.abs(amountCharged - FIXED_SIGNAL_AMOUNT) < 0.01
+            ) {
+                paymentType = 'partial';
+            }
         }
 
         if (!paymentType && amountCharged == null && paymentAmount != null) {
             // legado: payment_amount costuma representar o sinal
-            if (Math.abs(paymentAmount - FIXED_SIGNAL_AMOUNT) < 0.01) {
+            if (Math.abs(paymentAmount - FIXED_SIGNAL_AMOUNT) < 0.01 || Math.abs(paymentAmount - partialSignal) < 0.01) {
                 paymentType = 'partial';
-                amountCharged = FIXED_SIGNAL_AMOUNT;
+                amountCharged = partialSignal;
             }
         }
 
@@ -396,13 +433,9 @@ function normalizeAppointmentFinancials(row) {
         amountCharged = totalServicePrice > 0 ? totalServicePrice : (amountCharged ?? totalServicePrice);
         remainingAmount = 0;
     } else {
-        // partial
-        if (amountCharged == null) {
-            amountCharged = FIXED_SIGNAL_AMOUNT;
-        } else {
-            // coerência: sinal deve ser o valor fixo do produto
-            amountCharged = FIXED_SIGNAL_AMOUNT;
-        }
+        // partial — coerência com sinal limitado ao total do procedimento
+        const sig = effectivePartialDownPayment(totalServicePrice);
+        amountCharged = sig;
 
         if (remainingAmount == null) {
             remainingAmount = Math.max(0, roundMoney2(totalServicePrice - amountCharged));
@@ -1064,6 +1097,7 @@ app.get('/admin/report', requireAdminAuth, async (req, res) => {
             };
         });
 
+        /** KPIs do relatório admin. totalRevenue = soma do recebido (integral + parcial/sinal) só em confirmed/completed. */
         const summary = {
             totalAppointments: rows.length,
             confirmedCount: 0,
@@ -1246,7 +1280,7 @@ app.post('/appointments', async (req, res) => {
             return res.status(400).json({ error: 'Informe um e-mail válido da cliente para contato e confirmação.' });
         }
 
-        const paymentType = rawPaymentType ? String(rawPaymentType).toLowerCase() : 'partial';
+        let paymentType = rawPaymentType ? String(rawPaymentType).toLowerCase() : 'partial';
         if (!['partial', 'full'].includes(paymentType)) {
             return res.status(400).json({ error: 'paymentType inválido. Use "partial" ou "full".' });
         }
@@ -1254,17 +1288,21 @@ app.post('/appointments', async (req, res) => {
         const serviceObj = findServiceById(serviceId);
         const totalServicePrice = Number(serviceObj.price || 0);
 
-        const amountCharged = paymentType === 'partial'
-            ? FIXED_SIGNAL_AMOUNT
-            : totalServicePrice;
+        if (!Number.isFinite(totalServicePrice) || totalServicePrice <= 0) {
+            return res.status(400).json({ error: 'Serviço inválido ou valor não encontrado para este procedimento.' });
+        }
 
-        const remainingAmount = paymentType === 'partial'
-            ? Math.max(0, totalServicePrice - FIXED_SIGNAL_AMOUNT)
-            : 0;
+        const partialNow = effectivePartialDownPayment(totalServicePrice);
+        if (partialNow >= totalServicePrice - 0.005) {
+            paymentType = 'full';
+        }
 
-        const paymentCents = paymentType === 'partial'
-            ? 3000
-            : Math.round(totalServicePrice * 100);
+        const amountCharged = paymentType === 'partial' ? partialNow : totalServicePrice;
+
+        const remainingAmount = paymentType === 'partial' ? Math.max(0, roundMoney2(totalServicePrice - partialNow)) : 0;
+
+        const paymentCents =
+            paymentType === 'partial' ? Math.round(partialNow * 100) : Math.round(totalServicePrice * 100);
 
         await client.query('BEGIN');
 
@@ -1347,7 +1385,8 @@ app.post('/appointments', async (req, res) => {
             paymentType,
             amountCharged,
             remainingAmount,
-            paymentCents
+            paymentCents,
+            totalProcedureCents: Math.round(totalServicePrice * 100)
         };
 
         console.log(`[Appointments] Criando checkout InfinitePay para o agendamento ${newId}...`);

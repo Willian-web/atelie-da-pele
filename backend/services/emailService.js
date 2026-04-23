@@ -26,6 +26,13 @@ function normalizePaymentKindForEmail(raw) {
     return 'partial';
 }
 
+/** Mesma regra do app: procedimentos até o sinal padrão são tratados como pagamento integral na comunicação. */
+function treatPaymentAsIntegralForEmail(paymentTypeNorm, servicePriceNum) {
+    if (paymentTypeNorm === 'full') return true;
+    const sp = Number(servicePriceNum);
+    return Number.isFinite(sp) && sp > 0 && sp <= FIXED_SIGNAL_AMOUNT;
+}
+
 /**
  * Valor exibido nos e-mails: em pagamento integral o checkout correto está em `amount_charged`;
  * o gateway às vezes envia `paid_amount` do sinal (ex.: R$ 30) — não priorizar isso sobre o total.
@@ -105,25 +112,41 @@ async function sendConfirmationEmail(appointmentData, serviceData) {
         const servicePriceNum =
             typeof serviceData?.price === 'number' && Number.isFinite(serviceData.price) ? serviceData.price : null;
 
+        const treatAsIntegral = treatPaymentAsIntegralForEmail(paymentType, servicePriceNum);
+
         const paidNow = resolvePaidAmountForDisplay({
-            paymentType,
+            paymentType: treatAsIntegral ? 'full' : paymentType,
             paid_amount: paidAmountValue,
             amount_charged: amountChargedValue,
             servicePrice: servicePriceNum
         });
 
         let remainingAmount = toMoneyNumberEmail(remainingAmountValue);
-        if (paymentType === 'partial' && (remainingAmount == null || !Number.isFinite(remainingAmount)) && servicePriceNum != null) {
+        if (
+            paymentType === 'partial' &&
+            !treatAsIntegral &&
+            (remainingAmount == null || !Number.isFinite(remainingAmount)) &&
+            servicePriceNum != null
+        ) {
             const basePaid = paidNow != null && Number.isFinite(paidNow) && paidNow > 0 ? paidNow : FIXED_SIGNAL_AMOUNT;
             remainingAmount = Math.max(0, roundMoney2(servicePriceNum - basePaid));
         }
 
         const paymentMethodLine = captureMethod ? `Forma de pagamento: ${captureMethod}` : '';
 
-        let paymentIntro = 'O pagamento do sinal foi aprovado e um novo agendamento foi confirmado no sistema.';
-        let paymentLines = `Valor do Sinal: ${formatCurrencyBRL(FIXED_SIGNAL_AMOUNT)}`;
+        let paymentIntro = 'Pagamento aprovado e agendamento confirmado no sistema.';
+        let paymentLines = '';
 
-        if (paymentType === 'partial') {
+        if (treatAsIntegral) {
+            paymentIntro = 'Pagamento integral aprovado e agendamento confirmado no sistema.';
+            paymentLines = [
+                'Procedimento quitado integralmente nesta etapa.',
+                paidNow != null ? `Valor pago: ${formatCurrencyBRL(paidNow)}` : '',
+                paymentMethodLine
+            ]
+                .filter(Boolean)
+                .join('\n');
+        } else if (paymentType === 'partial') {
             paymentIntro = 'Pagamento parcial aprovado e agendamento confirmado no sistema.';
             const paidLine =
                 paidNow != null && Number.isFinite(paidNow) && paidNow > 0
@@ -136,13 +159,6 @@ async function sendConfirmationEmail(appointmentData, serviceData) {
                     : '',
                 paymentMethodLine,
                 'Observação: o valor restante será acertado presencialmente no dia do atendimento.'
-            ].filter(Boolean).join('\n');
-        } else if (paymentType === 'full') {
-            paymentIntro = 'Pagamento total aprovado e agendamento confirmado no sistema.';
-            paymentLines = [
-                'Procedimento totalmente pago.',
-                paidNow != null ? `Valor pago: ${formatCurrencyBRL(paidNow)}` : '',
-                paymentMethodLine
             ].filter(Boolean).join('\n');
         }
 
@@ -232,8 +248,10 @@ async function sendClientConfirmationEmail(appointmentRow, serviceData, clientEm
     const servicePriceNum =
         typeof serviceData?.price === 'number' && Number.isFinite(serviceData.price) ? serviceData.price : null;
 
+    const treatAsIntegralClient = treatPaymentAsIntegralForEmail(paymentKind, servicePriceNum);
+
     const paidNow = resolvePaidAmountForDisplay({
-        paymentType: paymentKind,
+        paymentType: treatAsIntegralClient ? 'full' : paymentKind,
         paid_amount: appointmentRow.paid_amount,
         amount_charged: appointmentRow.amount_charged,
         servicePrice: servicePriceNum
@@ -242,6 +260,7 @@ async function sendClientConfirmationEmail(appointmentRow, serviceData, clientEm
     let remaining = toMoneyNumberEmail(appointmentRow.remaining_amount);
     if (
         paymentKind === 'partial' &&
+        !treatAsIntegralClient &&
         (remaining == null || !Number.isFinite(remaining)) &&
         servicePriceNum != null
     ) {
@@ -253,9 +272,9 @@ async function sendClientConfirmationEmail(appointmentRow, serviceData, clientEm
     const captureMethod = appointmentRow.capture_method || null;
 
     let paymentSummaryLines = '';
-    if (paymentKind === 'full') {
+    if (treatAsIntegralClient || paymentKind === 'full') {
         paymentSummaryLines = [
-            'Forma de pagamento: valor integral do procedimento.',
+            'Forma de pagamento: valor integral do procedimento (quitado nesta etapa).',
             paidNow != null && Number.isFinite(paidNow) && paidNow > 0 ? `Valor pago: ${formatCurrencyBRL(paidNow)}` : '',
             captureMethod ? `Registro do pagamento: ${captureMethod}` : ''
         ]
