@@ -552,6 +552,8 @@ const StatusBadge = ({ status, mode = 'default' }) => {
 const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToken, onAdminSessionInvalid }) => {
     const [adminView, setAdminView] = useState('agenda'); // agenda | clientes | relatorio | config
     const [filter, setFilter] = useState('all');
+    const [agendaFilterDate, setAgendaFilterDate] = useState('');
+    const [agendaClientSearch, setAgendaClientSearch] = useState('');
 
     const [reportStartDate, setReportStartDate] = useState('');
     const [reportEndDate, setReportEndDate] = useState('');
@@ -765,11 +767,33 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
         [blockManageDate, appointments, blockedSlots]
     );
 
-    let filteredApps = appointments;
-    if (filter === 'today') filteredApps = appointments.filter(a => a.date === todayStr);
-    else if (filter === 'next') filteredApps = appointments.filter(a => a.date > todayStr);
-    
-    const sortedApps = [...filteredApps].sort((a, b) => new Date(a.date + 'T' + a.time) - new Date(b.date + 'T' + b.time));
+    const agendaFilteredApps = useMemo(() => {
+        let list = [...(appointments || [])];
+        if (agendaFilterDate) {
+            list = list.filter((a) => (a.date || '') === agendaFilterDate);
+        } else {
+            if (filter === 'today') list = list.filter((a) => (a.date || '') === todayStr);
+            else if (filter === 'next') list = list.filter((a) => (a.date || '') > todayStr);
+        }
+        const needle = String(agendaClientSearch || '').trim().toLowerCase();
+        if (needle) {
+            list = list.filter((a) =>
+                String(a.clientName || a.client_name || '')
+                    .trim()
+                    .toLowerCase()
+                    .includes(needle)
+            );
+        }
+        return list;
+    }, [appointments, filter, agendaFilterDate, todayStr, agendaClientSearch]);
+
+    const sortedApps = useMemo(
+        () =>
+            [...agendaFilteredApps].sort(
+                (a, b) => new Date(`${a.date}T${a.time}`) - new Date(`${b.date}T${b.time}`)
+            ),
+        [agendaFilteredApps]
+    );
 
     const reportCardShell = {
         background: 'var(--card-bg)',
@@ -875,6 +899,63 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
                         <button className={`tab-btn ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>Todos</button>
                     </div>
 
+                    <div
+                        style={{
+                            marginTop: '12px',
+                            marginBottom: '14px',
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '12px',
+                            alignItems: 'flex-end'
+                        }}
+                    >
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: '0 1 auto' }}>
+                            <label className="form-label" style={{ marginBottom: 0, fontSize: '13px', color: 'var(--text-muted)' }}>
+                                Filtrar por data
+                            </label>
+                            <input
+                                type="date"
+                                className="form-control"
+                                value={agendaFilterDate}
+                                onChange={(e) => setAgendaFilterDate(e.target.value)}
+                                style={{ maxWidth: '220px', width: '100%', minWidth: 0 }}
+                            />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: '1 1 200px', minWidth: 'min(100%, 200px)' }}>
+                            <label htmlFor="temp-admin-agenda-client-search" className="form-label" style={{ marginBottom: 0, fontSize: '13px', color: 'var(--text-muted)' }}>
+                                Cliente
+                            </label>
+                            <input
+                                id="temp-admin-agenda-client-search"
+                                type="search"
+                                className="form-control"
+                                value={agendaClientSearch}
+                                onChange={(e) => setAgendaClientSearch(e.target.value)}
+                                placeholder="Buscar por nome da cliente"
+                                autoComplete="off"
+                                style={{ width: '100%', minWidth: 0 }}
+                            />
+                        </div>
+                        <button
+                            type="button"
+                            className="btn-cancel"
+                            onClick={() => {
+                                setAgendaFilterDate('');
+                                setAgendaClientSearch('');
+                            }}
+                            disabled={!agendaFilterDate && !String(agendaClientSearch || '').trim()}
+                            style={{ padding: '10px 14px', fontSize: '13px' }}
+                        >
+                            Limpar filtros
+                        </button>
+                        {agendaFilterDate && (
+                            <div style={{ fontSize: '13px', color: 'var(--text-muted)', flex: '1 1 100%', width: '100%' }}>
+                                Exibindo apenas:{' '}
+                                <strong>{new Date(agendaFilterDate + 'T12:00:00').toLocaleDateString('pt-BR')}</strong>
+                            </div>
+                        )}
+                    </div>
+
                     <div style={{ marginTop: '14px', padding: '14px 16px', borderRadius: '12px', border: '1px solid var(--border-color)', background: 'var(--bg-color)' }}>
                         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '12px', marginBottom: '8px' }}>
                             <div>
@@ -962,7 +1043,12 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
                     </div>
                     
                     <div className="appointments-list">
-                        {sortedApps.length === 0 ? <div className="empty-state"><i className="fas fa-box-open"></i><p>Nada agendado neste filtro.</p></div> : 
+                        {sortedApps.length === 0 ? (
+                            <div className="empty-state">
+                                <i className="fas fa-box-open"></i>
+                                <p>Nenhum agendamento encontrado para esse filtro.</p>
+                            </div>
+                        ) : (
                             sortedApps.map(app => {
                                 const service = getServiceMeta(app.serviceId) || { name: 'Serviço removido' };
                                 const dateStr = new Date(app.date + 'T12:00:00').toLocaleDateString('pt-BR');
@@ -1058,7 +1144,7 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
                                     </div>
                                 );
                             })
-                        }
+                        )}
                     </div>
                 </>
             )}

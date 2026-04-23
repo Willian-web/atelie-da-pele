@@ -474,17 +474,17 @@ function normalizeAppointmentFinancials(row) {
 
 /**
  * Valor recebido no relatório (apenas confirmado/concluído).
- * Prioriza paid_amount do registro; se ausente/≤0, usa amount_charged como fallback único.
+ * Usa o mesmo critério que a UI/listagem: `normalizeAppointmentFinancials`, onde
+ * `paid_amount` no banco tem prioridade e, se vazio, o valor pago é inferido de
+ * forma coerente com payment_type / sinal / total (não apenas `amount_charged` cru).
  */
 function reportEffectiveReceivedPaid(row) {
     if (row.status !== 'confirmed' && row.status !== 'completed') {
         return 0;
     }
-    let p = toMoneyNumber(row.paid_amount);
+    const fin = normalizeAppointmentFinancials(row);
+    const p = fin.paidAmount;
     if (p == null || p <= 0) {
-        p = toMoneyNumber(row.amount_charged);
-    }
-    if (p == null || p < 0) {
         return 0;
     }
     return roundMoney2(p);
