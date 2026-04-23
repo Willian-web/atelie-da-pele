@@ -43,11 +43,18 @@
     box-sizing: border-box;
 }
 
+html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
+
 body {
     font-family: var(--font-body);
     color: var(--text-dark);
     -webkit-font-smoothing: antialiased;
     min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: clip;
     background-color: var(--brand-bg);
     background-image: linear-gradient(
         168deg,
@@ -75,9 +82,12 @@ a { text-decoration: none; color: inherit; }
 /* Layout Globals */
 .container {
     width: 100%;
-    max-width: min(900px, 100vw - 24px);
+    max-width: min(900px, calc(100vw - 24px));
     margin: 0 auto;
     padding: clamp(12px, 2.8vw, 22px);
+    padding-left: max(clamp(12px, 2.8vw, 22px), env(safe-area-inset-left, 0px));
+    padding-right: max(clamp(12px, 2.8vw, 22px), env(safe-area-inset-right, 0px));
+    padding-bottom: max(clamp(12px, 2.8vw, 22px), env(safe-area-inset-bottom, 0px));
     box-sizing: border-box;
 }
 
@@ -188,12 +198,20 @@ main {
     flex-direction: column;
     justify-content: space-between;
     min-height: 140px;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
 }
 
-.service-card:hover {
-    transform: translateY(-3px);
-    box-shadow: var(--shadow-soft);
-    border-color: var(--brand-light);
+@media (hover: hover) and (pointer: fine) {
+    .service-card:hover {
+        transform: translateY(-3px);
+        box-shadow: var(--shadow-soft);
+        border-color: var(--brand-light);
+    }
+}
+
+.service-card:active {
+    transform: scale(0.992);
 }
 
 .service-card.selected {
@@ -397,7 +415,11 @@ main {
 
 @media (max-width: 600px) {
     .container {
+        max-width: 100%;
         padding: clamp(10px, 3vw, 16px);
+        padding-left: max(clamp(10px, 3vw, 16px), env(safe-area-inset-left, 0px));
+        padding-right: max(clamp(10px, 3vw, 16px), env(safe-area-inset-right, 0px));
+        padding-bottom: max(clamp(10px, 3vw, 16px), env(safe-area-inset-bottom, 0px));
     }
     .top-bar {
         text-align: center;
@@ -408,6 +430,60 @@ main {
     .top-bar > div:last-child {
         flex-wrap: wrap;
         justify-content: center;
+        width: 100%;
+    }
+    .btn-admin {
+        min-height: 44px;
+        padding: 8px 12px;
+        justify-content: center;
+    }
+    .booking-section {
+        padding: clamp(14px, 4vw, 22px);
+        border-radius: 14px;
+    }
+    .section-title {
+        text-align: center;
+        padding: 0 4px;
+    }
+    .service-card {
+        padding: 16px 14px;
+        min-height: 0;
+        border-radius: 14px;
+    }
+    .service-card h3 {
+        font-size: clamp(0.98rem, 4vw, 1.12rem);
+        line-height: 1.28;
+        overflow-wrap: anywhere;
+        hyphens: auto;
+    }
+    .service-card-header {
+        align-items: flex-start;
+        gap: 8px;
+    }
+    .service-price {
+        margin-top: 10px;
+    }
+    .filter-tabs {
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        gap: 8px;
+        padding-bottom: 6px;
+        margin-bottom: 16px;
+        scrollbar-width: thin;
+    }
+    .filter-tabs::-webkit-scrollbar {
+        height: 5px;
+    }
+    .filter-tabs::-webkit-scrollbar-thumb {
+        background: rgba(111, 76, 165, 0.35);
+        border-radius: 99px;
+    }
+    .tab-btn {
+        flex: 0 0 auto;
+        min-height: 40px;
     }
     .appointment-item {
         flex-direction: column;
@@ -424,9 +500,10 @@ main {
     }
     .services-grid {
         grid-template-columns: 1fr;
+        gap: 12px;
     }
     .btn-submit {
-        padding: 12px 18px;
+        padding: 14px 18px;
         font-size: 15px;
     }
     .time-slot {
@@ -436,6 +513,15 @@ main {
     .password-modal {
         margin: 12px;
         max-width: calc(100vw - 24px);
+        max-width: min(100%, calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 24px));
+    }
+    .password-overlay {
+        padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px))
+            max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+    }
+    .report-table-wrap table {
+        min-width: 640px;
+        font-size: 13px;
     }
 }
 
@@ -445,6 +531,18 @@ main {
     }
     .detail-badge {
         font-size: 12px;
+    }
+    /* Evita zoom automático do iOS ao focar inputs com fonte pequena */
+    .form-control,
+    textarea.form-control {
+        font-size: 16px;
+    }
+    .modal-actions {
+        flex-direction: column;
+    }
+    .modal-actions .btn-cancel,
+    .modal-actions .btn-submit {
+        width: 100%;
     }
 }
 
@@ -785,7 +883,20 @@ textarea.form-control {
     transition: filter 0.2s, box-shadow 0.2s, transform 0.12s !important;
 }
 
-.pay-btn:hover {
-    filter: brightness(1.05);
-    box-shadow: 0 4px 16px rgba(7, 143, 99, 0.35);
+@media (hover: hover) and (pointer: fine) {
+    .pay-btn:hover {
+        filter: brightness(1.05);
+        box-shadow: 0 4px 16px rgba(7, 143, 99, 0.35);
+    }
+}
+
+/* Landscape em celular: mais espaço vertical para grade de horários */
+@media (max-width: 900px) and (orientation: landscape) and (max-height: 500px) {
+    .booking-section {
+        padding: 12px 14px;
+    }
+    .time-slot {
+        padding: 8px 10px;
+        font-size: 13px;
+    }
 }
