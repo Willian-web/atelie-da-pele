@@ -43,7 +43,6 @@ const SERVICES = [
         price: 95,
         category: 'Depilação',
         duration: 60,
-        summary: 'Acabamento completo com região anal.',
         detail: 'Depilação completa da região íntima com acabamento incluindo a região anal.'
     },
     {
@@ -53,7 +52,6 @@ const SERVICES = [
         price: 85,
         category: 'Depilação',
         duration: 60,
-        summary: 'Íntima completa sem inclusão da região anal.',
         detail: 'Depilação completa da região íntima sem inclusão da região anal.'
     },
     {
@@ -72,7 +70,6 @@ const SERVICES = [
         price: 20,
         category: 'Depilação',
         duration: 60,
-        summary: 'Pelos nasais removidos com delicadeza.',
         detail: 'Remoção delicada dos pelos da região nasal.'
     },
     {
@@ -81,7 +78,6 @@ const SERVICES = [
         price: 15,
         category: 'Depilação',
         duration: 60,
-        summary: 'Contorno suave e acabamento delicado no buço.',
         detail: 'Remoção dos pelos da região do buço com acabamento delicado.'
     },
     {
@@ -90,7 +86,6 @@ const SERVICES = [
         price: 45,
         category: 'Depilação',
         duration: 60,
-        summary: 'Metade inferior das pernas com acabamento uniforme.',
         detail: 'Depilação da região inferior das pernas com acabamento uniforme.'
     },
     {
@@ -99,7 +94,6 @@ const SERVICES = [
         price: 50,
         category: 'Depilação',
         duration: 60,
-        summary: 'Coxas inteiras com resultado uniforme.',
         detail: 'Depilação completa da região das coxas.'
     },
     {
@@ -108,7 +102,6 @@ const SERVICES = [
         price: 89,
         category: 'Depilação',
         duration: 60,
-        summary: 'Pernas completas com acabamento uniforme.',
         detail: 'Depilação completa das pernas com acabamento uniforme.'
     },
     {
