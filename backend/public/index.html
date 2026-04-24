@@ -79,6 +79,7 @@ const SERVICES = [
     {
         id: 'dep_intima_com_anus',
         name: 'Depilação íntima completa com ânus',
+        cardTitle: 'Depilação íntima completa Premium',
         price: 95,
         category: 'Depilação',
         duration: 60,
@@ -88,6 +89,7 @@ const SERVICES = [
     {
         id: 'dep_intima_sem_anus',
         name: 'Depilação íntima completa sem ânus',
+        cardTitle: 'Depilação íntima Essencial',
         price: 85,
         category: 'Depilação',
         duration: 60,
@@ -106,6 +108,7 @@ const SERVICES = [
     {
         id: 'dep_nariz',
         name: 'Depilação nariz',
+        cardTitle: 'Depilação facial — nariz',
         price: 20,
         category: 'Depilação',
         duration: 60,
@@ -151,11 +154,13 @@ const SERVICES = [
     {
         id: 'combo_intima_axilas_meia',
         name: 'Combo: íntima completa com ânus + axilas + meia perna',
+        cardTitle: 'Combo premium corporal',
         price: 160,
         category: 'Combo depilação',
         duration: 60,
         summary: 'Pacote completo com ótimo custo-benefício.',
-        detail: 'Combo completo com excelente custo-benefício para cuidado corporal.'
+        detail:
+            'Sessão única combinando depilação íntima completa (com acabamento anal), axilas e meia perna — excelente custo-benefício para cuidado corporal.'
     },
     {
         id: 'reflexologia_podal',
@@ -182,6 +187,15 @@ const getServiceMeta = (serviceId) => {
     const sid = String(serviceId || '');
     return SERVICES.find((s) => s.id === sid) || SERVICES_LEGACY.find((s) => s.id === sid) || null;
 };
+
+/** Título discreto no fluxo cliente (card, resumo, WhatsApp). `name` permanece o nome completo do catálogo (admin / “Ver detalhes”). */
+const getClientServiceCardTitle = (service) => {
+    if (!service) return 'Serviço';
+    const t = String(service.cardTitle || service.name || '').trim();
+    return t || 'Serviço';
+};
+
+const getClientServiceTitleById = (serviceId) => getClientServiceCardTitle(getServiceMeta(serviceId));
 
 const FIXED_SIGNAL_AMOUNT = 30.00;
 
@@ -687,7 +701,7 @@ const ClientArea = ({ appointments, refreshData, clients, adminWhatsApp, blocked
                                     }}
                                 >
                                     <div className="service-card-header">
-                                        <h3>{s.name}</h3>
+                                        <h3>{getClientServiceCardTitle(s)}</h3>
                                         <i className="fas fa-check-circle service-check" aria-hidden />
                                     </div>
                                     <div
@@ -727,7 +741,7 @@ const ClientArea = ({ appointments, refreshData, clients, adminWhatsApp, blocked
                                         >
                                             {detailsOpen ? 'Ocultar detalhes' : 'Ver detalhes'}
                                         </button>
-                                        {detailsOpen && s.detail ? (
+                                        {detailsOpen && (s.detail || s.summary || (s.cardTitle && s.name && s.cardTitle !== s.name)) ? (
                                             <div
                                                 style={{
                                                     marginTop: '10px',
@@ -737,7 +751,13 @@ const ClientArea = ({ appointments, refreshData, clients, adminWhatsApp, blocked
                                                     textAlign: 'left'
                                                 }}
                                             >
-                                                {s.detail}
+                                                {s.cardTitle && s.name && s.cardTitle !== s.name && (
+                                                    <p style={{ margin: '0 0 10px', fontSize: '12px', color: 'var(--text-dark)' }}>
+                                                        <strong>Procedimento:</strong> {s.name}
+                                                    </p>
+                                                )}
+                                                {s.summary && <p style={{ margin: '0 0 8px' }}>{s.summary}</p>}
+                                                {s.detail && <p style={{ margin: 0 }}>{s.detail}</p>}
                                             </div>
                                         ) : null}
                                     </div>
@@ -849,7 +869,7 @@ const ClientArea = ({ appointments, refreshData, clients, adminWhatsApp, blocked
                     <p style={{fontSize: '18px', color: 'var(--text-dark)', marginBottom: '20px'}}>Por favor <strong>{selectedClient.name.split(' ')[0]}</strong>, verifique atentamente.</p>
 
                     <div style={{background: '#fcfcfc', padding: '25px', borderRadius: '12px', textAlign: 'left', marginBottom: '20px', display: 'inline-block', maxWidth: '400px', width: '100%', border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.03)'}}>
-                        <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Serviço:</strong> {priceObj.name}</div>
+                        <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Serviço:</strong> {getClientServiceCardTitle(priceObj)}</div>
                         <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Agendamento para:</strong> {new Date(bookingData.date + 'T12:00:00').toLocaleDateString('pt-BR')} às {bookingData.time}</div>
                         {bookingData.location && <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Endereço Cliente:</strong> {bookingData.location}</div>}
                         <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Local do atendimento:</strong> Ateliê da Pele — Rua Rio Jaguaribe, nº 274</div>
@@ -966,7 +986,7 @@ const ClientArea = ({ appointments, refreshData, clients, adminWhatsApp, blocked
                 };
 
                 const clientName = completedAppInfo?.client?.name || 'Cliente';
-                const serviceName = completedAppInfo?.service?.name || 'Serviço';
+                const serviceName = getClientServiceCardTitle(completedAppInfo?.service) || 'Serviço';
                 const servicePriceBRL = formatBRL(completedAppInfo?.service?.price);
 
                 const paymentType = liveApp?.paymentType || null;
@@ -1066,7 +1086,7 @@ const ClientArea = ({ appointments, refreshData, clients, adminWhatsApp, blocked
                     
                     <div style={{background: '#fcfcfc', border: '1px solid #ddd', padding: '20px', borderRadius: '8px', textAlign: 'left', marginBottom: '25px', display: 'inline-block', maxWidth: '400px', width: '100%'}}>
                         <strong>{completedAppInfo.client.name}</strong><br/>
-                        {completedAppInfo.service.name} (R$ {completedAppInfo.service.price.toFixed(2).replace('.', ',')})<br/>
+                        {getClientServiceCardTitle(completedAppInfo.service)} (R$ {completedAppInfo.service.price.toFixed(2).replace('.', ',')})<br/>
                         Para: {dateStr} às {liveApp.time} <br/>
                         <div style={{marginTop: '10px'}}>
                             {liveApp.location && <span style={{display: 'block', marginBottom: '8px'}}><strong>Endereço Cliente:</strong><br/>{liveApp.location}</span>}
@@ -1914,11 +1934,6 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
         return sorted.filter(a => (a.date || '') >= todayStr);
     }, [appointments, myPhone, filter, todayStr]);
 
-    const getServiceName = (serviceId) => {
-        const s = getServiceMeta(serviceId);
-        return s ? s.name : (serviceId || 'Serviço');
-    };
-
     return (
         <div className="booking-section step-container" style={{textAlign: 'center'}}>
             <div style={{display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '16px'}}>
@@ -1969,7 +1984,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                 {myApps.map(app => {
                     const clientName = app.clientName || app.client_name || 'Cliente';
                     const serviceId = app.serviceId || app.service_id || '';
-                    const serviceName = getServiceName(serviceId);
+                    const serviceName = getClientServiceTitleById(serviceId);
                     const dateLabel = app.date ? new Date(app.date + 'T12:00:00').toLocaleDateString('pt-BR') : '-';
                     const timeLabel = app.time || '-';
                     const location = app.location || '';

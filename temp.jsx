@@ -39,6 +39,7 @@ const SERVICES = [
     {
         id: 'dep_intima_com_anus',
         name: 'Depilação íntima completa com ânus',
+        cardTitle: 'Depilação íntima completa Premium',
         price: 95,
         category: 'Depilação',
         duration: 60,
@@ -48,6 +49,7 @@ const SERVICES = [
     {
         id: 'dep_intima_sem_anus',
         name: 'Depilação íntima completa sem ânus',
+        cardTitle: 'Depilação íntima Essencial',
         price: 85,
         category: 'Depilação',
         duration: 60,
@@ -66,6 +68,7 @@ const SERVICES = [
     {
         id: 'dep_nariz',
         name: 'Depilação nariz',
+        cardTitle: 'Depilação facial — nariz',
         price: 20,
         category: 'Depilação',
         duration: 60,
@@ -111,11 +114,13 @@ const SERVICES = [
     {
         id: 'combo_intima_axilas_meia',
         name: 'Combo: íntima completa com ânus + axilas + meia perna',
+        cardTitle: 'Combo premium corporal',
         price: 160,
         category: 'Combo depilação',
         duration: 60,
         summary: 'Pacote completo com ótimo custo-benefício.',
-        detail: 'Combo completo com excelente custo-benefício para cuidado corporal.'
+        detail:
+            'Sessão única combinando depilação íntima completa (com acabamento anal), axilas e meia perna — excelente custo-benefício para cuidado corporal.'
     },
     {
         id: 'reflexologia_podal',
@@ -143,6 +148,14 @@ const getServiceMeta = (serviceId) => {
     const sid = String(serviceId || '');
     return SERVICES.find((s) => s.id === sid) || SERVICES_LEGACY.find((s) => s.id === sid) || null;
 };
+
+const getClientServiceCardTitle = (service) => {
+    if (!service) return 'Serviço';
+    const t = String(service.cardTitle || service.name || '').trim();
+    return t || 'Serviço';
+};
+
+const getClientServiceTitleById = (serviceId) => getClientServiceCardTitle(getServiceMeta(serviceId));
 
 const formatPrice = (price) => price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -1703,7 +1716,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                                 <div className="appointment-info" style={{ flex: '1 1 260px', minWidth: '240px' }}>
                                     <div className="appointment-details" style={{ marginBottom: '10px' }}>
                                         <div className="detail-badge"><i className="far fa-clock"></i> {dateStr} às {app.time}</div>
-                                        <div className="detail-badge"><i className="fas fa-spa"></i> {service.name}</div>
+                                        <div className="detail-badge"><i className="fas fa-spa"></i> {getClientServiceCardTitle(service)}</div>
                                         <StatusBadge status={app.status} mode="friendly" />
                                     </div>
 
@@ -2105,7 +2118,7 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
                                     }}
                                 >
                                     <div className="service-card-header">
-                                        <h3>{s.name}</h3>
+                                        <h3>{getClientServiceCardTitle(s)}</h3>
                                         <i className="fas fa-check-circle service-check" aria-hidden />
                                     </div>
                                     <div
@@ -2157,7 +2170,7 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
                                                 paddingTop: detailsOpen ? '10px' : 0
                                             }}
                                         >
-                                            <p
+                                            <div
                                                 style={{
                                                     margin: 0,
                                                     fontSize: '12.5px',
@@ -2166,8 +2179,22 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
                                                     fontWeight: 400
                                                 }}
                                             >
-                                                {s.detail}
-                                            </p>
+                                                {s.cardTitle && s.name && s.cardTitle !== s.name && (
+                                                    <p style={{ margin: '0 0 10px', fontSize: '12px', color: 'var(--text-dark)', fontWeight: 600 }}>
+                                                        <strong>Procedimento:</strong> {s.name}
+                                                    </p>
+                                                )}
+                                                {s.summary && (
+                                                    <p style={{ margin: '0 0 8px', fontSize: '12.5px', lineHeight: 1.55, color: 'var(--text-muted)', fontWeight: 400 }}>
+                                                        {s.summary}
+                                                    </p>
+                                                )}
+                                                {s.detail && (
+                                                    <p style={{ margin: 0, fontSize: '12.5px', lineHeight: 1.55, color: 'var(--text-muted)', fontWeight: 400 }}>
+                                                        {s.detail}
+                                                    </p>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -2278,7 +2305,7 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
                     <p style={{fontSize: '18px', color: 'var(--text-dark)', marginBottom: '20px'}}>Por favor <strong>{selectedClient.name.split(' ')[0]}</strong>, verifique atentamente.</p>
 
                     <div style={{background: 'var(--card-bg)', padding: '25px', borderRadius: '12px', textAlign: 'left', marginBottom: '20px', display: 'inline-block', maxWidth: 'min(100%, 400px)', width: '100%', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-card)'}}>
-                        <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Serviço (Estética/Epilação):</strong> {priceObj.name}</div>
+                        <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Serviço (Estética/Epilação):</strong> {getClientServiceCardTitle(priceObj)}</div>
                         <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Agendamento para:</strong> {new Date(bookingData.date + 'T12:00:00').toLocaleDateString('pt-BR')} às {bookingData.time}</div>
                         {bookingData.location && <div style={{marginBottom: '10px', fontSize: '14px', fontStyle: 'italic'}}><strong style={{color: 'var(--primary-color)'}}>Em:</strong> {bookingData.location}</div>}
                         <div style={{fontSize: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '10px', marginTop: '15px'}}><strong style={{color: 'var(--success)'}}>Valor do procedimento:</strong> {formatPrice(priceObj.price)}</div>
@@ -2379,7 +2406,7 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
                                 <strong style={{ color: 'var(--primary-color)' }}>Cliente:</strong> {completedAppInfo.client.name}
                             </div>
                             <div style={{ fontSize: '15px' }}>
-                                <strong style={{ color: 'var(--primary-color)' }}>Serviço:</strong> {completedAppInfo.service.name}{' '}
+                                <strong style={{ color: 'var(--primary-color)' }}>Serviço:</strong> {getClientServiceCardTitle(completedAppInfo.service)}{' '}
                                 <span style={{ color: 'var(--text-muted)', fontSize: '13px' }}>({formatPrice(completedAppInfo.service.price)})</span>
                             </div>
                             <div style={{ fontSize: '15px' }}>
