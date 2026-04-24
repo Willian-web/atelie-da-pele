@@ -9,6 +9,8 @@ const ADMIN_TOKEN_STORAGE_KEY = 'atelie_admin_token';
 /** Valor do sinal (R$) — manter alinhado a `FIXED_SIGNAL_AMOUNT` em backend/server.js */
 const FIXED_SIGNAL_AMOUNT = 30;
 
+const SERVICE_CATEGORY_ORDER = ['Estética facial', 'Depilação', 'Combo depilação', 'Bem-estar', 'Legado'];
+
 /**
  * Catálogo ativo (etapa 1 do agendamento).
  * Manter ids e preços espelhados em `backend/server.js` (`SERVICES_CATALOG` + `SERVICES_LEGACY`) — o servidor calcula cobrança e saldo por `serviceId`.
@@ -449,12 +451,12 @@ const generateTimeSlots = (dateString, existingAppointments, blockedSlotsList = 
 };
 
 const Header = ({ setView, view }) => (
-    <div className="top-bar">
+    <div className="top-bar top-bar--site-header">
         <div className="logo" onClick={() => setView('client')} style={{cursor: 'pointer'}}>
             <span className="logo-main">Ateliê da Pele</span>
             <span className="logo-sub">Estética & Bem Estar</span>
         </div>
-        <div style={{display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end'}}>
+        <div className="top-bar__nav" style={{display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end'}}>
             <button className={`btn-admin ${view === 'my_apps' ? 'active' : ''}`} onClick={() => setView('my_apps')}>
                 <i className="fas fa-calendar-alt"></i> Meus Agendamentos
             </button>
@@ -467,6 +469,7 @@ const Header = ({ setView, view }) => (
 
 const PasswordModal = ({ onSuccess, onCancel }) => {
     const [pwd, setPwd] = useState('');
+    const [showPwd, setShowPwd] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
     const [loading, setLoading] = useState(false);
 
@@ -505,7 +508,12 @@ const PasswordModal = ({ onSuccess, onCancel }) => {
                 <i className="fas fa-shield-alt" style={{fontSize: '40px', color: 'var(--primary-color)', marginBottom: '15px'}}></i>
                 <h3 style={{marginBottom: '20px'}}>Administração</h3>
                 {errorMsg && <div className="alert alert-error" style={{padding: '8px', marginBottom: '15px', fontSize: '13px'}}>{errorMsg}</div>}
-                <input type="password" className="form-control password-input" placeholder="Senha do painel" value={pwd} onChange={e => setPwd(e.target.value)} onKeyDown={e => e.key === 'Enter' && !loading && submit()} autoFocus disabled={loading} />
+                <div className="password-field-wrap" style={{ width: '100%', marginBottom: '12px' }}>
+                    <input type={showPwd ? 'text' : 'password'} className="form-control password-input" placeholder="Senha do painel" value={pwd} onChange={e => setPwd(e.target.value)} onKeyDown={e => e.key === 'Enter' && !loading && submit()} autoFocus disabled={loading} autoComplete="current-password" />
+                    <button type="button" className="password-toggle-eye" onClick={() => setShowPwd((v) => !v)} disabled={loading} aria-label={showPwd ? 'Ocultar senha' : 'Mostrar senha'} title={showPwd ? 'Ocultar senha' : 'Mostrar senha'}>
+                        <i className={`fas ${showPwd ? 'fa-eye-slash' : 'fa-eye'}`} aria-hidden />
+                    </button>
+                </div>
                 <div className="modal-actions"><button className="btn-cancel" onClick={onCancel} disabled={loading}>Voltar</button><button className="btn-submit" style={{flex: 1}} onClick={submit} disabled={loading}>{loading ? 'Validando…' : 'Acessar'}</button></div>
             </div>
         </div>
@@ -550,7 +558,7 @@ const StatusBadge = ({ status, mode = 'default' }) => {
 // ============== ÁREA PROFISSIONAL ==============
 
 const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToken, onAdminSessionInvalid }) => {
-    const [adminView, setAdminView] = useState('agenda'); // agenda | clientes | relatorio | config
+    const [adminView, setAdminView] = useState('agenda'); // agenda | clientes | relatorio
     const [filter, setFilter] = useState('all');
     const [agendaFilterDate, setAgendaFilterDate] = useState('');
     const [agendaClientSearch, setAgendaClientSearch] = useState('');
@@ -637,7 +645,7 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
     };
 
     const handleDeleteClientRecord = async (c) => {
-        if (!window.confirm(`Remover o cadastro de "${(c.name || '').trim() || 'esta cliente'}"? Esta ação não pode ser desfeita.`)) return;
+        if (!window.confirm(`Remover o cadastro de "${(c.name || '').trim() || 'esta pessoa'}"? Esta ação não pode ser desfeita.`)) return;
         try {
             const res = await adminFetch(`${API_BASE_URL}/admin/clients/${encodeURIComponent(c.id)}`, { method: 'DELETE' });
             const data = await res.json().catch(() => ({}));
@@ -832,7 +840,10 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
         const chargedRaw = (it.amountCharged != null && it.amountCharged !== '') ? it.amountCharged : null;
         const chargedNum = chargedRaw == null ? null : Number(chargedRaw);
         const chargedOk = chargedNum != null && Number.isFinite(chargedNum) && chargedNum > 0;
-        const received = paidOk ? paidNum : (chargedOk ? chargedNum : null);
+        const effRaw = (it.effectiveReceivedPaid != null && it.effectiveReceivedPaid !== '') ? it.effectiveReceivedPaid : null;
+        const effNum = effRaw == null ? null : Number(effRaw);
+        const effOk = effNum != null && Number.isFinite(effNum) && effNum > 0;
+        const received = effOk ? effNum : (paidOk ? paidNum : (chargedOk ? chargedNum : null));
         const balRaw = (it.remainingAmount != null && it.remainingAmount !== '') ? it.remainingAmount : null;
         const balNum = balRaw == null ? null : Number(balRaw);
         const balance = balNum != null && Number.isFinite(balNum) && balNum > 0 ? balNum : null;
@@ -870,30 +881,11 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
                 <button className={`tab-btn ${adminView === 'agenda' ? 'active' : ''}`} onClick={() => setAdminView('agenda')}><i className="fas fa-calendar-alt"></i> Agenda Geral</button>
                 <button className={`tab-btn ${adminView === 'clientes' ? 'active' : ''}`} onClick={() => setAdminView('clientes')}><i className="fas fa-users"></i> Radar de Clientes</button>
                 <button className={`tab-btn ${adminView === 'relatorio' ? 'active' : ''}`} onClick={() => setAdminView('relatorio')}><i className="fas fa-chart-line"></i> Relatório Financeiro</button>
-                <button className={`tab-btn ${adminView === 'config' ? 'active' : ''}`} onClick={() => setAdminView('config')}><i className="fas fa-cog"></i> Ajustes</button>
             </div>
-
-            {adminView === 'config' && (
-                <div style={{ padding: '24px 18px', maxWidth: '520px', margin: '0 auto', textAlign: 'center' }}>
-                    <div
-                        style={{
-                            background: 'var(--bg-color)',
-                            border: '1px solid var(--border-color)',
-                            borderRadius: '12px',
-                            padding: '28px 22px',
-                            color: 'var(--text-muted)',
-                            fontSize: '15px',
-                            lineHeight: 1.6
-                        }}
-                    >
-                        Configurações administrativas gerenciadas no servidor.
-                    </div>
-                </div>
-            )}
 
             {adminView === 'agenda' && (
                 <>
-                    <div className="filter-tabs" style={{marginTop: '5px'}}>
+                    <div className="filter-tabs admin-agenda-period-tabs" style={{marginTop: '5px'}}>
                         <button className={`tab-btn ${filter === 'today' ? 'active' : ''}`} onClick={() => setFilter('today')}>Hoje</button>
                         <button className={`tab-btn ${filter === 'next' ? 'active' : ''}`} onClick={() => setFilter('next')}>Próximos</button>
                         <button className={`tab-btn ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>Todos</button>
@@ -931,7 +923,7 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
                                 className="form-control"
                                 value={agendaClientSearch}
                                 onChange={(e) => setAgendaClientSearch(e.target.value)}
-                                placeholder="Buscar por nome da cliente"
+                                placeholder="Buscar por nome do cliente"
                                 autoComplete="off"
                                 style={{ width: '100%', minWidth: 0 }}
                             />
@@ -1817,7 +1809,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
 
 // ============== ÁREA NOVO AGENDAMENTO (FLOW PRINCIPAL) ==============
 
-const ClientArea = ({ appointments, refreshData, clients, blockedSlots }) => {
+const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingRestoreOrderNsu, onBookingRestoreConsumed }) => {
     const [step, setStep] = useState(1);
     
     // Step 1
@@ -1846,6 +1838,30 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [apiError, setApiError] = useState('');
 
+    const [serviceCatFilter, setServiceCatFilter] = useState('Todos');
+    const serviceCategoryChips = useMemo(() => {
+        const ordered = [];
+        const seen = new Set();
+        for (const c of SERVICE_CATEGORY_ORDER) {
+            if (SERVICES.some((s) => s.category === c) && !seen.has(c)) {
+                seen.add(c);
+                ordered.push(c);
+            }
+        }
+        for (const s of SERVICES) {
+            const c = s.category;
+            if (c && !seen.has(c)) {
+                seen.add(c);
+                ordered.push(c);
+            }
+        }
+        return ['Todos', ...ordered];
+    }, []);
+    const servicesForGrid = useMemo(() => {
+        if (serviceCatFilter === 'Todos') return SERVICES;
+        return SERVICES.filter((s) => s.category === serviceCatFilter);
+    }, [serviceCatFilter]);
+
     const todayStr = getLocalTodayStr();
 
     useEffect(() => {
@@ -1862,6 +1878,55 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots }) => {
             setClientEmailForBooking(String(selectedClient.email || '').trim());
         }
     }, [selectedClient?.id]);
+
+    useEffect(() => {
+        if (!bookingRestoreOrderNsu) return;
+        const idStr = String(bookingRestoreOrderNsu).trim();
+        if (!idStr) return;
+        const appRow = (appointments || []).find((a) => String(a.id) === idStr);
+        if (!appRow) return;
+
+        const sid = appRow.serviceId || appRow.service_id;
+        const meta = getServiceMeta(sid) || {
+            id: sid || 'servico',
+            name: appRow.serviceName || appRow.service_id || 'Serviço',
+            price: Number(appRow.paymentAmount) || 0,
+            category: '',
+            duration: DEFAULT_APPOINTMENT_DURATION_MIN
+        };
+
+        const cid = appRow.clientId || appRow.client_id;
+        let clientRow = (clients || []).find((c) => String(c.id) === String(cid));
+        if (!clientRow) {
+            clientRow = {
+                id: cid || idStr,
+                name: appRow.clientName || appRow.client_name || 'Cliente',
+                phone: appRow.clientPhone || appRow.client_phone || '',
+                address: appRow.location || '',
+                email: String(appRow.clientEmail || '').trim()
+            };
+        }
+
+        setSelectedService(String(sid || ''));
+        setSelectedClient(clientRow);
+        setCompletedAppInfo({ app: appRow, client: clientRow, service: meta });
+        setStep(4);
+        setCheckedTerms(true);
+        setApiError('');
+        setLoginError('');
+
+        try {
+            const u = new URL(window.location.href);
+            u.searchParams.delete('return');
+            u.searchParams.delete('order_nsu');
+            const qs = u.searchParams.toString();
+            window.history.replaceState({}, '', `${u.pathname}${qs ? `?${qs}` : ''}${u.hash || ''}`);
+        } catch (_) { /* ignore */ }
+
+        if (typeof onBookingRestoreConsumed === 'function') {
+            onBookingRestoreConsumed();
+        }
+    }, [bookingRestoreOrderNsu, appointments, clients, onBookingRestoreConsumed]);
 
     useEffect(() => {
         setCheckedTerms(false);
@@ -2004,8 +2069,22 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots }) => {
             {step === 1 && (
                 <div className="booking-section step-container" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
                     <h2 className="section-title">O que deseja agendar?</h2>
+                    <div className="service-category-chips" role="tablist" aria-label="Filtrar por categoria">
+                        {serviceCategoryChips.map((label) => (
+                            <button
+                                key={label}
+                                type="button"
+                                role="tab"
+                                aria-selected={serviceCatFilter === label}
+                                className={`service-category-chip${serviceCatFilter === label ? ' active' : ''}`}
+                                onClick={() => setServiceCatFilter(label)}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
                     <div className="services-grid">
-                        {SERVICES.map((s) => {
+                        {servicesForGrid.map((s) => {
                             const detailsOpen = serviceDetailOpenId === s.id;
                             return (
                                 <div
@@ -2255,12 +2334,12 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots }) => {
                                 {isBookingFull ? (
                                     <>
                                         <strong>Estou ciente</strong> de que o agendamento só será confirmado em definitivo após o <strong>pagamento integral</strong> (valor total do procedimento) na próxima tela via InfinitePay. <br/><br/>
-                                        <i className="fas fa-exclamation-triangle"></i> Sem o pagamento em até 15 minutos, o horário será cancelado e o espaço liberado para outra cliente.
+                                        <i className="fas fa-exclamation-triangle"></i> Sem o pagamento em até 15 minutos, o horário será cancelado e o espaço liberado para outra pessoa.
                                     </>
                                 ) : (
                                     <>
                                         <strong>Estou ciente</strong> de que o agendamento só será confirmado em definitivo após o pagamento do sinal na próxima tela via InfinitePay. <br/><br/>
-                                        <i className="fas fa-exclamation-triangle"></i> Sem o pagamento em até 15 minutos, o horário será cancelado e o espaço liberado para outra cliente.
+                                        <i className="fas fa-exclamation-triangle"></i> Sem o pagamento em até 15 minutos, o horário será cancelado e o espaço liberado para outra pessoa.
                                     </>
                                 )}
                             </span>
@@ -2382,8 +2461,23 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots }) => {
 
 // ============== ROOT APP (ORQUESTRADOR DB) ==============
 
+function readBookingRestoreOrderNsu() {
+    try {
+        const u = new URL(window.location.href);
+        if (u.searchParams.get('return') === 'booking') {
+            return String(u.searchParams.get('order_nsu') || '').trim();
+        }
+    } catch (_) { /* ignore */ }
+    return '';
+}
+
 const App = () => {
-    const [view, setView] = useState('client'); 
+    const [view, setView] = useState('client');
+    const [bookingRestoreOrderNsu, setBookingRestoreOrderNsu] = useState(() => readBookingRestoreOrderNsu());
+    const clearBookingRestore = useCallback(() => {
+        setBookingRestoreOrderNsu('');
+    }, []);
+
     const [showPassword, setShowPassword] = useState(false);
 
     const readStoredAdminToken = () => {
@@ -2457,6 +2551,12 @@ const App = () => {
         return () => clearInterval(intervalId);
     }, [refreshData]);
 
+    useEffect(() => {
+        if (bookingRestoreOrderNsu) {
+            setView('client');
+        }
+    }, [bookingRestoreOrderNsu]);
+
     const navigateTo = (tView) => {
         if (tView === 'admin' && view !== 'admin') {
             const t = readStoredAdminToken();
@@ -2481,7 +2581,16 @@ const App = () => {
             </div>
 
             <main>
-                {view === 'client' && <ClientArea appointments={appointments} refreshData={refreshData} clients={clients} blockedSlots={blockedSlots} />}
+                {view === 'client' && (
+                    <ClientArea
+                        appointments={appointments}
+                        refreshData={refreshData}
+                        clients={clients}
+                        blockedSlots={blockedSlots}
+                        bookingRestoreOrderNsu={bookingRestoreOrderNsu}
+                        onBookingRestoreConsumed={clearBookingRestore}
+                    />
+                )}
                 {view === 'my_apps' && <MyAppointmentsArea appointments={appointments} refreshData={refreshData} clients={clients} setView={setView} />}
                 {view === 'admin' && (
                     <AdminArea

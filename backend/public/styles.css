@@ -474,6 +474,25 @@ main {
         margin-bottom: 16px;
         scrollbar-width: thin;
     }
+    /* Agenda Geral (Hoje / Próximos / Todos): centralizado no celular */
+    .filter-tabs.admin-agenda-period-tabs {
+        flex-wrap: wrap;
+        justify-content: center;
+        overflow-x: visible;
+        gap: 10px;
+        width: 100%;
+    }
+    .top-bar--site-header .logo {
+        align-items: center;
+        width: 100%;
+    }
+    .top-bar--site-header .logo-sub {
+        text-align: center;
+    }
+    .top-bar__nav {
+        justify-content: center !important;
+        width: 100%;
+    }
     .filter-tabs::-webkit-scrollbar {
         height: 5px;
     }
@@ -899,4 +918,67 @@ textarea.form-control {
         padding: 8px 10px;
         font-size: 13px;
     }
+}
+
+/* Etapa 1: filtros por categoria de procedimento */
+.service-category-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin: 0 auto 18px;
+    max-width: 640px;
+}
+
+.service-category-chip {
+    border: 1px solid var(--border-color);
+    background: var(--card-bg);
+    color: var(--text-muted);
+    padding: 7px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: 0.2s;
+}
+
+.service-category-chip:hover {
+    border-color: var(--brand-light);
+    color: var(--text-dark);
+}
+
+.service-category-chip.active {
+    background: var(--gradient-tab-active);
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 4px 14px rgba(75, 53, 110, 0.28);
+}
+
+.password-field-wrap {
+    position: relative;
+    width: 100%;
+}
+
+.password-toggle-eye {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 6px;
+    line-height: 1;
+    border-radius: 8px;
+}
+
+.password-toggle-eye:hover {
+    color: var(--brand-dark);
+    background: rgba(111, 76, 165, 0.08);
+}
+
+.password-field-wrap .form-control.password-input {
+    padding-right: 42px;
 }

@@ -378,6 +378,18 @@ function roundMoney2(n) {
     return Math.round((Number(n) || 0) * 100) / 100;
 }
 
+/** Valor monetário em centavos (inteiro) para somas sem erro de ponto flutuante. */
+function moneyToCents(value) {
+    const n = toMoneyNumber(value);
+    if (n == null || !Number.isFinite(n)) return 0;
+    return Math.round(n * 100);
+}
+
+function centsToReais(cents) {
+    const c = Math.round(Number(cents) || 0);
+    return roundMoney2(c / 100);
+}
+
 /** Sinal na reserva parcial: no máximo o fixo do produto, e nunca acima do valor total do procedimento. */
 function effectivePartialDownPayment(totalServicePrice) {
     const t = roundMoney2(Number(totalServicePrice) || 0);
@@ -474,31 +486,61 @@ function normalizeAppointmentFinancials(row) {
 
 /**
  * Valor recebido no relatório (apenas confirmado/concluído).
- * Usa o mesmo critério que a UI/listagem: `normalizeAppointmentFinancials`, onde
- * `paid_amount` no banco tem prioridade e, se vazio, o valor pago é inferido de
- * forma coerente com payment_type / sinal / total (não apenas `amount_charged` cru).
+ * Regra: somar o que realmente entrou (integral ou sinal), sem usar preço antigo do catálogo
+ * como “pago” e sem subtrair remaining_amount.
+ * - Lê `paid_amount` e `amount_charged` crus no banco.
+ * - Pagamento integral (`full`): se ambos > 0, usa max(paid, charged) em centavos (corrige
+ *   casos em que o sinal ficou gravado em paid_amount mas o charged reflete o total pago).
+ * - Parcial: prioriza paid_amount; se zero/nulo, usa amount_charged; último recurso fin.paidAmount.
  */
 function reportEffectiveReceivedPaid(row) {
     if (row.status !== 'confirmed' && row.status !== 'completed') {
         return 0;
     }
     const fin = normalizeAppointmentFinancials(row);
-    const p = fin.paidAmount;
-    if (p == null || p <= 0) {
-        return 0;
+    const rawPaid = toMoneyNumber(row.paid_amount);
+    const rawCharged = toMoneyNumber(row.amount_charged);
+    const paidPos = rawPaid != null && rawPaid > 0;
+    const chargedPos = rawCharged != null && rawCharged > 0;
+
+    let cents = 0;
+
+    if (fin.paymentType === 'full') {
+        if (paidPos && chargedPos) {
+            cents = Math.max(moneyToCents(rawPaid), moneyToCents(rawCharged));
+        } else if (paidPos) {
+            cents = moneyToCents(rawPaid);
+        } else if (chargedPos) {
+            cents = moneyToCents(rawCharged);
+        } else if (fin.paidAmount != null && fin.paidAmount > 0) {
+            cents = moneyToCents(fin.paidAmount);
+        }
+    } else {
+        if (paidPos) {
+            cents = moneyToCents(rawPaid);
+        } else if (chargedPos) {
+            cents = moneyToCents(rawCharged);
+        } else if (fin.paidAmount != null && fin.paidAmount > 0) {
+            cents = moneyToCents(fin.paidAmount);
+        }
     }
-    return roundMoney2(p);
+
+    return centsToReais(cents);
 }
 
 /**
  * Classificação parcial vs integral para agregação do relatório (evita “tudo parcial” por default da normalização).
  */
-function reportPaymentKindForAggregation(row, fin) {
+function reportPaymentKindForAggregation(row, fin, receivedReais) {
     const raw = row.payment_type != null ? String(row.payment_type).toLowerCase().trim() : '';
     if (raw === 'full' || raw === 'partial') {
         return raw;
     }
     const tot = fin.totalServicePrice || 0;
+    const recv = Number(receivedReais);
+    if (tot > 0 && Number.isFinite(recv) && recv + 0.005 >= tot) {
+        return 'full';
+    }
     const paid = toMoneyNumber(row.paid_amount);
     const charged = toMoneyNumber(row.amount_charged);
     const ref = paid != null && paid > 0 ? paid : charged;
@@ -949,7 +991,7 @@ app.patch('/admin/clients/:id', requireAdminAuth, async (req, res) => {
 
         const cur = await pool.query('SELECT id FROM clients WHERE id = $1', [id]);
         if (cur.rows.length === 0) {
-            return res.status(404).json({ error: 'Cliente não encontrada.' });
+            return res.status(404).json({ error: 'Cadastro não encontrado.' });
         }
 
         const conflict = await pool.query(
@@ -999,13 +1041,13 @@ app.delete('/admin/clients/:id', requireAdminAuth, async (req, res) => {
     try {
         const del = await pool.query('DELETE FROM clients WHERE id = $1 RETURNING id', [id]);
         if (del.rowCount === 0) {
-            return res.status(404).json({ error: 'Cliente não encontrada.' });
+            return res.status(404).json({ error: 'Cadastro não encontrado.' });
         }
         return res.json({ ok: true, id: del.rows[0].id });
     } catch (error) {
         if (error && error.code === '23503') {
             return res.status(409).json({
-                error: 'Não é possível apagar: existem agendamentos vinculados a esta cliente. Cancele ou remova os agendamentos antes.'
+                error: 'Não é possível apagar: existem agendamentos vinculados a este cadastro. Cancele ou remova os agendamentos antes.'
             });
         }
         console.error('[DELETE /admin/clients/:id] Erro:', error);
@@ -1085,6 +1127,7 @@ app.get('/admin/report', requireAdminAuth, async (req, res) => {
         const items = rows.map(r => {
             const serviceObj = findServiceById(r.service_id);
             const fin = normalizeAppointmentFinancials(r);
+            const isPaidRow = r.status === 'confirmed' || r.status === 'completed';
             return {
                 id: r.id,
                 clientName: r.client_name,
@@ -1099,6 +1142,8 @@ app.get('/admin/report', requireAdminAuth, async (req, res) => {
                 remainingAmount: fin.remainingAmount,
                 captureMethod: r.capture_method,
                 paidAmount: fin.paidAmount,
+                /** Mesmo critério do KPI “Total recebido” (só confirmado/concluído; demais null). */
+                effectiveReceivedPaid: isPaidRow ? reportEffectiveReceivedPaid(r) : null,
                 procedureTotal: fin.totalServicePrice != null ? roundMoney2(fin.totalServicePrice) : null
             };
         });
@@ -1118,6 +1163,10 @@ app.get('/admin/report', requireAdminAuth, async (req, res) => {
             totalExpectedRevenue: 0
         };
 
+        let totalRevenueCents = 0;
+        let totalPartialReceivedCents = 0;
+        let totalFullReceivedCents = 0;
+
         const uniqueClientKeys = new Set();
         for (const r of rows) {
             if (r.status === 'confirmed') summary.confirmedCount += 1;
@@ -1133,20 +1182,24 @@ app.get('/admin/report', requireAdminAuth, async (req, res) => {
 
             const fin = normalizeAppointmentFinancials(r);
             const received = reportEffectiveReceivedPaid(r);
-            const kind = reportPaymentKindForAggregation(r, fin);
+            const kind = reportPaymentKindForAggregation(r, fin, received);
+            const receivedCents = moneyToCents(received);
 
-            summary.totalRevenue += received;
+            totalRevenueCents += receivedCents;
             summary.totalExpectedRevenue += fin.totalServicePrice || 0;
 
             if (kind === 'partial') {
-                summary.totalPartialReceived += received;
+                totalPartialReceivedCents += receivedCents;
                 summary.totalRemainingToReceive += reportEffectiveRemainingPartial(r, fin);
             } else if (kind === 'full') {
-                summary.totalFullReceived += received;
+                totalFullReceivedCents += receivedCents;
             }
         }
 
         summary.uniqueClients = uniqueClientKeys.size;
+        summary.totalRevenue = centsToReais(totalRevenueCents);
+        summary.totalPartialReceived = centsToReais(totalPartialReceivedCents);
+        summary.totalFullReceived = centsToReais(totalFullReceivedCents);
 
         return res.json({
             period: { start: startStr, end: endStr },

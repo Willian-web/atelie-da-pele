@@ -22,10 +22,24 @@ async function createCheckoutLink(appointment) {
         ? 'Pagamento integral do procedimento (Ateliê da Pele)'
         : 'Sinal do agendamento (Ateliê da Pele)';
 
+    let redirectUrl = successUrl || undefined;
+    if (redirectUrl && appointment?.id != null && String(appointment.id).trim() !== '') {
+        const id = String(appointment.id).trim();
+        try {
+            const u = new URL(redirectUrl);
+            u.searchParams.set('return', 'booking');
+            u.searchParams.set('order_nsu', id);
+            redirectUrl = u.toString();
+        } catch {
+            const sep = redirectUrl.includes('?') ? '&' : '?';
+            redirectUrl = `${redirectUrl}${sep}return=booking&order_nsu=${encodeURIComponent(id)}`;
+        }
+    }
+
     const payload = {
         handle,
         order_nsu: String(appointment.id),
-        redirect_url: successUrl || undefined,
+        redirect_url: redirectUrl,
         webhook_url: webhookUrl || undefined,
         items: [
             {
