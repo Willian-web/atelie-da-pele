@@ -563,6 +563,12 @@ main {
     .modal-actions .btn-submit {
         width: 100%;
     }
+
+    .admin-agenda-actions > .btn-cancel,
+    .admin-agenda-actions > .btn-submit {
+        flex: 1 1 100%;
+        width: 100%;
+    }
 }
 
 @media (max-width: 360px) {
@@ -855,6 +861,25 @@ textarea.form-control {
 .modal-actions {
     display: flex;
     gap: 10px;
+}
+
+.admin-agenda-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+    width: 100%;
+    max-width: 100%;
+}
+
+.admin-agenda-actions > .btn-cancel,
+.admin-agenda-actions > .btn-submit {
+    flex: 1 1 160px;
+    min-width: min(220px, 100%);
+}
+
+.manual-payment-modal {
+    max-width: min(520px, calc(100vw - 24px));
 }
 
 .btn-cancel {

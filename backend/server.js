@@ -259,6 +259,11 @@ async function initDB() {
         `);
 
         await client.query(`
+            ALTER TABLE appointments
+            ADD COLUMN IF NOT EXISTS manual_payment_note TEXT
+        `);
+
+        await client.query(`
             CREATE INDEX IF NOT EXISTS idx_appointments_date_time_status
             ON appointments (date, time, status)
         `);
@@ -618,6 +623,7 @@ function mapAppointmentRow(row) {
         receiptUrl: row.receipt_url,
         captureMethod: row.capture_method,
         paidAmount: fin.paidAmount,
+        manualPaymentNote: row.manual_payment_note,
         cancelledAt: row.cancelled_at,
         cancelledBy: row.cancelled_by,
         cancelReason: row.cancel_reason,
@@ -1561,6 +1567,119 @@ app.patch('/appointments/:id/cancel', async (req, res) => {
     } catch (e) {
         console.error('[PATCH /appointments/:id/cancel] Erro:', e);
         return res.status(500).json({ error: 'Erro ao cancelar agendamento.' });
+    }
+});
+
+// ====================== ADMIN: CONFIRMAR PAGAMENTO MANUAL ======================
+/**
+ * Confirma pagamento manual (Pix/dinheiro/transferência/presencial) sem alterar o fluxo InfinitePay.
+ * Regras:
+ * - Protegido por admin token
+ * - Não permite confirmar se estiver cancelado
+ * - Se já estiver confirmed/completed, só permite com body.force === true
+ * - Marca capture_method = "manual"
+ * - Atualiza payment_type, paid_amount, remaining_amount (nunca negativo)
+ * - Guarda observação em manual_payment_note
+ */
+app.patch('/admin/appointments/:id/manual-payment', requireAdminAuth, async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+
+    const rawId = req.params.id;
+    const id = rawId != null ? String(rawId).trim() : '';
+    if (!id) {
+        return res.status(400).json({ error: 'ID inválido.' });
+    }
+
+    try {
+        const { paidAmount, paymentType, note, force } = req.body || {};
+
+        const typeNorm = String(paymentType || '').trim().toLowerCase();
+        if (!['partial', 'full'].includes(typeNorm)) {
+            return res.status(400).json({ error: 'paymentType inválido. Use "partial" ou "full".' });
+        }
+
+        const noteNorm = (note == null ? '' : String(note)).trim();
+
+        const check = await pool.query('SELECT * FROM appointments WHERE id = $1', [id]);
+        if (check.rows.length === 0) {
+            return res.status(404).json({ error: 'Agendamento inexistente.' });
+        }
+
+        const ap = check.rows[0];
+        const prevStatus = ap.status;
+
+        if (prevStatus === 'cancelled') {
+            return res.status(409).json({ error: 'Não é possível confirmar pagamento: agendamento está cancelado.' });
+        }
+
+        const alreadyPaid = prevStatus === 'confirmed' || prevStatus === 'completed';
+        if (alreadyPaid && force !== true) {
+            return res.status(409).json({
+                error: 'Este agendamento já está confirmado/concluído. Para sobrescrever, envie {"force": true}.'
+            });
+        }
+
+        const serviceObj = findServiceById(ap.service_id);
+        const total = roundMoney2(Number(serviceObj?.price || 0));
+        if (!Number.isFinite(total) || total <= 0) {
+            return res.status(400).json({ error: 'Não foi possível determinar o valor total do procedimento.' });
+        }
+
+        let paidResolved;
+        if (typeNorm === 'full') {
+            paidResolved = total;
+        } else {
+            const rawPaid = toMoneyNumber(paidAmount);
+            if (rawPaid == null || !Number.isFinite(rawPaid) || rawPaid <= 0) {
+                return res.status(400).json({ error: 'paidAmount inválido para pagamento parcial.' });
+            }
+            paidResolved = roundMoney2(rawPaid);
+            if (paidResolved > total + 0.005) {
+                return res.status(400).json({ error: 'paidAmount não pode ser maior que o total do procedimento (parcial).' });
+            }
+        }
+
+        const remainingResolved = Math.max(0, roundMoney2(total - paidResolved));
+        const finalType = remainingResolved <= 0.005 ? 'full' : typeNorm;
+
+        console.log(`[AdminManualPayment] Confirmando pagamento manual: id=${id} prev_status=${prevStatus} type=${finalType} paid=${paidResolved} remaining=${remainingResolved} force=${force === true}`);
+
+        const upd = await pool.query(
+            `
+            UPDATE appointments
+            SET status = 'confirmed',
+                payment_type = $2,
+                paid_amount = $3,
+                amount_charged = $4,
+                remaining_amount = $5,
+                capture_method = 'manual',
+                transaction_nsu = COALESCE(NULLIF(transaction_nsu, ''), 'manual'),
+                invoice_slug = COALESCE(NULLIF(invoice_slug, ''), 'manual'),
+                manual_payment_note = NULLIF($6, '')
+            WHERE id = $1
+            RETURNING *
+        `,
+            [
+                id,
+                finalType,
+                paidResolved,
+                paidResolved,
+                remainingResolved,
+                noteNorm
+            ]
+        );
+
+        const updated = upd.rows[0];
+        return res.json({
+            ok: true,
+            previousStatus: prevStatus,
+            appointment: mapAppointmentRow(updated)
+        });
+    } catch (e) {
+        console.error('[PATCH /admin/appointments/:id/manual-payment] Erro:', e);
+        return res.status(500).json({ error: 'Erro ao confirmar pagamento manual.' });
     }
 });
 

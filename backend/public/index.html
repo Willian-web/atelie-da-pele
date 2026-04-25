@@ -991,10 +991,6 @@ const ClientArea = ({ appointments, refreshData, clients, adminWhatsApp, blocked
                 const checkoutIntegral =
                     String(paymentType || '').toLowerCase() === 'full' || isProcedurePriceAtOrBelowSignal(svcPriceNum);
                 const dueNowDisplayBRL = amountChargedBRL || servicePriceBRL;
-                const mockPayCents = Math.max(
-                    1,
-                    Math.round(Number(liveApp?.amountCharged ?? completedAppInfo?.service?.price ?? 0) * 100)
-                );
 
                 const baseLines = [
                     `Olá! Sou ${safeFirstName(clientName)} e fiz um agendamento no Ateliê da Pele. Gostaria de confirmar.`,
@@ -1101,46 +1097,6 @@ const ClientArea = ({ appointments, refreshData, clients, adminWhatsApp, blocked
                             <a href={liveApp.paymentUrl} target="_blank" rel="noreferrer" className="btn-submit pay-btn" style={{width: '100%', display: 'block', textDecoration: 'none', padding: '15px'}}>
                                 <i className="fas fa-money-bill-wave"></i> Pagar via InfinitePay
                             </a>
-                            
-                            <div style={{marginTop: '20px', borderTop: '1px dashed #bae6fd', paddingTop: '15px', display: 'flex', flexDirection: 'column', gap: '8px'}}>
-                                <span style={{fontSize: '12px', color: '#0369a1', fontWeight: 'bold'}}><i className="fas fa-vial"></i> Modo Teste</span>
-                                <div style={{display: 'flex', gap: '10px', justifyContent: 'center'}}>
-                                    <button className="btn-cancel" style={{flex: 1, padding: '8px', fontSize: '11px', borderColor: '#10b981', color: '#10b981'}} onClick={async () => {
-                                        await fetch(`${API_BASE_URL}/webhook/infinitepay`, {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({
-                                                invoice_slug: `mock-slug-${liveApp.id}`,
-                                                amount: mockPayCents,
-                                                paid_amount: mockPayCents,
-                                                installments: 1,
-                                                capture_method: 'pix',
-                                                transaction_nsu: `mock-transaction-${liveApp.id}`,
-                                                order_nsu: liveApp.id,
-                                                receipt_url: `https://mock.receipt/${liveApp.id}`,
-                                                items: [{
-                                                    quantity: 1,
-                                                    price: mockPayCents,
-                                                    description: checkoutIntegral ? 'Pagamento integral do procedimento' : 'Sinal do agendamento'
-                                                }]
-                                            })
-                                        });
-                                        refreshData();
-                                    }}>Aprovar</button>
-                                    
-                                    <button className="btn-cancel" style={{flex: 1, padding: '8px', fontSize: '11px', borderColor: '#ef4444', color: '#ef4444'}} onClick={async () => {
-                                        await fetch(`${API_BASE_URL}/appointments/${liveApp.id}/cancel`, {
-                                            method: 'PATCH',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({
-                                                cancelledBy: 'system',
-                                                cancelReason: 'Pagamento não aprovado (teste)'
-                                            })
-                                        });
-                                        refreshData();
-                                    }}>Recusar/Expirar</button>
-                                </div>
-                            </div>
                         </div>
                     )}
 
@@ -1192,6 +1148,7 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
     const [clientEditModal, setClientEditModal] = useState(null);
     const [clientEditError, setClientEditError] = useState('');
     const [clientEditSaving, setClientEditSaving] = useState(false);
+    const [manualPayModal, setManualPayModal] = useState(null); // { id, clientName, serviceName, total, paymentType, paidAmount, note, saving, error }
 
     const todayStr = getLocalTodayStr();
 
@@ -1359,6 +1316,75 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
             await refreshData();
         } catch (e) {
             alert(e.message || 'Erro ao cancelar agendamento.');
+        }
+    };
+
+    const openManualPayment = (app, serviceName, servicePrice) => {
+        if (!app || !app.id) return;
+        const clientName = app.clientName || app.client_name || 'Cliente';
+        const total = (typeof servicePrice === 'number' && Number.isFinite(servicePrice)) ? servicePrice : null;
+        setManualPayModal({
+            id: app.id,
+            clientName,
+            serviceName: serviceName || 'Serviço',
+            total,
+            paymentType: 'partial',
+            paidAmount: '',
+            note: '',
+            saving: false,
+            error: ''
+        });
+    };
+
+    const submitManualPayment = async () => {
+        if (!manualPayModal || !manualPayModal.id) return;
+        const type = String(manualPayModal.paymentType || '').trim().toLowerCase();
+        const paidStr = String(manualPayModal.paidAmount || '').replace(',', '.').trim();
+        const paidNum = paidStr ? Number(paidStr) : null;
+
+        if (!['partial', 'full'].includes(type)) {
+            setManualPayModal((m) => ({ ...m, error: 'Selecione o tipo de pagamento.' }));
+            return;
+        }
+
+        if (type === 'partial') {
+            if (paidNum == null || !Number.isFinite(paidNum) || paidNum <= 0) {
+                setManualPayModal((m) => ({ ...m, error: 'Informe um valor pago válido para pagamento parcial.' }));
+                return;
+            }
+        }
+
+        const summaryLines = [
+            `Confirmar pagamento manual?`,
+            ``,
+            `Agendamento: ${manualPayModal.clientName} — ${manualPayModal.serviceName}`,
+            `Tipo: ${type === 'full' ? 'integral' : 'parcial (sinal)'}`
+        ];
+        if (type === 'partial') summaryLines.push(`Valor pago: R$ ${paidNum.toFixed(2).replace('.', ',')}`);
+        if ((manualPayModal.note || '').trim()) summaryLines.push(`Obs.: ${(manualPayModal.note || '').trim()}`);
+
+        if (!window.confirm(summaryLines.join('\n'))) return;
+
+        setManualPayModal((m) => ({ ...m, saving: true, error: '' }));
+        try {
+            const body = {
+                paymentType: type,
+                note: (manualPayModal.note || '').trim() || undefined
+            };
+            if (type === 'partial') body.paidAmount = paidNum;
+
+            const res = await adminFetch(`${API_BASE_URL}/admin/appointments/${encodeURIComponent(manualPayModal.id)}/manual-payment`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'Erro ao confirmar pagamento manual.');
+
+            setManualPayModal(null);
+            await refreshData();
+        } catch (e) {
+            setManualPayModal((m) => ({ ...m, saving: false, error: e.message || 'Erro ao confirmar pagamento manual.' }));
         }
     };
 
@@ -1568,10 +1594,19 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
                                 )}
                             </div>
 
-                            <div style={{display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '14px'}}>
+                            <div className="admin-agenda-actions">
                                 <button className="btn-cancel" onClick={() => handleCancelByAdmin(app.id)} style={{padding: '10px 14px', fontSize: '13px'}}>
                                     Cancelar
                                 </button>
+                                {app.status === 'pending_payment' && (
+                                    <button
+                                        className="btn-cancel"
+                                        onClick={() => openManualPayment(app, serviceName, servicePrice)}
+                                        style={{padding: '10px 14px', fontSize: '13px', borderColor: 'rgba(111, 76, 165, 0.35)', color: 'var(--primary-color)'}}
+                                    >
+                                        <i className="fas fa-hand-holding-usd"></i> Confirmar pagamento manual
+                                    </button>
+                                )}
                                 <button className="btn-cancel" onClick={() => handleDelete(app.id)} style={{padding: '10px 14px', fontSize: '13px', borderColor: '#ef4444', color: '#ef4444'}}>
                                     Apagar
                                 </button>
@@ -1864,6 +1899,77 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
                 {adminView === 'report' && renderReport()}
                 {adminView === 'blocks' && renderBlockedSlots()}
             </div>
+
+            {manualPayModal && (
+                <div className="password-overlay" style={{zIndex: 10040}} role="dialog" aria-modal="true">
+                    <div className="password-modal manual-payment-modal" style={{maxWidth: '520px', width: '100%', textAlign: 'left'}}>
+                        <h3 style={{marginBottom: '12px', textAlign: 'center'}}>Confirmar pagamento manual</h3>
+                        <div style={{fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px', lineHeight: 1.4, textAlign: 'center'}}>
+                            Use quando a cliente pagou fora da InfinitePay (Pix manual, dinheiro, transferência, presencial).
+                        </div>
+
+                        <div style={{background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '12px 14px', marginBottom: '12px'}}>
+                            <div style={{fontWeight: 700, marginBottom: '6px'}}>{manualPayModal.clientName}</div>
+                            <div style={{fontSize: '13px', color: 'var(--text-muted)'}}>
+                                {manualPayModal.serviceName}
+                                {typeof manualPayModal.total === 'number' ? ` — ${formatPrice(manualPayModal.total)}` : ''}
+                            </div>
+                        </div>
+
+                        <div className="form-grid" style={{gap: '12px'}}>
+                            <div className="form-group" style={{marginBottom: 0}}>
+                                <label className="form-label">Tipo</label>
+                                <select
+                                    className="form-control"
+                                    value={manualPayModal.paymentType}
+                                    onChange={(e) => setManualPayModal((m) => ({ ...m, paymentType: e.target.value, error: '' }))}
+                                >
+                                    <option value="partial">Parcial (sinal / pago fora)</option>
+                                    <option value="full">Integral (procedimento pago)</option>
+                                </select>
+                            </div>
+
+                            {String(manualPayModal.paymentType) === 'partial' && (
+                                <div className="form-group" style={{marginBottom: 0}}>
+                                    <label className="form-label">Valor pago (R$)</label>
+                                    <input
+                                        inputMode="decimal"
+                                        className="form-control"
+                                        placeholder="Ex.: 30,00"
+                                        value={manualPayModal.paidAmount}
+                                        onChange={(e) => setManualPayModal((m) => ({ ...m, paidAmount: e.target.value, error: '' }))}
+                                    />
+                                </div>
+                            )}
+
+                            <div className="form-group full-width" style={{marginBottom: 0}}>
+                                <label className="form-label">Observação (opcional)</label>
+                                <input
+                                    className="form-control"
+                                    placeholder="Ex.: Pago via Pix manual"
+                                    value={manualPayModal.note}
+                                    onChange={(e) => setManualPayModal((m) => ({ ...m, note: e.target.value }))}
+                                />
+                            </div>
+                        </div>
+
+                        {manualPayModal.error && (
+                            <div className="alert alert-error" style={{marginTop: '12px', marginBottom: 0, fontSize: '13px'}}>
+                                {manualPayModal.error}
+                            </div>
+                        )}
+
+                        <div className="modal-actions" style={{marginTop: '12px'}}>
+                            <button type="button" className="btn-cancel" onClick={() => setManualPayModal(null)} disabled={manualPayModal.saving}>
+                                Cancelar
+                            </button>
+                            <button type="button" className="btn-submit" style={{flex: 1}} onClick={submitManualPayment} disabled={manualPayModal.saving}>
+                                {manualPayModal.saving ? 'Salvando…' : 'Confirmar pagamento'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {clientEditModal && (
                 <div className="password-overlay" style={{zIndex: 10050}}>
