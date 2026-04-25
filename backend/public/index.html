@@ -1149,6 +1149,7 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
     const [clientEditError, setClientEditError] = useState('');
     const [clientEditSaving, setClientEditSaving] = useState(false);
     const [manualPayModal, setManualPayModal] = useState(null); // { id, clientName, serviceName, total, paymentType, paidAmount, note, saving, error }
+    const [settleBalanceModal, setSettleBalanceModal] = useState(null); // { id, clientName, serviceName, total, paidSoFar, remaining, note, saving, error }
 
     const todayStr = getLocalTodayStr();
 
@@ -1388,6 +1389,69 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
         }
     };
 
+    const canSettleRemainingBalance = (app) => {
+        if (!app) return false;
+        const st = String(app.status || '').trim();
+        if (st !== 'confirmed' && st !== 'completed') return false;
+        const pt = String(app.paymentType || app.payment_type || '').trim().toLowerCase();
+        if (pt !== 'partial') return false;
+        const rem = Number(app.remainingAmount ?? app.remaining_amount);
+        return Number.isFinite(rem) && rem > 0.005;
+    };
+
+    const openSettleBalance = (app, serviceName, servicePrice) => {
+        if (!app || !app.id) return;
+        const paidSoFar = Number(app.paidAmount ?? app.paid_amount);
+        const remaining = Number(app.remainingAmount ?? app.remaining_amount);
+        const total = (typeof servicePrice === 'number' && Number.isFinite(servicePrice)) ? servicePrice : null;
+        setSettleBalanceModal({
+            id: app.id,
+            clientName: app.clientName || app.client_name || 'Cliente',
+            serviceName: serviceName || 'Serviço',
+            total,
+            paidSoFar: Number.isFinite(paidSoFar) ? paidSoFar : null,
+            remaining: Number.isFinite(remaining) ? remaining : null,
+            note: '',
+            saving: false,
+            error: ''
+        });
+    };
+
+    const submitSettleRemaining = async () => {
+        if (!settleBalanceModal || !settleBalanceModal.id) return;
+        const rem = settleBalanceModal.remaining;
+        if (rem == null || !Number.isFinite(rem) || rem <= 0) {
+            setSettleBalanceModal((m) => ({ ...m, error: 'Sem saldo restante para quitar.' }));
+            return;
+        }
+        const lines = [
+            'Quitar saldo restante manualmente?',
+            '',
+            `${settleBalanceModal.clientName} — ${settleBalanceModal.serviceName}`,
+            `Saldo a registrar: R$ ${rem.toFixed(2).replace('.', ',')}`,
+            '(será somado ao valor já pago; saldo pendente ficará R$ 0,00)'
+        ];
+        if ((settleBalanceModal.note || '').trim()) lines.push(`Obs.: ${(settleBalanceModal.note || '').trim()}`);
+        if (!window.confirm(lines.join('\n'))) return;
+
+        setSettleBalanceModal((m) => ({ ...m, saving: true, error: '' }));
+        try {
+            const res = await adminFetch(`${API_BASE_URL}/admin/appointments/${encodeURIComponent(settleBalanceModal.id)}/settle-remaining-balance`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    note: (settleBalanceModal.note || '').trim() || undefined
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'Erro ao quitar saldo restante.');
+            setSettleBalanceModal(null);
+            await refreshData();
+        } catch (e) {
+            setSettleBalanceModal((m) => ({ ...m, saving: false, error: e.message || 'Erro ao quitar saldo restante.' }));
+        }
+    };
+
     const fetchReport = async () => {
         setReportError('');
         setReportData(null);
@@ -1605,6 +1669,16 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
                                         style={{padding: '10px 14px', fontSize: '13px', borderColor: 'rgba(111, 76, 165, 0.35)', color: 'var(--primary-color)'}}
                                     >
                                         <i className="fas fa-hand-holding-usd"></i> Confirmar pagamento manual
+                                    </button>
+                                )}
+                                {canSettleRemainingBalance(app) && (
+                                    <button
+                                        type="button"
+                                        className="btn-cancel"
+                                        onClick={() => openSettleBalance(app, serviceName, servicePrice)}
+                                        style={{padding: '10px 14px', fontSize: '13px', borderColor: 'rgba(61, 143, 101, 0.45)', color: 'var(--success, #3d8f65)'}}
+                                    >
+                                        <i className="fas fa-balance-scale"></i> Quitar saldo restante
                                     </button>
                                 )}
                                 <button className="btn-cancel" onClick={() => handleDelete(app.id)} style={{padding: '10px 14px', fontSize: '13px', borderColor: '#ef4444', color: '#ef4444'}}>
@@ -1899,6 +1973,58 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
                 {adminView === 'report' && renderReport()}
                 {adminView === 'blocks' && renderBlockedSlots()}
             </div>
+
+            {settleBalanceModal && (
+                <div className="password-overlay" style={{zIndex: 10045}} role="dialog" aria-modal="true">
+                    <div className="password-modal manual-payment-modal" style={{maxWidth: '520px', width: '100%', textAlign: 'left'}}>
+                        <h3 style={{marginBottom: '12px', textAlign: 'center'}}>Quitar saldo restante</h3>
+                        <div style={{fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px', lineHeight: 1.4, textAlign: 'center'}}>
+                            Registre o pagamento do saldo (presencial, Pix manual, dinheiro ou transferência). O valor já pago (ex.: sinal) não será apagado — apenas somado.
+                        </div>
+
+                        <div style={{background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '12px 14px', marginBottom: '12px'}}>
+                            <div style={{fontWeight: 700, marginBottom: '6px'}}>{settleBalanceModal.clientName}</div>
+                            <div style={{fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px'}}>
+                                {settleBalanceModal.serviceName}
+                                {typeof settleBalanceModal.total === 'number' ? ` — total ${formatPrice(settleBalanceModal.total)}` : ''}
+                            </div>
+                            <div style={{fontSize: '13px', lineHeight: 1.5}}>
+                                {settleBalanceModal.paidSoFar != null && (
+                                    <div><strong>Já pago:</strong> R$ {settleBalanceModal.paidSoFar.toFixed(2).replace('.', ',')}</div>
+                                )}
+                                {settleBalanceModal.remaining != null && (
+                                    <div><strong>Saldo a quitar agora:</strong> R$ {settleBalanceModal.remaining.toFixed(2).replace('.', ',')}</div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="form-group full-width" style={{marginBottom: 0}}>
+                            <label className="form-label">Observação (opcional)</label>
+                            <input
+                                className="form-control"
+                                placeholder="Ex.: Pago em dinheiro no atendimento"
+                                value={settleBalanceModal.note}
+                                onChange={(e) => setSettleBalanceModal((m) => ({ ...m, note: e.target.value, error: '' }))}
+                            />
+                        </div>
+
+                        {settleBalanceModal.error && (
+                            <div className="alert alert-error" style={{marginTop: '12px', marginBottom: 0, fontSize: '13px'}}>
+                                {settleBalanceModal.error}
+                            </div>
+                        )}
+
+                        <div className="modal-actions" style={{marginTop: '12px'}}>
+                            <button type="button" className="btn-cancel" onClick={() => setSettleBalanceModal(null)} disabled={settleBalanceModal.saving}>
+                                Cancelar
+                            </button>
+                            <button type="button" className="btn-submit" style={{flex: 1}} onClick={submitSettleRemaining} disabled={settleBalanceModal.saving}>
+                                {settleBalanceModal.saving ? 'Salvando…' : 'Confirmar quitação'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {manualPayModal && (
                 <div className="password-overlay" style={{zIndex: 10040}} role="dialog" aria-modal="true">
