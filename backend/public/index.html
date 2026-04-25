@@ -208,6 +208,30 @@ const isValidEmailFormat = (s) => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t);
 };
 
+/** Valores financeiros já normalizados pela API (paidAmount, paymentSummary); só formatação para “Meus Agendamentos”. */
+const resolveAppointmentPaidForDisplay = (app) => {
+    const ps = app && app.paymentSummary;
+    let paid = ps != null && ps.paidAmount != null ? Number(ps.paidAmount) : NaN;
+    if (!Number.isFinite(paid)) {
+        paid = Number(app.paidAmount ?? app.paid_amount);
+    }
+    if (!Number.isFinite(paid)) paid = null;
+
+    const remRaw = app.remainingAmount ?? (ps && ps.remainingAmount);
+    const rem = remRaw != null ? Number(remRaw) : NaN;
+    const remaining = Number.isFinite(rem) ? rem : null;
+
+    const pType = String(app.paymentType || '').toLowerCase();
+    const showRemaining = pType === 'partial' && remaining != null && remaining > 0.005;
+
+    return { paid, remaining: showRemaining ? remaining : null, showRemaining };
+};
+
+const formatBRLFromNumber = (n) => {
+    if (n == null || !Number.isFinite(Number(n))) return null;
+    return Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
 const getLocalTodayStr = () => {
     const now = new Date();
     const offset = now.getTimezoneOffset() * 60000;
@@ -1089,12 +1113,34 @@ const ClientArea = ({ appointments, refreshData, clients, adminWhatsApp, blocked
                     </div>
 
                     {isPending && (
-                        <div style={{marginBottom: '30px', background: '#e0f2fe', padding: '20px', borderRadius: '8px', maxWidth: '350px', margin: '0 auto 30px'}}>
+                        <div style={{marginBottom: '30px', background: '#e0f2fe', padding: '20px', borderRadius: '8px', maxWidth: '350px', margin: '0 auto 30px', width: '100%', boxSizing: 'border-box'}}>
                             <p style={{fontWeight: 'bold', fontSize: '18px', color: '#0369a1', marginBottom: '15px'}}>
                                 Valor a pagar agora: {dueNowDisplayBRL || adiantamento}
                                 {checkoutIntegral && <span style={{ display: 'block', fontSize: '12px', fontWeight: 600, marginTop: '6px', opacity: 0.9 }}>(pagamento integral do procedimento)</span>}
                             </p>
-                            <a href={liveApp.paymentUrl} target="_blank" rel="noreferrer" className="btn-submit pay-btn" style={{width: '100%', display: 'block', textDecoration: 'none', padding: '15px'}}>
+                            <div
+                                role="note"
+                                style={{
+                                    fontSize: '12px',
+                                    lineHeight: 1.45,
+                                    color: '#334155',
+                                    background: 'rgba(255,255,255,0.75)',
+                                    border: '1px solid #bae6fd',
+                                    borderRadius: '8px',
+                                    padding: '10px 12px',
+                                    marginBottom: '14px',
+                                    textAlign: 'left',
+                                    maxWidth: '100%',
+                                    boxSizing: 'border-box',
+                                    wordBreak: 'break-word'
+                                }}
+                            >
+                                <span style={{ display: 'block', color: '#0c4a6e', fontWeight: 600, marginBottom: '4px' }}>Informação</span>
+                                <span style={{ display: 'block' }}>
+                                    Política de cancelamento: pagamentos realizados como sinal ou valor integral poderão ser reembolsados integralmente caso o cancelamento seja solicitado com até 48 horas de antecedência. Após esse prazo, o valor poderá ser convertido em crédito para um novo agendamento, conforme disponibilidade.
+                                </span>
+                            </div>
+                            <a href={liveApp.paymentUrl} target="_blank" rel="noreferrer" className="btn-submit pay-btn" style={{width: '100%', display: 'block', textDecoration: 'none', padding: '15px', boxSizing: 'border-box'}}>
                                 <i className="fas fa-money-bill-wave"></i> Pagar via InfinitePay
                             </a>
                         </div>
@@ -2132,6 +2178,10 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
 const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => {
     const [phoneInput, setPhoneInput] = useState('');
     const [filter, setFilter] = useState('next'); // next | all | past
+    const [selfEditModal, setSelfEditModal] = useState(null);
+    const [selfEditError, setSelfEditError] = useState('');
+    const [selfEditSaving, setSelfEditSaving] = useState(false);
+    const [selfEditBanner, setSelfEditBanner] = useState('');
 
     const cleanPhone = (p) => String(p || '').replace(/\D/g, '');
     const myPhone = cleanPhone(phoneInput);
@@ -2159,6 +2209,89 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
         return sorted.filter(a => (a.date || '') >= todayStr);
     }, [appointments, myPhone, filter, todayStr]);
 
+    const matchedClient = useMemo(() => {
+        if (!myPhone) return null;
+        const list = clients || [];
+        let c = list.find((cl) => cleanPhone(cl.phone) === myPhone);
+        if (!c && myApps.length) {
+            const cid = myApps[0].clientId || myApps[0].client_id;
+            if (cid) {
+                const byId = list.find((cl) => cl.id === cid);
+                const apPh = cleanPhone(myApps[0].clientPhone || myApps[0].client_phone);
+                if (byId && apPh === myPhone) c = byId;
+            }
+        }
+        return c || null;
+    }, [clients, myPhone, myApps]);
+
+    useEffect(() => {
+        if (!selfEditBanner) return undefined;
+        const t = setTimeout(() => setSelfEditBanner(''), 5000);
+        return () => clearTimeout(t);
+    }, [selfEditBanner]);
+
+    const openSelfEdit = () => {
+        if (!matchedClient || !myPhone) return;
+        setSelfEditError('');
+        setSelfEditBanner('');
+        setSelfEditModal({
+            id: matchedClient.id,
+            name: matchedClient.name || '',
+            phone: matchedClient.phone || '',
+            email: String(matchedClient.email || '').trim(),
+            address: matchedClient.address || '',
+            verifyDigits: myPhone
+        });
+    };
+
+    const saveSelfEdit = async () => {
+        if (!selfEditModal) return;
+        setSelfEditError('');
+        const em = String(selfEditModal.email || '').trim().toLowerCase();
+        if (!isValidEmailFormat(em)) {
+            setSelfEditError('Informe um e-mail válido.');
+            return;
+        }
+        const newDigits = cleanPhone(selfEditModal.phone);
+        if (!newDigits) {
+            setSelfEditError('O telefone é obrigatório para localizar seus agendamentos.');
+            return;
+        }
+        if (!(selfEditModal.name || '').trim()) {
+            setSelfEditError('Nome é obrigatório.');
+            return;
+        }
+        setSelfEditSaving(true);
+        try {
+            const res = await fetch(`${API_BASE_URL}/clients/${encodeURIComponent(selfEditModal.id)}/self`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    verifyPhoneDigits: selfEditModal.verifyDigits,
+                    name: (selfEditModal.name || '').trim(),
+                    phone: newDigits,
+                    address: (selfEditModal.address || '').trim(),
+                    email: em
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setSelfEditError(data.error || 'Não foi possível salvar.');
+                return;
+            }
+            setSelfEditModal(null);
+            if (newDigits !== myPhone) {
+                setPhoneInput(newDigits);
+            }
+            setSelfEditBanner('Cadastro atualizado com sucesso.');
+            await refreshData();
+        } catch {
+            setSelfEditError('Falha de rede ao salvar.');
+        } finally {
+            setSelfEditSaving(false);
+        }
+    };
+
     return (
         <div className="booking-section step-container" style={{textAlign: 'center'}}>
             <div style={{display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '16px'}}>
@@ -2168,7 +2301,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                 </button>
             </div>
 
-            <div style={{maxWidth: '520px', margin: '0 auto', textAlign: 'left'}}>
+            <div style={{maxWidth: '520px', margin: '0 auto', textAlign: 'left', width: '100%', boxSizing: 'border-box', padding: '0 4px'}}>
                 <label style={{fontSize: '13px', color: 'var(--text-muted)', display: 'block', marginBottom: '8px'}}>
                     Digite seu telefone para ver seus agendamentos
                 </label>
@@ -2178,7 +2311,16 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                     value={phoneInput}
                     onChange={e => setPhoneInput(e.target.value)}
                     placeholder="Ex: (41) 99999-9999"
+                    style={{ width: '100%', boxSizing: 'border-box' }}
                 />
+
+                {matchedClient && myPhone && (
+                    <div style={{ marginTop: '10px' }}>
+                        <button type="button" className="btn-admin" onClick={openSelfEdit} style={{ fontSize: '13px', padding: '6px 12px' }}>
+                            Editar cadastro
+                        </button>
+                    </div>
+                )}
 
                 <div className="filter-tabs" style={{marginTop: '14px', marginBottom: '18px', justifyContent: 'center'}}>
                     <button className={`tab-btn ${filter === 'next' ? 'active' : ''}`} onClick={() => setFilter('next')}>
@@ -2193,6 +2335,12 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                 </div>
             </div>
 
+            {selfEditBanner && (
+                <div className="alert" style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#065f46', maxWidth: '520px', margin: '0 auto 12px', fontSize: '14px' }}>
+                    {selfEditBanner}
+                </div>
+            )}
+
             {!myPhone && (
                 <div className="alert" style={{background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155'}}>
                     Informe seu telefone acima para carregar seus agendamentos.
@@ -2205,7 +2353,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                 </div>
             )}
 
-            <div style={{display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px'}}>
+            <div style={{display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px', width: '100%', maxWidth: '100%', boxSizing: 'border-box'}}>
                 {myApps.map(app => {
                     const clientName = app.clientName || app.client_name || 'Cliente';
                     const serviceId = app.serviceId || app.service_id || '';
@@ -2215,14 +2363,25 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                     const location = app.location || '';
                     const notes = app.notes || '';
                     const cancelReason = app.cancelReason || app.cancel_reason || '';
+                    const { paid, remaining, showRemaining } = resolveAppointmentPaidForDisplay(app);
+                    const paidLabel = formatBRLFromNumber(paid != null ? paid : 0);
+                    const remLabel = showRemaining && remaining != null ? formatBRLFromNumber(remaining) : null;
 
                     return (
-                        <div key={app.id} style={{background: '#fcfcfc', border: '1px solid #ddd', padding: '16px', borderRadius: '10px', textAlign: 'left'}}>
+                        <div key={app.id} style={{background: '#fcfcfc', border: '1px solid #ddd', padding: '16px', borderRadius: '10px', textAlign: 'left', maxWidth: '100%', boxSizing: 'border-box', wordBreak: 'break-word'}}>
                             <div style={{display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start', flexWrap: 'wrap'}}>
-                                <div>
+                                <div style={{ minWidth: 0, flex: '1 1 auto' }}>
                                     <div style={{fontWeight: '700', marginBottom: '6px'}}>{serviceName}</div>
                                     <div style={{fontSize: '13px', color: 'var(--text-muted)'}}>{dateLabel} • {timeLabel}</div>
                                     <div style={{fontSize: '13px', color: 'var(--text-muted)', marginTop: '6px'}}><strong>Cliente:</strong> {clientName}</div>
+                                    {paidLabel && (
+                                        <div style={{ fontSize: '13px', marginTop: '8px', color: 'var(--text-dark)' }}>
+                                            <strong>Valor pago:</strong> {paidLabel}
+                                            {remLabel && (
+                                                <span style={{ display: 'block', marginTop: '4px' }}><strong>Saldo restante:</strong> {remLabel}</span>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                                 <StatusBadge status={app.status} />
                             </div>
@@ -2253,6 +2412,46 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                     );
                 })}
             </div>
+
+            {selfEditModal && (
+                <div className="password-overlay" style={{ zIndex: 10050, padding: '12px', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }} role="dialog" aria-modal="true" aria-labelledby="self-edit-title">
+                    <div
+                        className="password-modal"
+                        style={{
+                            maxWidth: 'min(420px, calc(100vw - 24px))',
+                            width: '100%',
+                            textAlign: 'left',
+                            maxHeight: '90vh',
+                            overflowY: 'auto',
+                            boxSizing: 'border-box'
+                        }}
+                    >
+                        <h3 id="self-edit-title" style={{ marginBottom: '16px', textAlign: 'center' }}>Editar cadastro</h3>
+                        <div className="form-group full-width">
+                            <label className="form-label">Nome</label>
+                            <input type="text" className="form-control" value={selfEditModal.name} onChange={e => setSelfEditModal({ ...selfEditModal, name: e.target.value })} style={{ width: '100%', boxSizing: 'border-box' }} />
+                        </div>
+                        <div className="form-group full-width">
+                            <label className="form-label">WhatsApp</label>
+                            <input type="text" className="form-control" value={selfEditModal.phone} onChange={e => setSelfEditModal({ ...selfEditModal, phone: e.target.value })} style={{ width: '100%', boxSizing: 'border-box' }} />
+                            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '6px 0 0' }}>Necessário para buscar seus agendamentos; não pode ficar vazio.</p>
+                        </div>
+                        <div className="form-group full-width">
+                            <label className="form-label">E-mail</label>
+                            <input type="email" className="form-control" autoComplete="email" value={selfEditModal.email} onChange={e => setSelfEditModal({ ...selfEditModal, email: e.target.value })} style={{ width: '100%', boxSizing: 'border-box' }} />
+                        </div>
+                        <div className="form-group full-width">
+                            <label className="form-label">Endereço</label>
+                            <input type="text" className="form-control" value={selfEditModal.address} onChange={e => setSelfEditModal({ ...selfEditModal, address: e.target.value })} style={{ width: '100%', boxSizing: 'border-box' }} />
+                        </div>
+                        {selfEditError && <div className="alert alert-error" style={{ marginBottom: '12px', fontSize: '13px' }}>{selfEditError}</div>}
+                        <div className="modal-actions" style={{ marginTop: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                            <button type="button" className="btn-cancel" onClick={() => { setSelfEditModal(null); setSelfEditError(''); }} disabled={selfEditSaving}>Cancelar</button>
+                            <button type="button" className="btn-submit" style={{ flex: '1 1 140px', minWidth: 0 }} onClick={saveSelfEdit} disabled={selfEditSaving}>{selfEditSaving ? 'Salvando…' : 'Salvar'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div style={{marginTop: '20px'}}>
                 <button className="btn-admin" onClick={() => setView('client')}>

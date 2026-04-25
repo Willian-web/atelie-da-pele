@@ -967,6 +967,89 @@ app.post('/clients', async (req, res) => {
     }
 });
 
+/**
+ * Atualização de cadastro pela própria cliente (área pública).
+ * Exige `verifyPhoneDigits` igual ao telefone atual no banco — não substitui autenticação forte,
+ * mas impede alteração arbitrária sem conhecer o número cadastrado.
+ */
+app.patch('/clients/:id/self', async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+
+    const rawId = req.params.id;
+    const id = rawId != null ? String(rawId).trim() : '';
+    if (!id) {
+        return res.status(400).json({ error: 'ID inválido.' });
+    }
+
+    try {
+        const { name, phone, address, email, verifyPhoneDigits } = req.body || {};
+        const verifyDigits = String(verifyPhoneDigits || '').replace(/\D/g, '');
+
+        if (!verifyDigits) {
+            return res.status(400).json({ error: 'Confirmação de telefone ausente.' });
+        }
+
+        const curRow = await pool.query('SELECT * FROM clients WHERE id = $1', [id]);
+        if (curRow.rows.length === 0) {
+            return res.status(404).json({ error: 'Cadastro não encontrado.' });
+        }
+
+        const storedDigits = String(curRow.rows[0].phone || '').replace(/\D/g, '');
+        if (storedDigits !== verifyDigits) {
+            return res.status(403).json({
+                error: 'Não foi possível confirmar seu telefone em relação ao cadastro. Verifique o número e tente novamente.'
+            });
+        }
+
+        if (!name || !phone) {
+            return res.status(400).json({ error: 'Nome e telefone são obrigatórios.' });
+        }
+
+        const cleanPhone = String(phone).replace(/\D/g, '');
+        if (!cleanPhone) {
+            return res.status(400).json({ error: 'Telefone inválido.' });
+        }
+
+        const normEmail = normalizeEmail(email);
+        if (!isValidEmailBasic(normEmail)) {
+            return res.status(400).json({ error: 'Informe um e-mail válido.' });
+        }
+
+        const conflict = await pool.query(
+            'SELECT id FROM clients WHERE phone = $1 AND id <> $2',
+            [cleanPhone, id]
+        );
+        if (conflict.rows.length > 0) {
+            return res.status(409).json({ error: 'Já existe outro cadastro com este telefone.' });
+        }
+
+        const upd = await pool.query(
+            `
+            UPDATE clients
+            SET name = $1,
+                phone = $2,
+                address = $3,
+                email = $4
+            WHERE id = $5
+            RETURNING *
+        `,
+            [name, cleanPhone, address || '', normEmail, id]
+        );
+
+        await pool.query(
+            `UPDATE appointments SET client_name = $1, client_phone = $2 WHERE client_id = $3`,
+            [name, cleanPhone, id]
+        );
+
+        return res.json(upd.rows[0]);
+    } catch (error) {
+        console.error('[PATCH /clients/:id/self] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao atualizar cadastro.' });
+    }
+});
+
 app.patch('/admin/clients/:id', requireAdminAuth, async (req, res) => {
     if (!isPostgresSetup) {
         return res.status(500).json({ error: 'DB não configurado.' });
