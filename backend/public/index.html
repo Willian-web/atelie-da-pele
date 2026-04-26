@@ -2315,8 +2315,19 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                 />
 
                 {matchedClient && myPhone && (
-                    <div style={{ marginTop: '10px' }}>
-                        <button type="button" className="btn-admin" onClick={openSelfEdit} style={{ fontSize: '13px', padding: '6px 12px' }}>
+                    <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'flex-start' }}>
+                        <button
+                            type="button"
+                            className="refresh-btn"
+                            onClick={openSelfEdit}
+                            style={{
+                                padding: '8px 14px',
+                                borderRadius: '999px',
+                                width: 'fit-content',
+                                maxWidth: '100%'
+                            }}
+                        >
+                            <i className="fas fa-pen" aria-hidden="true"></i>
                             Editar cadastro
                         </button>
                     </div>
