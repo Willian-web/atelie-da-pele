@@ -39,11 +39,6 @@ function getPublicAdminWhatsappDigits() {
     return String(process.env.ADMIN_WHATSAPP || '').replace(/\D/g, '');
 }
 
-app.get('/config/public', (_req, res) => {
-    res.set('Cache-Control', 'public, max-age=60');
-    res.json({ adminWhatsApp: getPublicAdminWhatsappDigits() });
-});
-
 app.use(express.static(path.join(__dirname, 'public')));
 
 const isPostgresSetup = !!process.env.DATABASE_URL;
@@ -136,37 +131,54 @@ const pool = new Pool({
         : { rejectUnauthorized: false }
 });
 
-/** Catálogo ativo (novos agendamentos). Espelhar em backend/public/index.html e temp.jsx. */
+/**
+ * Catálogo ativo (novos agendamentos). Espelhar em `backend/public/index.html` (SERVICES + PROMO_MAES_SERVICES).
+ * Pacotes `promo_*` só podem ser agendados com `promotional_packages_enabled = true` em `app_settings`.
+ */
 const SERVICES_CATALOG = [
-    { id: 'limpeza_pele_profunda', name: 'Limpeza de pele profunda', price: 119 },
-    { id: 'limpeza_pele_mascara', name: 'Limpeza de pele profunda + máscara facial específica', price: 150 },
-    { id: 'dep_intima_com_anus', name: 'Depilação íntima completa com ânus', price: 95 },
-    { id: 'dep_intima_sem_anus', name: 'Depilação íntima completa sem ânus', price: 85 },
-    { id: 'dep_axilas', name: 'Depilação axilas', price: 35 },
-    { id: 'dep_nariz', name: 'Depilação nariz', price: 20 },
-    { id: 'dep_buco_facial', name: 'Depilação buço', price: 15 },
-    { id: 'dep_meia_perna', name: 'Depilação meia perna', price: 45 },
-    { id: 'dep_coxa', name: 'Depilação coxa', price: 50 },
-    { id: 'dep_perna_inteira', name: 'Depilação perna inteira', price: 89 },
-    { id: 'combo_intima_axilas_meia', name: 'Combo: íntima completa com ânus + axilas + meia perna', price: 160 },
-    { id: 'reflexologia_podal', name: 'Reflexologia podal', price: 110 }
+    { id: 'limpeza_pele_profunda', name: 'Limpeza de pele profunda', price: 119, duration: 60 },
+    { id: 'limpeza_pele_mascara', name: 'Limpeza de pele profunda + máscara facial específica', price: 150, duration: 60 },
+    { id: 'dep_intima_com_anus', name: 'Depilação íntima completa com ânus', price: 95, duration: 60 },
+    { id: 'dep_intima_sem_anus', name: 'Depilação íntima completa sem ânus', price: 85, duration: 60 },
+    { id: 'dep_axilas', name: 'Depilação axilas', price: 35, duration: 60 },
+    { id: 'dep_nariz', name: 'Depilação nariz', price: 20, duration: 60 },
+    { id: 'dep_buco_facial', name: 'Depilação buço', price: 15, duration: 60 },
+    { id: 'dep_meia_perna', name: 'Depilação meia perna', price: 45, duration: 60 },
+    { id: 'dep_coxa', name: 'Depilação coxa', price: 50, duration: 60 },
+    { id: 'dep_perna_inteira', name: 'Depilação perna inteira', price: 89, duration: 60 },
+    { id: 'combo_intima_axilas_meia', name: 'Combo: íntima completa com ânus + axilas + meia perna', price: 160, duration: 60 },
+    { id: 'reflexologia_podal', name: 'Reflexologia podal', price: 110, duration: 60 },
+    {
+        id: 'promo_dia_maes_reflexologia',
+        name: 'Pacote Dia das Mães 1 — Reflexologia completa',
+        price: 119,
+        duration: 60
+    },
+    {
+        id: 'promo_dia_maes_facial',
+        name: 'Pacote Dia das Mães 2 — Limpeza suave & massagem facial',
+        price: 135,
+        duration: 60
+    }
 ];
 
 /** Só para agendamentos já gravados com ids antigos (relatório, e-mails, normalização). */
 const SERVICES_LEGACY = [
-    { id: 'limpeza_pele', name: 'Limpeza de Pele', price: 119.9 },
-    { id: 'dep_intima', name: 'Depilação Íntima Completa', price: 59.9 },
-    { id: 'dep_axila', name: 'Depilação Axila', price: 29.9 },
-    { id: 'dep_buco', name: 'Depilação Buço', price: 29.9 },
-    { id: 'dep_completa', name: 'Depilação Completa', price: 129.9 },
-    { id: 'reflexologia', name: 'Reflexologia Podal', price: 89.9 }
+    { id: 'limpeza_pele', name: 'Limpeza de Pele', price: 119.9, duration: 60 },
+    { id: 'dep_intima', name: 'Depilação Íntima Completa', price: 59.9, duration: 60 },
+    { id: 'dep_axila', name: 'Depilação Axila', price: 29.9, duration: 60 },
+    { id: 'dep_buco', name: 'Depilação Buço', price: 29.9, duration: 60 },
+    { id: 'dep_completa', name: 'Depilação Completa', price: 129.9, duration: 60 },
+    { id: 'reflexologia', name: 'Reflexologia Podal', price: 89.9, duration: 60 }
 ];
 
 const FIXED_SIGNAL_AMOUNT = 30.00;
 
-/** Duração usada na agenda para conflitos (alinhada ao frontend temp.jsx). */
+const PROMO_PACKAGE_IDS = new Set(['promo_dia_maes_reflexologia', 'promo_dia_maes_facial']);
+
+/** Duração padrão na agenda (alinhada a `SERVICES` / `generateTimeSlots` em `public/index.html`). */
 const DEFAULT_APPOINTMENT_DURATION_MIN = 60;
-/** Intervalo mínimo entre inícios de agendamentos (minutos). */
+/** Intervalo mínimo entre inícios de agendamentos (minutos); grade em intervalos de 1 hora. */
 const MIN_START_GAP_MINUTES = 60;
 
 // ======================= BANCO =======================
@@ -285,6 +297,35 @@ async function initDB() {
         `);
 
         await client.query(`
+            CREATE TABLE IF NOT EXISTS blocked_full_days (
+                id SERIAL PRIMARY KEY,
+                date VARCHAR(10) NOT NULL,
+                reason TEXT,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(date)
+            )
+        `);
+
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_blocked_full_days_date
+            ON blocked_full_days (date)
+        `);
+
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key VARCHAR(64) PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
+        await client.query(`
+            INSERT INTO app_settings (key, value)
+            VALUES ('promotional_packages_enabled', 'false')
+            ON CONFLICT (key) DO NOTHING
+        `);
+
+        await client.query(`
             ALTER TABLE clients
             ADD COLUMN IF NOT EXISTS email VARCHAR(255)
         `);
@@ -344,24 +385,68 @@ function isValidEmailBasic(s) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t);
 }
 
-function validateNewAppointmentSchedule({ time, existingRows, blockedTimesSet }) {
+function getServiceDurationMinForSchedule(serviceId) {
+    const s = findServiceById(serviceId);
+    if (s && typeof s.duration === 'number' && Number.isFinite(s.duration) && s.duration > 0) {
+        return Math.round(s.duration);
+    }
+    return DEFAULT_APPOINTMENT_DURATION_MIN;
+}
+
+/** Slots em hora cheia; seg–sex 14h–20h; sáb 13h–18h; domingo fechado. */
+function isValidHourlyBookingSlot(dateYmd, timeStr) {
+    const tNorm = normalizeSlotTimeHHMM(timeStr);
+    if (!tNorm || !/^\d{2}:00$/.test(tNorm)) return false;
+    if (!isValidReportDateYmd(String(dateYmd || ''))) return false;
+    const d = new Date(`${dateYmd}T12:00:00`);
+    const dow = d.getDay();
+    const hour = Number(tNorm.slice(0, 2));
+    if (!Number.isFinite(hour)) return false;
+    if (dow === 0) return false;
+    if (dow === 6) return hour >= 13 && hour <= 18;
+    return hour >= 14 && hour <= 20;
+}
+
+/**
+ * Valida novo agendamento: dia inteiro bloqueado, expediente, hora cheia, bloqueio por slot,
+ * sobreposição por duração do serviço e intervalo mínimo de 1h entre inícios.
+ */
+function validateNewAppointmentSchedule({
+    time,
+    existingRows,
+    blockedTimesSet,
+    fullDayBlocked,
+    dateYmd,
+    newServiceId
+}) {
+    if (fullDayBlocked) {
+        return 'Dia indisponível (bloqueado).';
+    }
+
     const T = timeStrToMinutes(time);
     const tNorm = normalizeSlotTimeHHMM(time);
     if (T == null || !tNorm) {
         return 'Horário inválido.';
     }
 
+    if (!isValidHourlyBookingSlot(dateYmd, time)) {
+        return 'Horário inválido ou fora do expediente.';
+    }
+
     if (blockedTimesSet && blockedTimesSet.has(tNorm)) {
         return 'Horário indisponível (bloqueado manualmente).';
     }
+
+    const newDur = getServiceDurationMinForSchedule(newServiceId);
 
     for (const row of existingRows) {
         if (!['pending_payment', 'confirmed', 'completed'].includes(row.status)) continue;
         const S = timeStrToMinutes(row.time);
         if (S == null) continue;
 
-        const existingEnd = S + DEFAULT_APPOINTMENT_DURATION_MIN;
-        const newEnd = T + DEFAULT_APPOINTMENT_DURATION_MIN;
+        const existingDur = getServiceDurationMinForSchedule(row.service_id);
+        const existingEnd = S + existingDur;
+        const newEnd = T + newDur;
         if (T < existingEnd && newEnd > S) {
             return 'Conflito com horário já reservado.';
         }
@@ -408,7 +493,8 @@ function findServiceById(serviceId) {
         || {
             id: serviceId,
             name: serviceId || 'Serviço',
-            price: 0
+            price: 0,
+            duration: DEFAULT_APPOINTMENT_DURATION_MIN
         };
 }
 
@@ -1301,6 +1387,78 @@ app.get('/admin/report', requireAdminAuth, async (req, res) => {
     }
 });
 
+// ====================== BLOQUEIOS DE AGENDA (LEITURA PÚBLICA + ADMIN) ======================
+
+app.get('/public/schedule-blocks', async (_req, res) => {
+    res.set('Cache-Control', 'public, max-age=15');
+    if (!isPostgresSetup) {
+        return res.json({ blockedSlots: [], blockedFullDays: [] });
+    }
+    try {
+        const [slotsRes, daysRes] = await Promise.all([
+            pool.query(
+                `
+                SELECT id, date, time, reason, created_at
+                FROM blocked_slots
+                ORDER BY date ASC, time ASC
+            `
+            ),
+            pool.query(
+                `
+                SELECT id, date, reason, created_at
+                FROM blocked_full_days
+                ORDER BY date ASC
+            `
+            )
+        ]);
+        return res.json({
+            blockedSlots: slotsRes.rows.map((r) => ({
+                id: r.id,
+                date: r.date,
+                time: normalizeSlotTimeHHMM(r.time) || r.time,
+                reason: r.reason,
+                createdAt: r.created_at
+            })),
+            blockedFullDays: daysRes.rows.map((r) => ({
+                id: r.id,
+                date: r.date,
+                reason: r.reason,
+                createdAt: r.created_at
+            }))
+        });
+    } catch (error) {
+        console.error('[GET /public/schedule-blocks] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao carregar bloqueios.' });
+    }
+});
+
+async function readPromotionalPackagesEnabledFromDb() {
+    if (!isPostgresSetup) return false;
+    try {
+        const r = await pool.query(
+            `SELECT value FROM app_settings WHERE key = 'promotional_packages_enabled' LIMIT 1`
+        );
+        return String(r.rows[0]?.value || '').toLowerCase() === 'true';
+    } catch (e) {
+        console.warn('[app_settings] promotional_packages_enabled:', e.message);
+        return false;
+    }
+}
+
+app.get('/config/public', async (_req, res) => {
+    res.set('Cache-Control', 'public, max-age=30');
+    try {
+        const promotionalPackagesEnabled = await readPromotionalPackagesEnabledFromDb();
+        res.json({
+            adminWhatsApp: getPublicAdminWhatsappDigits(),
+            promotionalPackagesEnabled
+        });
+    } catch (error) {
+        console.error('[GET /config/public] Erro:', error);
+        res.json({ adminWhatsApp: getPublicAdminWhatsappDigits(), promotionalPackagesEnabled: false });
+    }
+});
+
 // ====================== ADMIN BLOQUEIOS DE HORÁRIO ======================
 
 app.get('/admin/blocked-slots', requireAdminAuth, async (req, res) => {
@@ -1344,6 +1502,12 @@ app.post('/admin/blocked-slots', requireAdminAuth, async (req, res) => {
         const tNorm = normalizeSlotTimeHHMM(time);
         if (!tNorm) {
             return res.status(400).json({ error: 'Horário inválido. Use HH:MM.' });
+        }
+
+        if (!isValidHourlyBookingSlot(date, time)) {
+            return res.status(400).json({
+                error: 'Horário inválido ou fora do expediente. Use apenas horas cheias (ex.: 14:00).'
+            });
         }
 
         const ins = await pool.query(
@@ -1392,6 +1556,92 @@ app.delete('/admin/blocked-slots/:id', requireAdminAuth, async (req, res) => {
     } catch (error) {
         console.error('[DELETE /admin/blocked-slots] Erro:', error);
         return res.status(500).json({ error: 'Erro ao remover bloqueio.' });
+    }
+});
+
+// ====================== ADMIN BLOQUEIO DE DIA INTEIRO ======================
+
+app.post('/admin/blocked-full-days', requireAdminAuth, async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+
+    try {
+        const { date, reason } = req.body || {};
+
+        if (!isValidReportDateYmd(String(date || ''))) {
+            return res.status(400).json({ error: 'Data inválida. Use YYYY-MM-DD.' });
+        }
+
+        const ins = await pool.query(
+            `
+            INSERT INTO blocked_full_days (date, reason)
+            VALUES ($1, $2)
+            RETURNING id, date, reason, created_at
+        `,
+            [date, reason || null]
+        );
+
+        const r = ins.rows[0];
+        return res.status(201).json({
+            id: r.id,
+            date: r.date,
+            reason: r.reason,
+            createdAt: r.created_at
+        });
+    } catch (error) {
+        if (error && error.code === '23505') {
+            return res.status(409).json({ error: 'Este dia já está bloqueado por completo.' });
+        }
+        console.error('[POST /admin/blocked-full-days] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao bloquear o dia.' });
+    }
+});
+
+app.delete('/admin/blocked-full-days/:id', requireAdminAuth, async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+
+    const rawId = req.params.id;
+    const id = parseInt(String(rawId), 10);
+    if (!Number.isFinite(id) || id <= 0) {
+        return res.status(400).json({ error: 'ID inválido.' });
+    }
+
+    try {
+        const del = await pool.query('DELETE FROM blocked_full_days WHERE id = $1 RETURNING id', [id]);
+        if (del.rowCount === 0) {
+            return res.status(404).json({ error: 'Bloqueio de dia não encontrado.' });
+        }
+        return res.json({ ok: true, id });
+    } catch (error) {
+        console.error('[DELETE /admin/blocked-full-days] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao remover bloqueio do dia.' });
+    }
+});
+
+app.patch('/admin/promotional-packages', requireAdminAuth, async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+
+    const raw = req.body && req.body.enabled;
+    const enabled = raw === true || String(raw).toLowerCase() === 'true';
+
+    try {
+        await pool.query(
+            `
+            INSERT INTO app_settings (key, value, updated_at)
+            VALUES ('promotional_packages_enabled', $1, NOW())
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+        `,
+            [enabled ? 'true' : 'false']
+        );
+        return res.json({ ok: true, promotionalPackagesEnabled: enabled });
+    } catch (error) {
+        console.error('[PATCH /admin/promotional-packages] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao salvar campanha promocional.' });
     }
 });
 
@@ -1444,6 +1694,13 @@ app.post('/appointments', async (req, res) => {
             return res.status(400).json({ error: 'Serviço inválido ou valor não encontrado para este procedimento.' });
         }
 
+        if (PROMO_PACKAGE_IDS.has(serviceId)) {
+            const promoOn = await readPromotionalPackagesEnabledFromDb();
+            if (!promoOn) {
+                return res.status(400).json({ error: 'Este pacote promocional não está disponível no momento.' });
+            }
+        }
+
         const partialNow = effectivePartialDownPayment(totalServicePrice);
         if (partialNow >= totalServicePrice - 0.005) {
             paymentType = 'full';
@@ -1493,6 +1750,9 @@ app.post('/appointments', async (req, res) => {
             ]);
         }
 
+        const fullDayRes = await client.query('SELECT 1 AS x FROM blocked_full_days WHERE date = $1', [date]);
+        const fullDayBlocked = fullDayRes.rows.length > 0;
+
         const blockedRes = await client.query(
             'SELECT time FROM blocked_slots WHERE date = $1',
             [date]
@@ -1503,7 +1763,7 @@ app.post('/appointments', async (req, res) => {
 
         const dayLock = await client.query(
             `
-            SELECT time, status
+            SELECT time, status, service_id
             FROM appointments
             WHERE date = $1
               AND status IN ('pending_payment', 'confirmed', 'completed')
@@ -1515,7 +1775,10 @@ app.post('/appointments', async (req, res) => {
         const scheduleErr = validateNewAppointmentSchedule({
             time,
             existingRows: dayLock.rows,
-            blockedTimesSet: blockedSet
+            blockedTimesSet: blockedSet,
+            fullDayBlocked,
+            dateYmd: date,
+            newServiceId: serviceId
         });
         if (scheduleErr) {
             await client.query('ROLLBACK');

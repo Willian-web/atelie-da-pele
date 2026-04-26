@@ -53,6 +53,7 @@ const ADMIN_TOKEN_STORAGE_KEY = 'atelie_admin_token';
 
 /**
  * Catálogo ativo (etapa 1). Manter ids e preços alinhados a `SERVICES_CATALOG` em backend/server.js.
+ * Pacotes Dia das Mães: ver `PROMO_MAES_SERVICES` (ativados pelo admin via API).
  * SERVICES_LEGACY: só para exibir agendamentos antigos já gravados no banco.
  */
 const SERVICES = [
@@ -167,6 +168,37 @@ const SERVICES = [
     }
 ];
 
+/** Pacotes Dia das Mães — espelhar ids/preços em `SERVICES_CATALOG` no servidor; exibição controlada pelo admin. */
+const PROMO_MAES_SERVICES = [
+    {
+        id: 'promo_dia_maes_reflexologia',
+        name: 'Pacote Dia das Mães 1 — Reflexologia especial',
+        cardTitle: 'Pacote Dia das Mães 1',
+        price: 119,
+        category: 'Campanha — Dia das Mães',
+        duration: 60,
+        summary: 'Pacote promocional por tempo limitado — presenteie quem você ama.',
+        detail:
+            'Reflexologia, incluindo escalda-pés, massagem relaxante e hidratação profunda nos pés. Experiência completa de bem-estar em clima de spa.',
+        promotionalCampaign: 'dia_maes'
+    },
+    {
+        id: 'promo_dia_maes_facial',
+        name: 'Pacote Dia das Mães 2 — Limpeza suave & facial',
+        cardTitle: 'Pacote Dia das Mães 2',
+        price: 135,
+        category: 'Campanha — Dia das Mães',
+        duration: 60,
+        summary: 'Pacote promocional por tempo limitado — pele renovada e momento de pausa.',
+        detail:
+            'Limpeza de pele suave, máscara revigorante e massagem facial. Ideal para devolver luminosidade com toque leve e acolhedor.',
+        promotionalCampaign: 'dia_maes'
+    }
+];
+
+/** Filtro na etapa 1 (cliente): mesma ideia da aba «Campanhas» no admin; só aparece com promo ativa. */
+const PROMO_CLIENT_FILTER_LABEL = 'Campanhas';
+
 const SERVICES_LEGACY = [
     { id: 'limpeza_pele', name: 'Limpeza de Pele', price: 119.9, category: 'Legado', duration: 60 },
     { id: 'dep_intima', name: 'Depilação Íntima Completa', price: 59.9, category: 'Legado', duration: 60 },
@@ -178,7 +210,12 @@ const SERVICES_LEGACY = [
 
 const getServiceMeta = (serviceId) => {
     const sid = String(serviceId || '');
-    return SERVICES.find((s) => s.id === sid) || SERVICES_LEGACY.find((s) => s.id === sid) || null;
+    return (
+        SERVICES.find((s) => s.id === sid) ||
+        PROMO_MAES_SERVICES.find((s) => s.id === sid) ||
+        SERVICES_LEGACY.find((s) => s.id === sid) ||
+        null
+    );
 };
 
 /** Título discreto no fluxo cliente (card, resumo, WhatsApp). `name` permanece o nome completo do catálogo (admin / “Ver detalhes”). */
@@ -260,10 +297,16 @@ const parseTimeToMinutes = (timeStr) => {
 };
 
 /**
- * Grade de horários: ocupação por duração do serviço, intervalo mínimo de 1h entre inícios,
- * bloqueios manuais (blocked_slots).
+ * Grade em intervalos de 1 hora (só :00). Seg–sex 14h–20h; sáb 13h–18h; domingo fechado.
+ * Considera bloqueio de dia inteiro (blocked_full_days), bloqueios por horário, ocupação e intervalo mínimo entre inícios.
  */
-const generateTimeSlots = (dateString, existingAppointments, blockedSlotsList = []) => {
+const generateTimeSlots = (
+    dateString,
+    existingAppointments,
+    blockedSlotsList = [],
+    blockedFullDaysList = [],
+    selectedServiceIdForPreview = ''
+) => {
     if (!dateString) return [];
 
     const dateObj = new Date(dateString + 'T12:00:00');
@@ -276,19 +319,17 @@ const generateTimeSlots = (dateString, existingAppointments, blockedSlotsList = 
 
     let slots = [];
     if (dayOfWeek === 0) return [];
-    else if (dayOfWeek === 6) {
-        let hour = 14; let min = 0;
-        while (hour < 17 || (hour === 17 && min === 0)) {
-            slots.push(`${hour.toString().padStart(2, '0')}:${min === 0 ? '00' : '30'}`);
-            min += 30; if (min >= 60) { hour += 1; min = 0; }
+    if (dayOfWeek === 6) {
+        for (let hour = 13; hour <= 18; hour++) {
+            slots.push(`${String(hour).padStart(2, '0')}:00`);
         }
     } else {
-        let hour = 13; let min = 0;
-        while (hour < 19 || (hour === 19 && min <= 30)) {
-            slots.push(`${hour.toString().padStart(2, '0')}:${min === 0 ? '00' : '30'}`);
-            min += 30; if (min >= 60) { hour += 1; min = 0; }
+        for (let hour = 14; hour <= 20; hour++) {
+            slots.push(`${String(hour).padStart(2, '0')}:00`);
         }
     }
+
+    const fullDayBlocked = (blockedFullDaysList || []).some((b) => b.date === dateString);
 
     const blockedSet = new Set(
         (blockedSlotsList || [])
@@ -312,6 +353,12 @@ const generateTimeSlots = (dateString, existingAppointments, blockedSlotsList = 
         })
         .filter(Boolean);
 
+    const previewMeta = getServiceMeta(selectedServiceIdForPreview);
+    const previewDuration =
+        previewMeta && typeof previewMeta.duration === 'number'
+            ? previewMeta.duration
+            : DEFAULT_APPOINTMENT_DURATION_MIN;
+
     return slots.map((time) => {
         const slotStartMins = parseTimeToMinutes(time);
         if (slotStartMins == null) {
@@ -321,10 +368,11 @@ const generateTimeSlots = (dateString, existingAppointments, blockedSlotsList = 
                 isPast: false,
                 isBooked: true,
                 isBlockedManual: false,
-                hasAppointmentAtTime: false
+                hasAppointmentAtTime: false,
+                isFullDayBlocked: fullDayBlocked
             };
         }
-        const slotEndMins = slotStartMins + 30;
+        const slotEndMins = slotStartMins + previewDuration;
         const isPast = isToday && slotStartMins <= currentTotalMinutes;
         const isBlockedManual = blockedSet.has(time);
 
@@ -339,7 +387,7 @@ const generateTimeSlots = (dateString, existingAppointments, blockedSlotsList = 
         });
 
         const isBooked = isOverlapBooked || tooCloseToStart;
-        const isUnavailable = isPast || isBlockedManual || isBooked;
+        const isUnavailable = fullDayBlocked || isPast || isBlockedManual || isBooked;
 
         return {
             time,
@@ -347,7 +395,8 @@ const generateTimeSlots = (dateString, existingAppointments, blockedSlotsList = 
             isPast,
             isBooked,
             isBlockedManual,
-            hasAppointmentAtTime: activeApps.some((a) => normalizeSlotTimeLabel(a.time) === time)
+            hasAppointmentAtTime: activeApps.some((a) => normalizeSlotTimeLabel(a.time) === time),
+            isFullDayBlocked: fullDayBlocked
         };
     });
 };
@@ -436,7 +485,17 @@ const StatusBadge = ({ status }) => {
 
 // ============== ÁREA NOVO AGENDAMENTO ==============
 
-const ClientArea = ({ appointments, refreshData, clients, adminWhatsApp, blockedSlots, bookingRestoreOrderNsu, onBookingRestoreConsumed }) => {
+const ClientArea = ({
+    appointments,
+    refreshData,
+    clients,
+    adminWhatsApp,
+    blockedSlots,
+    blockedFullDays,
+    promoPackagesEnabled,
+    bookingRestoreOrderNsu,
+    onBookingRestoreConsumed
+}) => {
     const [step, setStep] = useState(1);
     
     const [selectedService, setSelectedService] = useState('');
@@ -482,22 +541,65 @@ const ClientArea = ({ appointments, refreshData, clients, adminWhatsApp, blocked
                 ordered.push(c);
             }
         }
-        return ['Todos', ...ordered];
-    }, []);
+        const chips = ['Todos', ...ordered];
+        if (promoPackagesEnabled) {
+            chips.push(PROMO_CLIENT_FILTER_LABEL);
+        }
+        return chips;
+    }, [promoPackagesEnabled]);
     const servicesForGrid = useMemo(() => {
-        if (serviceCatFilter === 'Todos') return SERVICES;
+        if (!promoPackagesEnabled) {
+            if (serviceCatFilter === 'Todos') return SERVICES;
+            return SERVICES.filter((s) => s.category === serviceCatFilter);
+        }
+        if (serviceCatFilter === PROMO_CLIENT_FILTER_LABEL) {
+            return [...PROMO_MAES_SERVICES];
+        }
+        if (serviceCatFilter === 'Todos') {
+            return [...SERVICES, ...PROMO_MAES_SERVICES];
+        }
         return SERVICES.filter((s) => s.category === serviceCatFilter);
-    }, [serviceCatFilter]);
+    }, [serviceCatFilter, promoPackagesEnabled]);
 
     const todayStr = getLocalTodayStr();
 
     useEffect(() => {
+        const onPromoTab = serviceCatFilter === PROMO_CLIENT_FILTER_LABEL;
+        const onTodosWithPromos = serviceCatFilter === 'Todos' && promoPackagesEnabled;
+        if (!onPromoTab && !onTodosWithPromos && PROMO_MAES_SERVICES.some((p) => p.id === selectedService)) {
+            setSelectedService('');
+            setServiceDetailOpenId(null);
+        }
+    }, [serviceCatFilter, selectedService, promoPackagesEnabled]);
+
+    useEffect(() => {
+        if (!promoPackagesEnabled && serviceCatFilter === PROMO_CLIENT_FILTER_LABEL) {
+            setServiceCatFilter('Todos');
+        }
+    }, [promoPackagesEnabled, serviceCatFilter]);
+
+    useEffect(() => {
+        if (!promoPackagesEnabled && PROMO_MAES_SERVICES.some((p) => p.id === selectedService)) {
+            setSelectedService('');
+            setServiceDetailOpenId(null);
+        }
+    }, [promoPackagesEnabled, selectedService]);
+
+    useEffect(() => {
         if (bookingData.date) {
-            setAvailableTimes(generateTimeSlots(bookingData.date, appointments, blockedSlots || []));
+            setAvailableTimes(
+                generateTimeSlots(
+                    bookingData.date,
+                    appointments,
+                    blockedSlots || [],
+                    blockedFullDays || [],
+                    selectedService
+                )
+            );
         } else {
             setAvailableTimes([]);
         }
-    }, [bookingData.date, appointments, blockedSlots]);
+    }, [bookingData.date, appointments, blockedSlots, blockedFullDays, selectedService]);
 
     useEffect(() => {
         setBookingData(prev => ({...prev, time: ''}));
@@ -655,8 +757,11 @@ const ClientArea = ({ appointments, refreshData, clients, adminWhatsApp, blocked
             const data = await response.json();
             
             if (!response.ok) {
-                if(response.status === 409) {
-                    throw new Error('Alguém reservou este mesmo horário há poucos segundos! Por favor, escolha outro.');
+                if (response.status === 409) {
+                    throw new Error(
+                        (data && data.error) ||
+                            'Alguém reservou este mesmo horário há poucos segundos! Por favor, escolha outro.'
+                    );
                 }
                 throw new Error(data.error || 'Falha no servidor ao agendar.');
             }
@@ -682,14 +787,22 @@ const ClientArea = ({ appointments, refreshData, clients, adminWhatsApp, blocked
             {step === 1 && (
                 <div className="booking-section step-container">
                     <h2 className="section-title">O que deseja agendar?</h2>
-                    <div className="service-category-chips" role="tablist" aria-label="Filtrar por categoria">
+                    {promoPackagesEnabled && (
+                        <p className="promo-client-hint" style={{ margin: '-6px 0 14px', fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.45 }}>
+                            Pacotes <strong style={{ color: 'var(--brand-primary)', fontWeight: 600 }}>Dia das Mães</strong> ficam ao final em{' '}
+                            <strong>Todos</strong> e também na aba <strong>{PROMO_CLIENT_FILTER_LABEL}</strong>.
+                        </p>
+                    )}
+                    <div className="service-category-chips" role="tablist" aria-label="Filtrar por categoria ou campanha">
                         {serviceCategoryChips.map((label) => (
                             <button
                                 key={label}
                                 type="button"
                                 role="tab"
                                 aria-selected={serviceCatFilter === label}
-                                className={`service-category-chip${serviceCatFilter === label ? ' active' : ''}`}
+                                className={`service-category-chip${serviceCatFilter === label ? ' active' : ''}${
+                                    label === PROMO_CLIENT_FILTER_LABEL ? ' service-category-chip--campaign' : ''
+                                }`}
                                 onClick={() => setServiceCatFilter(label)}
                             >
                                 {label}
@@ -704,7 +817,9 @@ const ClientArea = ({ appointments, refreshData, clients, adminWhatsApp, blocked
                                     key={s.id}
                                     role="button"
                                     tabIndex={0}
-                                    className={`service-card ${selectedService === s.id ? 'selected' : ''}`}
+                                    className={`service-card${s.promotionalCampaign ? ' service-card--promo' : ''}${
+                                        selectedService === s.id ? ' selected' : ''
+                                    }`}
                                     onClick={() => {
                                         setSelectedService(s.id);
                                         setServiceDetailOpenId(null);
@@ -717,6 +832,11 @@ const ClientArea = ({ appointments, refreshData, clients, adminWhatsApp, blocked
                                         }
                                     }}
                                 >
+                                    {s.promotionalCampaign ? (
+                                        <span className="service-card__promo-pill" title="Campanha promocional">
+                                            Dia das Mães
+                                        </span>
+                                    ) : null}
                                     <div className="service-card-header">
                                         <h3>{getClientServiceCardTitle(s)}</h3>
                                         <i className="fas fa-check-circle service-check" aria-hidden />
@@ -791,8 +911,16 @@ const ClientArea = ({ appointments, refreshData, clients, adminWhatsApp, blocked
                         
                         <div className="form-group full-width">
                             <label className="form-label">Horários Ofertados *</label>
-                            {!bookingData.date ? <div style={{color: 'var(--text-muted)', fontSize: '14px'}}>Escolha a data acima primeiro.</div> : 
-                                availableTimes.length === 0 ? <div style={{color: 'var(--danger)', fontSize: '14px'}}>Nenhum horário livre.</div> : 
+                            {!bookingData.date ? <div style={{color: 'var(--text-muted)', fontSize: '14px'}}>Escolha a data acima primeiro.</div> :
+                                availableTimes.length === 0 ? (
+                                    <div style={{color: 'var(--danger)', fontSize: '14px'}}>Nenhum horário neste dia (fechado ou indisponível).</div>
+                                ) : availableTimes.length > 0 && availableTimes.every((s) => !s.available) ? (
+                                    <div style={{ color: 'var(--danger)', fontSize: '14px' }}>
+                                        {availableTimes.some((s) => s.isFullDayBlocked)
+                                            ? 'Este dia está bloqueado para agendamentos. Escolha outra data.'
+                                            : 'Não há horários livres neste dia. Escolha outra data ou horário.'}
+                                    </div>
+                                ) : (
                                 <div className="time-slots">
                                     {availableTimes.map((slot, idx) => {
                                         let className = "time-slot";
@@ -808,7 +936,7 @@ const ClientArea = ({ appointments, refreshData, clients, adminWhatsApp, blocked
                                         );
                                     })}
                                 </div>
-                            }
+                                )}
                         </div>
 
                         <div className="form-group full-width">
@@ -1180,14 +1308,25 @@ const ClientArea = ({ appointments, refreshData, clients, adminWhatsApp, blocked
 
 // ============== ÁREA PROFISSIONAL e "MEUS AGENDAMENTOS" iguais ==============
 
-const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToken, onAdminSessionInvalid }) => {
-    const [adminView, setAdminView] = useState('agenda'); // agenda | clients | report | blocks
+const AdminArea = ({
+    appointments,
+    refreshData,
+    clients,
+    blockedSlots,
+    blockedFullDays,
+    adminToken,
+    onAdminSessionInvalid,
+    promoPackagesEnabled,
+    onPromoPackagesChange
+}) => {
+    const [adminView, setAdminView] = useState('agenda'); // agenda | clients | report | blocks | campaigns
     const [filter, setFilter] = useState('today'); // today | next | all
     const [filterDate, setFilterDate] = useState('');
     const [agendaClientSearch, setAgendaClientSearch] = useState('');
     const [blockManageDate, setBlockManageDate] = useState(() => getLocalTodayStr());
     const [reportStartDate, setReportStartDate] = useState('');
     const [reportEndDate, setReportEndDate] = useState('');
+    const [promoSaving, setPromoSaving] = useState(false);
     const [reportData, setReportData] = useState(null);
     const [reportLoading, setReportLoading] = useState(false);
     const [reportError, setReportError] = useState('');
@@ -1303,8 +1442,8 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
     }, [appointments]);
 
     const adminBlockSlots = useMemo(
-        () => generateTimeSlots(blockManageDate, appointments, blockedSlots || []),
-        [blockManageDate, appointments, blockedSlots]
+        () => generateTimeSlots(blockManageDate, appointments, blockedSlots || [], blockedFullDays || []),
+        [blockManageDate, appointments, blockedSlots, blockedFullDays]
     );
 
     const filteredApps = useMemo(() => {
@@ -1561,6 +1700,45 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
         }
     };
 
+    const fullDayBlockRow = (blockedFullDays || []).find((b) => b.date === blockManageDate) || null;
+
+    const handleAdminBlockFullDay = async () => {
+        const reason = window.prompt('Motivo do bloqueio do dia inteiro (opcional)?');
+        if (reason === null) return;
+        try {
+            const res = await adminFetch(`${API_BASE_URL}/admin/blocked-full-days`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ date: blockManageDate, reason: reason || undefined })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.error || 'Não foi possível bloquear o dia inteiro.');
+                return;
+            }
+            await refreshData();
+        } catch (e) {
+            console.error(e);
+            alert('Erro de rede ao bloquear o dia.');
+        }
+    };
+
+    const handleAdminUnblockFullDay = async (rowId) => {
+        if (!window.confirm('Remover o bloqueio e liberar o dia inteiro para novos agendamentos?')) return;
+        try {
+            const res = await adminFetch(`${API_BASE_URL}/admin/blocked-full-days/${rowId}`, { method: 'DELETE' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.error || 'Não foi possível remover o bloqueio do dia.');
+                return;
+            }
+            await refreshData();
+        } catch (e) {
+            console.error(e);
+            alert('Erro de rede ao remover bloqueio do dia.');
+        }
+    };
+
     const renderAgenda = () => (
         <>
             <div className="filter-tabs admin-agenda-period-tabs" style={{marginBottom: '14px'}}>
@@ -1575,8 +1753,8 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
                 </button>
             </div>
 
-            <div style={{display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '18px'}}>
-                <div style={{display: 'flex', flexDirection: 'column', gap: '6px', flex: '0 1 auto'}}>
+            <div className="admin-agenda-filters" style={{display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '18px'}}>
+                <div style={{display: 'flex', flexDirection: 'column', gap: '6px', flex: '0 1 auto', minWidth: 0}}>
                     <label style={{fontSize: '13px', color: 'var(--text-muted)'}}>Filtrar por data</label>
                     <input
                         type="date"
@@ -1792,36 +1970,58 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
     );
 
     const renderBlockedSlots = () => (
-        <div style={{ padding: '14px 16px', borderRadius: '12px', border: '1px solid #e5e7eb', background: '#fafafa', textAlign: 'left' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '12px', marginBottom: '8px' }}>
-                <div>
+        <div className="admin-blocks-panel" style={{ padding: '14px 16px', borderRadius: '12px', border: '1px solid #e5e7eb', background: '#fafafa', textAlign: 'left' }}>
+            <div className="admin-blocks-toolbar">
+                <div className="admin-blocks-intro">
                     <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', marginBottom: '6px' }}>Bloquear horários</div>
-                    <div style={{ fontSize: '12px', color: '#64748b', lineHeight: 1.45, maxWidth: '520px' }}>
-                        A grade respeita intervalo mínimo de <strong>1 hora</strong> entre agendamentos. Toque em um horário <strong>Livre</strong> para bloquear; em <strong>Bloqueado</strong> para liberar.
+                    <div style={{ fontSize: '12px', color: '#64748b', lineHeight: 1.45, maxWidth: '100%' }}>
+                        Horários em intervalos de <strong>1 hora</strong> (ex.: 14:00, 15:00). Segunda a sexta <strong>14h–20h</strong>; sábado <strong>13h–18h</strong>. Intervalo mínimo de <strong>1 hora</strong> entre agendamentos. Toque em <strong>Livre</strong> para bloquear um horário; em <strong>Bloqueado</strong> para liberar.
                     </div>
                 </div>
-                <div>
+                <div className="admin-blocks-date-wrap">
                     <label className="form-label" style={{ marginBottom: '6px', display: 'block' }}>Dia</label>
-                    <input type="date" className="form-control" value={blockManageDate} onChange={(e) => setBlockManageDate(e.target.value)} style={{ maxWidth: '200px' }} />
+                    <input type="date" className="form-control" value={blockManageDate} onChange={(e) => setBlockManageDate(e.target.value)} style={{ maxWidth: '200px', width: '100%' }} />
+                </div>
+                <div className="admin-blocks-actions">
+                    {fullDayBlockRow ? (
+                        <button type="button" className="btn-submit" style={{ padding: '10px 14px', fontSize: '13px' }} onClick={() => handleAdminUnblockFullDay(fullDayBlockRow.id)}>
+                            Liberar dia inteiro
+                        </button>
+                    ) : (
+                        <button type="button" className="btn-cancel" style={{ padding: '10px 14px', fontSize: '13px' }} onClick={handleAdminBlockFullDay}>
+                            Bloquear dia inteiro
+                        </button>
+                    )}
                 </div>
             </div>
-            <div className="time-slots" style={{ marginTop: '10px' }}>
+            {fullDayBlockRow && (
+                <div className="alert" style={{ marginBottom: '10px', fontSize: '13px', background: '#fef3c7', border: '1px solid #fcd34d', color: '#92400e' }}>
+                    Este dia está <strong>bloqueado por completo</strong>. Remova o bloqueio do dia para voltar a liberar horários individuais na grade.
+                </div>
+            )}
+            <div className="time-slots admin-block-time-slots" style={{ marginTop: '10px' }}>
                 {adminBlockSlots.map((slot, idx) => {
                     const blockRow = (blockedSlots || []).find(
                         (b) => b.date === blockManageDate && normalizeSlotTimeLabel(b.time) === slot.time
                     );
                     let label = 'Livre';
                     if (slot.isPast) label = 'Passado';
+                    else if (slot.isFullDayBlocked) label = 'Dia bloqueado';
                     else if (slot.isBlockedManual) label = 'Bloqueado';
                     else if (slot.hasAppointmentAtTime) label = 'Agendado';
                     else if (!slot.available) label = 'Indisponível';
 
-                    let className = 'time-slot';
+                    let className = 'time-slot admin-block-slot';
                     if (slot.isPast) className += ' past-slot';
                     else if (slot.isBlockedManual) className += ' disabled';
                     else if (!slot.available) className += ' disabled';
 
-                    const canTryBlock = !slot.isPast && !slot.isBlockedManual && !slot.hasAppointmentAtTime;
+                    const canTryBlock =
+                        !fullDayBlockRow &&
+                        slot.available &&
+                        !slot.isPast &&
+                        !slot.isBlockedManual &&
+                        !slot.hasAppointmentAtTime;
 
                     return (
                         <div
@@ -1837,7 +2037,6 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
                                             : ''
                             }
                             style={{
-                                minWidth: '92px',
                                 flexDirection: 'column',
                                 alignItems: 'stretch',
                                 gap: '4px',
@@ -1875,6 +2074,85 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
                         </div>
                     );
                 })}
+            </div>
+        </div>
+    );
+
+    const handlePromoToggle = async (nextEnabled) => {
+        setPromoSaving(true);
+        try {
+            const res = await adminFetch(`${API_BASE_URL}/admin/promotional-packages`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: nextEnabled })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.error || 'Não foi possível salvar a campanha.');
+                return;
+            }
+            if (typeof onPromoPackagesChange === 'function') {
+                onPromoPackagesChange(data.promotionalPackagesEnabled === true);
+            }
+        } catch (e) {
+            console.error(e);
+            alert('Erro de rede ao salvar.');
+        } finally {
+            setPromoSaving(false);
+        }
+    };
+
+    const renderCampaigns = () => (
+        <div className="admin-campaigns-panel" style={{ textAlign: 'left', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+            <h3 style={{ margin: '0 0 8px', fontFamily: 'var(--font-heading, Georgia, serif)' }}>Campanhas promocionais</h3>
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.55, marginBottom: '18px' }}>
+                Use para campanhas temporárias (ex.: <strong>Dia das Mães</strong>). Com a campanha <strong>desligada</strong>, os
+                pacotes promocionais somem da lista da cliente e novos agendamentos com esses pacotes são recusados no servidor.
+            </p>
+
+            <div className="promo-admin-toggle-card">
+                <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text-dark)', marginBottom: '4px' }}>
+                        Pacotes Dia das Mães (vale-presente / promoção)
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.45 }}>
+                        Exibidos por último na etapa de escolha de serviço, com visual destacado.
+                    </div>
+                </div>
+                <label
+                    className="promo-admin-switch"
+                    style={{
+                        flexShrink: 0,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        cursor: promoSaving ? 'wait' : 'pointer',
+                        fontWeight: 700,
+                        fontSize: '14px',
+                        color: promoPackagesEnabled ? 'var(--brand-primary)' : 'var(--text-muted)'
+                    }}
+                >
+                    <input
+                        type="checkbox"
+                        checked={!!promoPackagesEnabled}
+                        disabled={promoSaving}
+                        onChange={(e) => handlePromoToggle(e.target.checked)}
+                        style={{ width: '22px', height: '22px', accentColor: 'var(--brand-primary)' }}
+                    />
+                    <span>{promoPackagesEnabled ? 'Ativo' : 'Inativo'}</span>
+                </label>
+            </div>
+
+            <div style={{ marginTop: '22px', fontSize: '13px', color: 'var(--text-muted)' }}>
+                <div style={{ fontWeight: 700, color: 'var(--text-dark)', marginBottom: '8px' }}>Pacotes configurados</div>
+                <ul style={{ margin: 0, paddingLeft: '1.15rem', lineHeight: 1.55 }}>
+                    <li>
+                        <strong>Pacote 1</strong> — reflexologia com escalda-pés, massagem relaxante e hidratação profunda nos pés.
+                    </li>
+                    <li style={{ marginTop: '6px' }}>
+                        <strong>Pacote 2</strong> — limpeza de pele suave, máscara revigorante e massagem facial.
+                    </li>
+                </ul>
             </div>
         </div>
     );
@@ -1931,8 +2209,8 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
                             <Card title="Clientes únicos" value={String(summary.uniqueClients || 0)} />
                         </div>
 
-                        <div style={{background: '#fff', border: '1px solid #ddd', borderRadius: '10px', overflowX: 'auto', maxWidth: '100%', boxSizing: 'border-box'}}>
-                            <table style={{width: '100%', borderCollapse: 'collapse', minWidth: '960px'}}>
+                        <div className="report-table-wrap">
+                            <table className="admin-report-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                                 <thead>
                                     <tr style={{background: '#f8fafc'}}>
                                         <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Cliente</th>
@@ -1991,14 +2269,14 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
 
     return (
         <div className="booking-section step-container" style={{textAlign: 'center'}}>
-            <div style={{display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '16px'}}>
-                <h2 style={{margin: 0}}>Painel Profissional</h2>
-                <button className="btn-admin" onClick={refreshData}>
+            <div className="admin-panel-head">
+                <h2>Painel Profissional</h2>
+                <button type="button" className="btn-admin" onClick={refreshData}>
                     <i className="fas fa-sync-alt"></i> Atualizar
                 </button>
             </div>
 
-            <div className="filter-tabs" style={{justifyContent: 'center'}}>
+            <div className="filter-tabs admin-main-tabs" style={{ justifyContent: 'center' }}>
                 <button className={`tab-btn ${adminView === 'agenda' ? 'active' : ''}`} onClick={() => setAdminView('agenda')}>
                     Agenda Geral
                 </button>
@@ -2011,6 +2289,9 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
                 <button className={`tab-btn ${adminView === 'blocks' ? 'active' : ''}`} onClick={() => setAdminView('blocks')}>
                     Bloquear horários
                 </button>
+                <button className={`tab-btn ${adminView === 'campaigns' ? 'active' : ''}`} onClick={() => setAdminView('campaigns')}>
+                    Campanhas
+                </button>
             </div>
 
             <div style={{marginTop: '18px'}}>
@@ -2018,6 +2299,7 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
                 {adminView === 'clients' && renderClients()}
                 {adminView === 'report' && renderReport()}
                 {adminView === 'blocks' && renderBlockedSlots()}
+                {adminView === 'campaigns' && renderCampaigns()}
             </div>
 
             {settleBalanceModal && (
@@ -2509,7 +2791,9 @@ const App = () => {
     const [appointments, setAppointments] = useState([]);
     const [clients, setClients] = useState([]);
     const [blockedSlots, setBlockedSlots] = useState([]);
+    const [blockedFullDays, setBlockedFullDays] = useState([]);
     const [adminWhatsApp, setAdminWhatsApp] = useState('');
+    const [promoPackagesEnabled, setPromoPackagesEnabled] = useState(false);
 
     const handleAdminLoginSuccess = (token) => {
         try {
@@ -2529,7 +2813,6 @@ const App = () => {
     }, []);
 
     const refreshData = useCallback(async () => {
-        const blkHeaders = adminToken ? { Authorization: `Bearer ${adminToken}` } : {};
         try {
             const resAps = await fetch(`${API_BASE_URL}/appointments`);
             if (resAps.ok) {
@@ -2547,38 +2830,29 @@ const App = () => {
                 }
             }
 
-            const resBlk = await fetch(`${API_BASE_URL}/admin/blocked-slots`, { headers: blkHeaders });
-            if (resBlk.status === 401) {
-                if (adminToken) {
-                    try {
-                        sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
-                    } catch (_) { /* ignore */ }
-                    setAdminToken('');
-                }
-                setBlockedSlots([]);
-            } else if (resBlk.ok) {
-                const blk = await resBlk.json();
-                setBlockedSlots(Array.isArray(blk) ? blk : []);
+            const resSch = await fetch(`${API_BASE_URL}/public/schedule-blocks`);
+            if (resSch.ok) {
+                const sch = await resSch.json().catch(() => ({}));
+                setBlockedSlots(Array.isArray(sch.blockedSlots) ? sch.blockedSlots : []);
+                setBlockedFullDays(Array.isArray(sch.blockedFullDays) ? sch.blockedFullDays : []);
             } else {
                 setBlockedSlots([]);
+                setBlockedFullDays([]);
+            }
+
+            const resCfg = await fetch(`${API_BASE_URL}/config/public`);
+            if (resCfg.ok) {
+                const j = await resCfg.json().catch(() => ({}));
+                setAdminWhatsApp(String(j.adminWhatsApp || '').replace(/\D/g, ''));
+                setPromoPackagesEnabled(j.promotionalPackagesEnabled === true);
             }
         } catch(e) { 
             console.error(e);
         }
-    }, [adminToken]);
+    }, []);
 
     useEffect(() => {
         refreshData();
-        (async () => {
-            try {
-                const res = await fetch(`${API_BASE_URL}/config/public`);
-                if (res.ok) {
-                    const j = await res.json();
-                    setAdminWhatsApp(String(j.adminWhatsApp || '').replace(/\D/g, ''));
-                }
-            } catch (_) { /* ignore */ }
-        })();
-
         const intervalId = setInterval(refreshData, 10000);
         return () => clearInterval(intervalId);
     }, [refreshData]);
@@ -2615,6 +2889,8 @@ const App = () => {
                         clients={clients}
                         adminWhatsApp={adminWhatsApp}
                         blockedSlots={blockedSlots}
+                        blockedFullDays={blockedFullDays}
+                        promoPackagesEnabled={promoPackagesEnabled}
                         bookingRestoreOrderNsu={bookingRestoreOrderNsu}
                         onBookingRestoreConsumed={clearBookingRestore}
                     />
@@ -2626,8 +2902,11 @@ const App = () => {
                         refreshData={refreshData}
                         clients={clients}
                         blockedSlots={blockedSlots}
+                        blockedFullDays={blockedFullDays}
                         adminToken={adminToken}
                         onAdminSessionInvalid={handleAdminSessionInvalid}
+                        promoPackagesEnabled={promoPackagesEnabled}
+                        onPromoPackagesChange={setPromoPackagesEnabled}
                     />
                 )}
             </main>

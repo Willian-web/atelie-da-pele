@@ -182,9 +182,12 @@ main {
 /* Service Card List */
 .services-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
     gap: clamp(12px, 2vw, 20px);
     margin-bottom: clamp(24px, 4vw, 40px);
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 .service-card {
@@ -221,6 +224,59 @@ main {
     box-shadow:
         0 10px 32px rgba(75, 53, 110, 0.22),
         0 0 0 1px rgba(183, 154, 217, 0.45);
+}
+
+.service-card--promo {
+    position: relative;
+    border-color: rgba(224, 178, 205, 0.55);
+    background: linear-gradient(
+        158deg,
+        rgba(255, 252, 254, 0.98) 0%,
+        rgba(248, 236, 252, 0.9) 45%,
+        rgba(255, 250, 252, 0.99) 100%
+    );
+    box-shadow: 0 8px 26px rgba(183, 120, 160, 0.1);
+}
+
+.service-card--promo.selected {
+    border-color: rgba(186, 130, 168, 0.85);
+    background: linear-gradient(
+        165deg,
+        rgba(252, 232, 244, 0.96) 0%,
+        rgba(255, 255, 255, 0.98) 48%,
+        rgba(243, 215, 231, 0.82) 100%
+    );
+}
+
+.service-card__promo-pill {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 5px 9px;
+    border-radius: 999px;
+    color: #5b3565;
+    pointer-events: none;
+    background: linear-gradient(135deg, rgba(243, 210, 228, 0.98) 0%, rgba(215, 185, 225, 0.92) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    box-shadow: 0 2px 10px rgba(107, 70, 95, 0.1);
+}
+
+.promo-admin-toggle-card {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 20px;
+    border-radius: 14px;
+    border: 1px solid rgba(211, 170, 200, 0.42);
+    background: linear-gradient(145deg, rgba(255, 252, 254, 0.98) 0%, rgba(246, 236, 250, 0.92) 100%);
+    box-shadow: 0 6px 22px rgba(111, 76, 165, 0.08);
 }
 
 .service-card-header {
@@ -328,6 +384,171 @@ main {
 .tab-btn.active:hover {
     filter: brightness(1.07);
     box-shadow: 0 6px 22px rgba(75, 53, 110, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+/* —— Painel admin: cabeçalho e abas (muitas entradas) —— */
+.admin-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    text-align: left;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.admin-panel-head h2 {
+    margin: 0;
+    flex: 1 1 200px;
+    min-width: 0;
+    text-align: left;
+    line-height: 1.25;
+}
+
+.admin-panel-head .btn-admin {
+    flex-shrink: 0;
+}
+
+.filter-tabs.admin-main-tabs {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    gap: 8px;
+    padding-bottom: 6px;
+    margin-bottom: 18px;
+    scrollbar-width: thin;
+}
+
+.filter-tabs.admin-main-tabs::-webkit-scrollbar {
+    height: 5px;
+}
+
+.filter-tabs.admin-main-tabs::-webkit-scrollbar-thumb {
+    background: rgba(111, 76, 165, 0.35);
+    border-radius: 99px;
+}
+
+.filter-tabs.admin-main-tabs .tab-btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+@media (min-width: 960px) {
+    .filter-tabs.admin-main-tabs {
+        flex-wrap: wrap;
+        overflow-x: visible;
+        justify-content: center;
+        padding-bottom: 0;
+    }
+}
+
+/* Bloqueio de horários (admin) */
+.admin-blocks-panel {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.admin-blocks-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 14px;
+    margin-bottom: 10px;
+}
+
+.admin-blocks-intro {
+    flex: 1 1 240px;
+    min-width: min(100%, 220px);
+}
+
+.admin-blocks-date-wrap {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.admin-blocks-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.admin-agenda-filters {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.admin-block-time-slots {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.time-slot.admin-block-slot {
+    min-width: min(92px, 30vw);
+    flex: 1 1 calc(25% - 8px);
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+@media (max-width: 600px) {
+    .time-slot.admin-block-slot {
+        flex: 1 1 calc(50% - 6px);
+        min-width: min(86px, 44vw);
+    }
+}
+
+@media (max-width: 400px) {
+    .time-slot.admin-block-slot {
+        flex: 1 1 100%;
+    }
+}
+
+/* Cards promocionais: evitar sobreposição título × selo */
+.service-card--promo .service-card-header {
+    padding-right: 76px;
+}
+
+.service-card--promo .service-card-header h3 {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.promo-client-hint {
+    overflow-wrap: anywhere;
+    hyphens: auto;
+    max-width: 100%;
+    padding: 0 4px;
+    box-sizing: border-box;
+}
+
+@media (max-width: 400px) {
+    .service-card__promo-pill {
+        font-size: 8px;
+        padding: 4px 7px;
+        right: 8px;
+        top: 8px;
+    }
+
+    .service-card--promo .service-card-header {
+        padding-right: 64px;
+    }
+}
+
+/* Relatório admin: células longas */
+.report-table-wrap .admin-report-table th,
+.report-table-wrap .admin-report-table td {
+    vertical-align: top;
+    word-break: break-word;
 }
 
 /* Status (temp.jsx StatusBadge) */
@@ -960,7 +1181,37 @@ textarea.form-control {
     gap: 8px;
     justify-content: center;
     margin: 0 auto 18px;
-    max-width: 640px;
+    max-width: min(640px, 100%);
+    width: 100%;
+    box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+    .service-category-chips {
+        justify-content: flex-start;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 8px;
+        margin-left: 0;
+        margin-right: 0;
+        scrollbar-width: thin;
+        max-width: 100%;
+    }
+
+    .service-category-chips::-webkit-scrollbar {
+        height: 5px;
+    }
+
+    .service-category-chips::-webkit-scrollbar-thumb {
+        background: rgba(111, 76, 165, 0.35);
+        border-radius: 99px;
+    }
+
+    .service-category-chip {
+        flex: 0 0 auto;
+    }
 }
 
 .service-category-chip {
@@ -986,6 +1237,16 @@ textarea.form-control {
     color: #fff;
     border-color: transparent;
     box-shadow: 0 4px 14px rgba(75, 53, 110, 0.28);
+}
+
+.service-category-chip.service-category-chip--campaign:not(.active) {
+    border-color: rgba(224, 178, 205, 0.55);
+    background: linear-gradient(180deg, rgba(255, 252, 254, 0.98) 0%, rgba(248, 236, 252, 0.82) 100%);
+    color: var(--brand-dark);
+}
+
+.service-category-chip.service-category-chip--campaign.active {
+    box-shadow: 0 4px 16px rgba(183, 120, 160, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .password-field-wrap {
