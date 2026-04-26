@@ -133,7 +133,7 @@ const pool = new Pool({
 
 /**
  * Catálogo ativo (novos agendamentos). Espelhar em `backend/public/index.html` (SERVICES + PROMO_MAES_SERVICES).
- * Pacotes `promo_*` só podem ser agendados com `promotional_packages_enabled = true` em `app_settings`.
+ * Vales-presente `promo_*` só podem ser agendados com `promotional_packages_enabled = true` em `app_settings`.
  */
 const SERVICES_CATALOG = [
     { id: 'limpeza_pele_profunda', name: 'Limpeza de pele profunda', price: 119, duration: 60 },
@@ -150,14 +150,14 @@ const SERVICES_CATALOG = [
     { id: 'reflexologia_podal', name: 'Reflexologia podal', price: 110, duration: 60 },
     {
         id: 'promo_dia_maes_reflexologia',
-        name: 'Pacote Dia das Mães 1 — Reflexologia completa',
-        price: 119,
+        name: 'Vale-presente Dia das Mães 1 — Reflexologia especial',
+        price: 99,
         duration: 60
     },
     {
         id: 'promo_dia_maes_facial',
-        name: 'Pacote Dia das Mães 2 — Limpeza suave & massagem facial',
-        price: 135,
+        name: 'Vale-presente Dia das Mães 2 — Limpeza suave & facial',
+        price: 99,
         duration: 60
     }
 ];
@@ -335,6 +335,21 @@ async function initDB() {
             ADD COLUMN IF NOT EXISTS client_confirmation_email_sent_at TIMESTAMPTZ
         `);
 
+        await client.query(`
+            ALTER TABLE appointments
+            ADD COLUMN IF NOT EXISTS service_ids_json TEXT
+        `);
+
+        await client.query(`
+            ALTER TABLE appointments
+            ADD COLUMN IF NOT EXISTS service_slots_json TEXT
+        `);
+
+        await client.query(`
+            ALTER TABLE appointments
+            ADD COLUMN IF NOT EXISTS schedule_mode VARCHAR(32)
+        `);
+
         console.log('✅ Banco de dados sincronizado / migrado');
     } catch (err) {
         console.error('❌ Erro ao iniciar banco:', err);
@@ -407,55 +422,221 @@ function isValidHourlyBookingSlot(dateYmd, timeStr) {
     return hour >= 14 && hour <= 20;
 }
 
-/**
- * Valida novo agendamento: dia inteiro bloqueado, expediente, hora cheia, bloqueio por slot,
- * sobreposição por duração do serviço e intervalo mínimo de 1h entre inícios.
- */
-function validateNewAppointmentSchedule({
-    time,
-    existingRows,
-    blockedTimesSet,
-    fullDayBlocked,
-    dateYmd,
-    newServiceId
-}) {
-    if (fullDayBlocked) {
-        return 'Dia indisponível (bloqueado).';
+function sortSlotsChronologically(slots) {
+    return [...slots].sort((a, b) => {
+        if (a.date !== b.date) return String(a.date).localeCompare(String(b.date));
+        return (timeStrToMinutes(a.time) || 0) - (timeStrToMinutes(b.time) || 0);
+    });
+}
+
+function timeStrFromMinutes(totalMins) {
+    const m = Math.round(Number(totalMins) || 0);
+    const h = Math.floor(m / 60);
+    const mm = ((m % 60) + 60) % 60;
+    return normalizeSlotTimeHHMM(`${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
+}
+
+function parseServiceSlotsJson(raw) {
+    if (raw == null || raw === '') return null;
+    try {
+        const p = JSON.parse(raw);
+        if (!Array.isArray(p) || p.length === 0) return null;
+        const out = [];
+        for (const x of p) {
+            const sid = String(x.serviceId || x.service_id || '').trim();
+            const d = String(x.date || '').trim();
+            const t = normalizeSlotTimeHHMM(x.time);
+            if (!sid || !isValidReportDateYmd(d) || !t) return null;
+            out.push({ serviceId: sid, date: d, time: t });
+        }
+        return out.length ? out : null;
+    } catch (_) {
+        return null;
     }
+}
 
-    const T = timeStrToMinutes(time);
-    const tNorm = normalizeSlotTimeHHMM(time);
-    if (T == null || !tNorm) {
-        return 'Horário inválido.';
+/** Slots do agendamento: JSON explícito ou reconstrução legada a partir de date/time + service_ids. */
+function getServiceSlotsFromRow(row) {
+    if (!row) return [];
+    const parsed = parseServiceSlotsJson(row.service_slots_json);
+    if (parsed && parsed.length) return parsed;
+    const ids = getAppointmentServiceIdsFromRow(row);
+    const d = row.date != null ? String(row.date).trim() : '';
+    const t0 = row.time != null ? normalizeSlotTimeHHMM(row.time) : null;
+    if (!isValidReportDateYmd(d) || !t0 || ids.length === 0) return [];
+    if (ids.length === 1) return [{ serviceId: ids[0], date: d, time: t0 }];
+    let cur = timeStrToMinutes(t0);
+    if (cur == null) return [];
+    const out = [];
+    for (const id of ids) {
+        const ts = timeStrFromMinutes(cur);
+        if (!ts) return [];
+        out.push({ serviceId: id, date: d, time: ts });
+        cur += getServiceDurationMinForSchedule(id);
     }
+    return out;
+}
 
-    if (!isValidHourlyBookingSlot(dateYmd, time)) {
-        return 'Horário inválido ou fora do expediente.';
-    }
+function appointmentDurationMinutesFromRow(row) {
+    const ids = getAppointmentServiceIdsFromRow(row);
+    const mins = ids.reduce((sum, id) => sum + getServiceDurationMinForSchedule(id), 0);
+    return mins > 0 ? mins : DEFAULT_APPOINTMENT_DURATION_MIN;
+}
 
-    if (blockedTimesSet && blockedTimesSet.has(tNorm)) {
-        return 'Horário indisponível (bloqueado manualmente).';
-    }
-
-    const newDur = getServiceDurationMinForSchedule(newServiceId);
-
-    for (const row of existingRows) {
-        if (!['pending_payment', 'confirmed', 'completed'].includes(row.status)) continue;
-        const S = timeStrToMinutes(row.time);
+function getIntervalsFromSlots(slots) {
+    const byDate = new Map();
+    for (const sl of slots) {
+        const S = timeStrToMinutes(sl.time);
         if (S == null) continue;
+        const dur = getServiceDurationMinForSchedule(sl.serviceId);
+        const arr = byDate.get(sl.date) || [];
+        arr.push({ start: S, end: S + dur });
+        byDate.set(sl.date, arr);
+    }
+    return byDate;
+}
 
-        const existingDur = getServiceDurationMinForSchedule(row.service_id);
-        const existingEnd = S + existingDur;
-        const newEnd = T + newDur;
-        if (T < existingEnd && newEnd > S) {
-            return 'Conflito com horário já reservado.';
+function intervalsFromAppointmentRow(row) {
+    return getIntervalsFromSlots(getServiceSlotsFromRow(row));
+}
+
+function resolveSlotsFromRequest(body, serviceIdsNorm) {
+    const n = serviceIdsNorm.length;
+    if (n === 0) return { err: 'Nenhum procedimento.', slots: null, scheduleMode: null };
+    if (n === 1) {
+        const date = String(body.date || '').trim();
+        const time = normalizeSlotTimeHHMM(body.time);
+        if (!isValidReportDateYmd(date) || !time) {
+            return { err: 'Dados obrigatórios faltando.', slots: null, scheduleMode: null };
         }
-        if (Math.abs(T - S) < MIN_START_GAP_MINUTES) {
-            return 'É necessário intervalo mínimo de 1 hora entre agendamentos.';
+        return {
+            err: null,
+            scheduleMode: 'single',
+            slots: [{ serviceId: serviceIdsNorm[0], date, time }]
+        };
+    }
+    const mode = String(body.scheduleMode || '').trim().toLowerCase();
+    if (mode !== 'sequential' && mode !== 'per_service') {
+        return {
+            err: 'Para vários procedimentos informe scheduleMode: "sequential" ou "per_service".',
+            slots: null,
+            scheduleMode: null
+        };
+    }
+    if (mode === 'sequential') {
+        const date = String(body.date || '').trim();
+        const time = normalizeSlotTimeHHMM(body.time);
+        if (!isValidReportDateYmd(date) || !time) {
+            return { err: 'Dados obrigatórios faltando.', slots: null, scheduleMode: null };
+        }
+        const slots = [];
+        let cur = timeStrToMinutes(time);
+        if (cur == null) return { err: 'Horário inválido.', slots: null, scheduleMode: null };
+        for (let i = 0; i < n; i++) {
+            const id = serviceIdsNorm[i];
+            const tStr = timeStrFromMinutes(cur);
+            if (!tStr || !isValidHourlyBookingSlot(date, tStr)) {
+                return { err: 'Sequência de horários inválida para o dia escolhido.', slots: null, scheduleMode: null };
+            }
+            slots.push({ serviceId: id, date, time: tStr });
+            cur += getServiceDurationMinForSchedule(id);
+        }
+        return { err: null, scheduleMode: 'sequential', slots };
+    }
+    const rawSlots = Array.isArray(body.slots) ? body.slots : [];
+    if (rawSlots.length !== n) {
+        return {
+            err: 'Envie o array slots com date e time para cada procedimento (mesma ordem de serviceIds).',
+            slots: null,
+            scheduleMode: null
+        };
+    }
+    const slots = [];
+    for (let i = 0; i < n; i++) {
+        const id = serviceIdsNorm[i];
+        const ds = String(rawSlots[i]?.date || '').trim();
+        const tt = normalizeSlotTimeHHMM(rawSlots[i]?.time);
+        const sidBody = String(rawSlots[i]?.serviceId || rawSlots[i]?.service_id || '').trim();
+        if (sidBody && sidBody !== id) {
+            return { err: 'serviceId em slots não corresponde à ordem de serviceIds.', slots: null, scheduleMode: null };
+        }
+        if (!isValidReportDateYmd(ds) || !tt) {
+            return { err: 'Data ou horário inválido em um dos procedimentos.', slots: null, scheduleMode: null };
+        }
+        slots.push({ serviceId: id, date: ds, time: tt });
+    }
+    return { err: null, scheduleMode: 'per_service', slots };
+}
+
+function validateNewBookingSlots(newSlots, existingRows, blockedFullSet, blockedSlotsByDate) {
+    const newMap = getIntervalsFromSlots(newSlots);
+    for (const sl of newSlots) {
+        if (blockedFullSet.has(sl.date)) return 'Dia indisponível (bloqueado).';
+        const bs = blockedSlotsByDate.get(sl.date);
+        const nn = normalizeSlotTimeHHMM(sl.time);
+        if (bs && nn && bs.has(nn)) return 'Horário indisponível (bloqueado manualmente).';
+        const T = timeStrToMinutes(sl.time);
+        if (T == null || !nn) return 'Horário inválido.';
+        if (!isValidHourlyBookingSlot(sl.date, sl.time)) return 'Horário inválido ou fora do expediente.';
+    }
+    for (const [, ints] of newMap) {
+        for (let i = 0; i < ints.length; i++) {
+            for (let j = i + 1; j < ints.length; j++) {
+                const a = ints[i];
+                const b = ints[j];
+                if (a.start < b.end && a.end > b.start) {
+                    return 'Os horários escolhidos para os procedimentos entram em conflito.';
+                }
+            }
         }
     }
-
+    for (const [date, newInts] of newMap) {
+        for (const row of existingRows) {
+            const exMap = intervalsFromAppointmentRow(row);
+            const exInts = exMap.get(date) || [];
+            for (const ni of newInts) {
+                for (const ei of exInts) {
+                    if (ni.start < ei.end && ni.end > ei.start) return 'Conflito com horário já reservado.';
+                    if (Math.abs(ni.start - ei.start) < MIN_START_GAP_MINUTES) {
+                        return 'É necessário intervalo mínimo de 1 hora entre agendamentos.';
+                    }
+                }
+            }
+        }
+    }
     return null;
+}
+
+async function fetchLockedAppointmentRowsForDates(clientPg, dates) {
+    const sorted = [...new Set((dates || []).map((d) => String(d || '').trim()).filter(isValidReportDateYmd))].sort();
+    const byId = new Map();
+    for (const d of sorted) {
+        const res = await clientPg.query(
+            `
+            SELECT *
+            FROM appointments
+            WHERE status IN ('pending_payment', 'confirmed', 'completed')
+              AND (
+                date = $1
+                OR (
+                  service_slots_json IS NOT NULL
+                  AND service_slots_json <> ''
+                  AND EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(service_slots_json::jsonb) elem
+                    WHERE elem->>'date' = $1
+                  )
+                )
+              )
+            FOR UPDATE
+        `,
+            [d]
+        );
+        for (const row of res.rows) {
+            byId.set(row.id, row);
+        }
+    }
+    return [...byId.values()];
 }
 
 function toMoneyNumber(value) {
@@ -498,9 +679,76 @@ function findServiceById(serviceId) {
         };
 }
 
+/** IDs do agendamento: JSON em `service_ids_json` ou legado só `service_id`. */
+function getAppointmentServiceIdsFromRow(row) {
+    if (!row) return [];
+    const raw = row.service_ids_json;
+    if (raw) {
+        try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                const out = [];
+                const seen = new Set();
+                for (const x of parsed) {
+                    const id = String(x || '').trim();
+                    if (!id || seen.has(id)) continue;
+                    seen.add(id);
+                    out.push(id);
+                }
+                if (out.length) return out;
+            }
+        } catch (_) {
+            /* ignore */
+        }
+    }
+    const sid = row.service_id != null ? String(row.service_id).trim() : '';
+    return sid ? [sid] : [];
+}
+
+/** Nome e preço agregados para e-mails (admin/cliente). */
+function buildServiceEmailAggregate(ids) {
+    const lines = [];
+    let total = 0;
+    for (const id of ids) {
+        const s = findServiceById(id);
+        const p = roundMoney2(Number(s.price) || 0);
+        total += p;
+        lines.push(s.name || id);
+    }
+    return {
+        name: lines.join(' + '),
+        price: roundMoney2(total)
+    };
+}
+
+function normalizeIncomingServiceIds(body) {
+    if (Array.isArray(body?.serviceIds) && body.serviceIds.length > 0) {
+        const out = [];
+        const seen = new Set();
+        for (const x of body.serviceIds) {
+            const id = String(x || '').trim();
+            if (!id || seen.has(id)) continue;
+            seen.add(id);
+            out.push(id);
+        }
+        return out;
+    }
+    const one = body?.serviceId != null ? String(body.serviceId).trim() : '';
+    return one ? [one] : [];
+}
+
 function normalizeAppointmentFinancials(row) {
-    const serviceObj = findServiceById(row.service_id);
-    const totalServicePrice = roundMoney2(serviceObj.price || 0);
+    const ids = getAppointmentServiceIdsFromRow(row);
+    let totalServicePrice = 0;
+    for (const id of ids) {
+        const s = findServiceById(id);
+        totalServicePrice += roundMoney2(Number(s.price) || 0);
+    }
+    totalServicePrice = roundMoney2(totalServicePrice);
+    if (!Number.isFinite(totalServicePrice) || totalServicePrice <= 0) {
+        const fallback = findServiceById(row.service_id);
+        totalServicePrice = roundMoney2(Number(fallback.price) || 0);
+    }
     const partialSignal = effectivePartialDownPayment(totalServicePrice);
 
     const paymentAmount = roundMoney2(row.payment_amount ?? FIXED_SIGNAL_AMOUNT);
@@ -686,10 +934,21 @@ function buildPaymentSummary(row) {
 function mapAppointmentRow(row) {
     const fin = normalizeAppointmentFinancials(row);
     const paymentSummary = buildPaymentSummary(row);
+    const serviceIds = getAppointmentServiceIdsFromRow(row);
+    const serviceLineItems = serviceIds.map((id) => {
+        const s = findServiceById(id);
+        return {
+            id,
+            name: s.name || id,
+            price: roundMoney2(Number(s.price) || 0)
+        };
+    });
 
     return {
         id: row.id,
         serviceId: row.service_id,
+        serviceIds,
+        serviceLineItems,
         clientId: row.client_id,
         clientName: row.client_name,
         clientPhone: row.client_phone,
@@ -713,7 +972,9 @@ function mapAppointmentRow(row) {
         cancelledAt: row.cancelled_at,
         cancelledBy: row.cancelled_by,
         cancelReason: row.cancel_reason,
-        paymentSummary
+        paymentSummary,
+        scheduleMode: row.schedule_mode || null,
+        serviceSlots: getServiceSlotsFromRow(row)
     };
 }
 
@@ -761,7 +1022,8 @@ async function trySendClientAppointmentConfirmationIfNeeded(appointmentRow) {
         return;
     }
 
-    const serviceObj = findServiceById(appointmentRow.service_id);
+    const ids = getAppointmentServiceIdsFromRow(appointmentRow);
+    const serviceObj = buildServiceEmailAggregate(ids);
     const fin = normalizeAppointmentFinancials(appointmentRow);
     const rowForClientEmail = {
         ...appointmentRow,
@@ -935,7 +1197,8 @@ async function confirmAppointmentPayment({ appointmentId, transactionNsu, invoic
     console.log(`[Payment] Agendamento ${appointmentId} confirmado com sucesso (${previousStatus} -> confirmed). paid_amount_resolved=${paidResolved}`);
 
     try {
-        const serviceObj = findServiceById(appointment.service_id);
+        const ids = getAppointmentServiceIdsFromRow(appointment);
+        const serviceObj = buildServiceEmailAggregate(ids);
         await sendConfirmationEmail(appointment, serviceObj);
         console.log(`[Payment] E-mail de confirmação enviado para o agendamento ${appointmentId}.`);
     } catch (emailErr) {
@@ -1300,7 +1563,8 @@ app.get('/admin/report', requireAdminAuth, async (req, res) => {
         `, [startStr, endStr]);
 
         const items = rows.map(r => {
-            const serviceObj = findServiceById(r.service_id);
+            const ids = getAppointmentServiceIdsFromRow(r);
+            const agg = buildServiceEmailAggregate(ids);
             const fin = normalizeAppointmentFinancials(r);
             const isPaidRow = r.status === 'confirmed' || r.status === 'completed';
             return {
@@ -1308,7 +1572,8 @@ app.get('/admin/report', requireAdminAuth, async (req, res) => {
                 clientName: r.client_name,
                 clientPhone: r.client_phone,
                 serviceId: r.service_id,
-                serviceName: serviceObj?.name || r.service_id || 'Serviço',
+                serviceIds: ids,
+                serviceName: agg.name || r.service_id || 'Serviço',
                 date: r.date,
                 time: r.time,
                 status: r.status,
@@ -1390,7 +1655,8 @@ app.get('/admin/report', requireAdminAuth, async (req, res) => {
 // ====================== BLOQUEIOS DE AGENDA (LEITURA PÚBLICA + ADMIN) ======================
 
 app.get('/public/schedule-blocks', async (_req, res) => {
-    res.set('Cache-Control', 'public, max-age=15');
+    res.set('Cache-Control', 'private, no-store, max-age=0, must-revalidate');
+    res.set('Pragma', 'no-cache');
     if (!isPostgresSetup) {
         return res.json({ blockedSlots: [], blockedFullDays: [] });
     }
@@ -1438,7 +1704,12 @@ async function readPromotionalPackagesEnabledFromDb() {
         const r = await pool.query(
             `SELECT value FROM app_settings WHERE key = 'promotional_packages_enabled' LIMIT 1`
         );
-        return String(r.rows[0]?.value || '').toLowerCase() === 'true';
+        const v = r.rows[0]?.value;
+        if (v === true || v === false) return Boolean(v);
+        const s = String(v ?? '')
+            .trim()
+            .toLowerCase();
+        return s === 'true' || s === '1' || s === 'yes' || s === 'on';
     } catch (e) {
         console.warn('[app_settings] promotional_packages_enabled:', e.message);
         return false;
@@ -1446,7 +1717,9 @@ async function readPromotionalPackagesEnabledFromDb() {
 }
 
 app.get('/config/public', async (_req, res) => {
-    res.set('Cache-Control', 'public, max-age=30');
+    /* Dinâmico (WhatsApp + campanhas): não cachear — evita cliente/admin verem flag promocional “voltando” sozinha. */
+    res.set('Cache-Control', 'private, no-store, max-age=0, must-revalidate');
+    res.set('Pragma', 'no-cache');
     try {
         const promotionalPackagesEnabled = await readPromotionalPackagesEnabledFromDb();
         res.json({
@@ -1630,15 +1903,16 @@ app.patch('/admin/promotional-packages', requireAdminAuth, async (req, res) => {
     const enabled = raw === true || String(raw).toLowerCase() === 'true';
 
     try {
+        const valueStr = enabled ? 'true' : 'false';
         await pool.query(
             `
             INSERT INTO app_settings (key, value, updated_at)
             VALUES ('promotional_packages_enabled', $1, NOW())
             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
         `,
-            [enabled ? 'true' : 'false']
+            [valueStr]
         );
-        return res.json({ ok: true, promotionalPackagesEnabled: enabled });
+        return res.json({ ok: true, promotionalPackagesEnabled: Boolean(enabled) });
     } catch (error) {
         console.error('[PATCH /admin/promotional-packages] Erro:', error);
         return res.status(500).json({ error: 'Erro ao salvar campanha promocional.' });
@@ -1656,26 +1930,53 @@ app.post('/appointments', async (req, res) => {
 
     try {
         const {
-            serviceId,
             clientId,
             clientName,
             clientPhone,
             clientEmail,
             email,
-            date,
-            time,
             notes,
             location,
             paymentType: rawPaymentType
         } = req.body;
 
-        if (!clientName || !clientPhone || !serviceId || !date || !time) {
+        const serviceIdsNorm = normalizeIncomingServiceIds(req.body);
+        if (!clientName || !clientPhone) {
             return res.status(400).json({ error: 'Dados obrigatórios faltando.' });
         }
+        if (serviceIdsNorm.length === 0) {
+            return res.status(400).json({ error: 'Informe pelo menos um procedimento (serviceId ou serviceIds).' });
+        }
+
+        const resolved = resolveSlotsFromRequest(req.body, serviceIdsNorm);
+        if (resolved.err) {
+            return res.status(400).json({ error: resolved.err });
+        }
+        const resolvedSlots = resolved.slots;
+        const scheduleMode = resolved.scheduleMode;
+        const sortedSlots = sortSlotsChronologically(resolvedSlots);
+        const primaryDate = sortedSlots[0].date;
+        const primaryTime = sortedSlots[0].time;
+        const touchDates = [...new Set(resolvedSlots.map((s) => s.date))].sort();
 
         const normClientEmail = normalizeEmail(clientEmail != null ? clientEmail : email);
         if (!isValidEmailBasic(normClientEmail)) {
             return res.status(400).json({ error: 'Informe um e-mail válido da cliente para contato e confirmação.' });
+        }
+
+        const catalogById = new Map(SERVICES_CATALOG.map((s) => [s.id, s]));
+        for (const id of serviceIdsNorm) {
+            if (!catalogById.has(id)) {
+                return res.status(400).json({ error: 'Um ou mais procedimentos não estão disponíveis para novo agendamento.' });
+            }
+        }
+
+        const hasPromo = serviceIdsNorm.some((id) => PROMO_PACKAGE_IDS.has(id));
+        if (hasPromo) {
+            const promoOn = await readPromotionalPackagesEnabledFromDb();
+            if (!promoOn) {
+                return res.status(400).json({ error: 'Este vale-presente não está disponível no momento.' });
+            }
         }
 
         let paymentType = rawPaymentType ? String(rawPaymentType).toLowerCase() : 'partial';
@@ -1683,28 +1984,27 @@ app.post('/appointments', async (req, res) => {
             return res.status(400).json({ error: 'paymentType inválido. Use "partial" ou "full".' });
         }
 
-        const serviceObj = SERVICES_CATALOG.find((s) => s.id === serviceId);
-        if (!serviceObj) {
-            return res.status(400).json({ error: 'Procedimento inválido ou não disponível para novo agendamento.' });
+        /* Com vales-presente no carrinho: um único checkout pelo valor total (catálogo). */
+        if (hasPromo) {
+            paymentType = 'full';
         }
 
-        const totalServicePrice = Number(serviceObj.price || 0);
+        const totalServicePrice = roundMoney2(
+            serviceIdsNorm.reduce((sum, id) => sum + Number(catalogById.get(id).price || 0), 0)
+        );
 
         if (!Number.isFinite(totalServicePrice) || totalServicePrice <= 0) {
             return res.status(400).json({ error: 'Serviço inválido ou valor não encontrado para este procedimento.' });
-        }
-
-        if (PROMO_PACKAGE_IDS.has(serviceId)) {
-            const promoOn = await readPromotionalPackagesEnabledFromDb();
-            if (!promoOn) {
-                return res.status(400).json({ error: 'Este pacote promocional não está disponível no momento.' });
-            }
         }
 
         const partialNow = effectivePartialDownPayment(totalServicePrice);
         if (partialNow >= totalServicePrice - 0.005) {
             paymentType = 'full';
         }
+
+        const primaryServiceId = serviceIdsNorm[0];
+        const serviceIdsJson = JSON.stringify(serviceIdsNorm);
+        const serviceSlotsJson = JSON.stringify(resolvedSlots);
 
         const amountCharged = paymentType === 'partial' ? partialNow : totalServicePrice;
 
@@ -1750,36 +2050,23 @@ app.post('/appointments', async (req, res) => {
             ]);
         }
 
-        const fullDayRes = await client.query('SELECT 1 AS x FROM blocked_full_days WHERE date = $1', [date]);
-        const fullDayBlocked = fullDayRes.rows.length > 0;
-
-        const blockedRes = await client.query(
-            'SELECT time FROM blocked_slots WHERE date = $1',
-            [date]
+        const blockedFullRes = await client.query(
+            `SELECT date FROM blocked_full_days WHERE date = ANY($1::text[])`,
+            [touchDates]
         );
-        const blockedSet = new Set(
-            blockedRes.rows.map((r) => normalizeSlotTimeHHMM(r.time)).filter(Boolean)
-        );
+        const blockedFullSet = new Set(blockedFullRes.rows.map((r) => r.date));
 
-        const dayLock = await client.query(
-            `
-            SELECT time, status, service_id
-            FROM appointments
-            WHERE date = $1
-              AND status IN ('pending_payment', 'confirmed', 'completed')
-            FOR UPDATE
-        `,
-            [date]
-        );
+        const blockedSlotsByDate = new Map();
+        for (const d of touchDates) {
+            const br = await client.query('SELECT time FROM blocked_slots WHERE date = $1', [d]);
+            blockedSlotsByDate.set(
+                d,
+                new Set(br.rows.map((r) => normalizeSlotTimeHHMM(r.time)).filter(Boolean))
+            );
+        }
 
-        const scheduleErr = validateNewAppointmentSchedule({
-            time,
-            existingRows: dayLock.rows,
-            blockedTimesSet: blockedSet,
-            fullDayBlocked,
-            dateYmd: date,
-            newServiceId: serviceId
-        });
+        const lockedRows = await fetchLockedAppointmentRowsForDates(client, touchDates);
+        const scheduleErr = validateNewBookingSlots(resolvedSlots, lockedRows, blockedFullSet, blockedSlotsByDate);
         if (scheduleErr) {
             await client.query('ROLLBACK');
             return res.status(409).json({ error: scheduleErr });
@@ -1789,12 +2076,12 @@ app.post('/appointments', async (req, res) => {
 
         const appointmentPayload = {
             id: newId,
-            serviceId,
+            serviceId: primaryServiceId,
             clientId: finalClientId,
             clientName,
             clientPhone: cleanPhone,
-            date,
-            time,
+            date: primaryDate,
+            time: primaryTime,
             notes,
             location,
             paymentType,
@@ -1811,6 +2098,9 @@ app.post('/appointments', async (req, res) => {
             INSERT INTO appointments (
                 id,
                 service_id,
+                service_ids_json,
+                service_slots_json,
+                schedule_mode,
                 client_id,
                 client_name,
                 client_phone,
@@ -1825,17 +2115,20 @@ app.post('/appointments', async (req, res) => {
                 amount_charged,
                 remaining_amount
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending_payment', $10, $11, $12, $13, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending_payment', $13, $14, $15, $16, $17)
             RETURNING *
         `, [
             newId,
-            serviceId,
+            primaryServiceId,
+            serviceIdsJson,
+            serviceSlotsJson,
+            scheduleMode,
             finalClientId,
             clientName,
             cleanPhone,
             location || '',
-            date,
-            time,
+            primaryDate,
+            primaryTime,
             notes || '',
             paymentUrl,
             amountCharged,
@@ -1846,7 +2139,7 @@ app.post('/appointments', async (req, res) => {
 
         await client.query('COMMIT');
 
-        console.log(`[Appointments] Reserva gerada com sucesso: ${date} ${time}`);
+        console.log(`[Appointments] Reserva gerada com sucesso: ${primaryDate} ${primaryTime}`);
 
         return res.status(201).json(mapAppointmentRow(insert.rows[0]));
     } catch (error) {
@@ -1967,8 +2260,8 @@ app.patch('/admin/appointments/:id/manual-payment', requireAdminAuth, async (req
             });
         }
 
-        const serviceObj = findServiceById(ap.service_id);
-        const total = roundMoney2(Number(serviceObj?.price || 0));
+        const finAp = normalizeAppointmentFinancials(ap);
+        const total = roundMoney2(Number(finAp.totalServicePrice || 0));
         if (!Number.isFinite(total) || total <= 0) {
             return res.status(400).json({ error: 'Não foi possível determinar o valor total do procedimento.' });
         }
@@ -2089,8 +2382,8 @@ app.patch('/admin/appointments/:id/settle-remaining-balance', requireAdminAuth, 
         const newPaid = centsToReais(paidCents);
         const newRemaining = 0;
 
-        const serviceObj = findServiceById(ap.service_id);
-        const total = roundMoney2(Number(serviceObj?.price || 0));
+        const finAp = normalizeAppointmentFinancials(ap);
+        const total = roundMoney2(Number(finAp.totalServicePrice || 0));
         if (Number.isFinite(total) && total > 0 && newPaid - total > 0.02) {
             return res.status(400).json({ error: 'Inconsistência: valor pago após quitação ultrapassa o total do procedimento.' });
         }

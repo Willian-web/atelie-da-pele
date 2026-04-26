@@ -53,7 +53,7 @@ const ADMIN_TOKEN_STORAGE_KEY = 'atelie_admin_token';
 
 /**
  * Catálogo ativo (etapa 1). Manter ids e preços alinhados a `SERVICES_CATALOG` em backend/server.js.
- * Pacotes Dia das Mães: ver `PROMO_MAES_SERVICES` (ativados pelo admin via API).
+ * Vales-presente Dia das Mães: ver `PROMO_MAES_SERVICES` (ativados pelo admin via API).
  * SERVICES_LEGACY: só para exibir agendamentos antigos já gravados no banco.
  */
 const SERVICES = [
@@ -168,28 +168,28 @@ const SERVICES = [
     }
 ];
 
-/** Pacotes Dia das Mães — espelhar ids/preços em `SERVICES_CATALOG` no servidor; exibição controlada pelo admin. */
+/** Vales-presente Dia das Mães — espelhar ids/preços em `SERVICES_CATALOG` no servidor; exibição controlada pelo admin. */
 const PROMO_MAES_SERVICES = [
     {
         id: 'promo_dia_maes_reflexologia',
-        name: 'Pacote Dia das Mães 1 — Reflexologia especial',
-        cardTitle: 'Pacote Dia das Mães 1',
-        price: 119,
-        category: 'Campanha — Dia das Mães',
+        name: 'Vale-presente Dia das Mães 1 — Reflexologia especial',
+        cardTitle: 'Vale-presente Dia das Mães 1',
+        price: 99,
+        category: 'Vales-presente — Dia das Mães',
         duration: 60,
-        summary: 'Pacote promocional por tempo limitado — presenteie quem você ama.',
+        summary: 'Vale-presente por tempo limitado — presenteie quem você ama.',
         detail:
             'Reflexologia, incluindo escalda-pés, massagem relaxante e hidratação profunda nos pés. Experiência completa de bem-estar em clima de spa.',
         promotionalCampaign: 'dia_maes'
     },
     {
         id: 'promo_dia_maes_facial',
-        name: 'Pacote Dia das Mães 2 — Limpeza suave & facial',
-        cardTitle: 'Pacote Dia das Mães 2',
-        price: 135,
-        category: 'Campanha — Dia das Mães',
+        name: 'Vale-presente Dia das Mães 2 — Limpeza suave & facial',
+        cardTitle: 'Vale-presente Dia das Mães 2',
+        price: 99,
+        category: 'Vales-presente — Dia das Mães',
         duration: 60,
-        summary: 'Pacote promocional por tempo limitado — pele renovada e momento de pausa.',
+        summary: 'Vale-presente por tempo limitado — pele renovada e momento de pausa.',
         detail:
             'Limpeza de pele suave, máscara revigorante e massagem facial. Ideal para devolver luminosidade com toque leve e acolhedor.',
         promotionalCampaign: 'dia_maes'
@@ -216,6 +216,114 @@ const getServiceMeta = (serviceId) => {
         SERVICES_LEGACY.find((s) => s.id === sid) ||
         null
     );
+};
+
+const getAppointmentServiceIdsFromApp = (app) => {
+    if (!app) return [];
+    if (Array.isArray(app.serviceIds) && app.serviceIds.length > 0) {
+        const out = [];
+        const seen = new Set();
+        for (const x of app.serviceIds) {
+            const id = String(x || '').trim();
+            if (!id || seen.has(id)) continue;
+            seen.add(id);
+            out.push(id);
+        }
+        if (out.length) return out;
+    }
+    const sid = app.serviceId || app.service_id;
+    return sid ? [String(sid)] : [];
+};
+
+const getServiceSlotsFromApp = (app) => {
+    if (!app) return [];
+    if (Array.isArray(app.serviceSlots) && app.serviceSlots.length > 0) {
+        return app.serviceSlots
+            .map((s) => ({
+                serviceId: String(s.serviceId || s.service_id || '').trim(),
+                date: String(s.date || '').trim(),
+                time: normalizeSlotTimeLabel(s.time) || String(s.time || '').trim()
+            }))
+            .filter((s) => s.serviceId && s.date && s.time);
+    }
+    const ids = getAppointmentServiceIdsFromApp(app);
+    const d = String(app.date || '').trim();
+    const t = normalizeSlotTimeLabel(app.time) || String(app.time || '').trim();
+    if (!d || !t || ids.length === 0) return [];
+    if (ids.length === 1) return [{ serviceId: ids[0], date: d, time: t }];
+    let cur = parseTimeToMinutes(t);
+    if (cur == null) return [];
+    const out = [];
+    for (const id of ids) {
+        const meta = getServiceMeta(id);
+        const mm =
+            meta && typeof meta.duration === 'number' && Number.isFinite(meta.duration)
+                ? meta.duration
+                : DEFAULT_APPOINTMENT_DURATION_MIN;
+        const hh = String(Math.floor(cur / 60)).padStart(2, '0');
+        const mi = String(cur % 60).padStart(2, '0');
+        const tStr = normalizeSlotTimeLabel(`${hh}:${mi}`);
+        if (!tStr) return [];
+        out.push({ serviceId: id, date: d, time: tStr });
+        cur += mm;
+    }
+    return out;
+};
+
+const getTotalDurationMinutesForServiceIds = (ids) => {
+    const arr = Array.isArray(ids) ? ids : [];
+    if (arr.length === 0) return DEFAULT_APPOINTMENT_DURATION_MIN;
+    return arr.reduce((sum, id) => {
+        const m = getServiceMeta(id);
+        const d = m && typeof m.duration === 'number' ? m.duration : DEFAULT_APPOINTMENT_DURATION_MIN;
+        return sum + d;
+    }, 0);
+};
+
+const buildLineItemsFromAppointmentApp = (app) => {
+    if (Array.isArray(app?.serviceLineItems) && app.serviceLineItems.length) {
+        return app.serviceLineItems;
+    }
+    return getAppointmentServiceIdsFromApp(app).map((id) => {
+        const m = getServiceMeta(id);
+        return {
+            id,
+            name: m ? getClientServiceCardTitle(m) : id,
+            price: m && m.price != null ? Number(m.price) : 0
+        };
+    });
+};
+
+const formatAgendaServiceSummary = (app) => {
+    const lines = buildLineItemsFromAppointmentApp(app);
+    if (!lines.length) return { label: '—', total: null, scheduleHint: '' };
+    const label = lines.map((l) => l.name || l.id).join(' + ');
+    const total = lines.reduce((s, l) => s + (Number.isFinite(Number(l.price)) ? Number(l.price) : 0), 0);
+    const slots = getServiceSlotsFromApp(app);
+    const mode = String(app.scheduleMode || app.schedule_mode || '').toLowerCase();
+    let scheduleHint = '';
+    if (slots.length > 1) {
+        const sameDay = slots.every((s) => s.date === slots[0].date);
+        if (mode === 'sequential' && sameDay) {
+            const sorted = [...slots].sort(
+                (a, b) => (parseTimeToMinutes(a.time) || 0) - (parseTimeToMinutes(b.time) || 0)
+            );
+            const d0 = sorted[0].date;
+            const last = sorted[sorted.length - 1];
+            const lastStart = parseTimeToMinutes(last.time) || 0;
+            const lastDur = getTotalDurationMinutesForServiceIds([last.serviceId]);
+            const rangeEnd = formatMinutesAsHHMM(lastStart + lastDur);
+            scheduleHint = `${new Date(d0 + 'T12:00:00').toLocaleDateString('pt-BR')} ${sorted[0].time}–${rangeEnd} (sequência)`;
+        } else {
+            scheduleHint = slots
+                .map(
+                    (s) =>
+                        `${new Date(s.date + 'T12:00:00').toLocaleDateString('pt-BR')} ${s.time}`
+                )
+                .join(' · ');
+        }
+    }
+    return { label, total: Math.round(total * 100) / 100, scheduleHint };
 };
 
 /** Título discreto no fluxo cliente (card, resumo, WhatsApp). `name` permanece o nome completo do catálogo (admin / “Ver detalhes”). */
@@ -296,6 +404,13 @@ const parseTimeToMinutes = (timeStr) => {
     return h * 60 + mm;
 };
 
+const formatMinutesAsHHMM = (totalMin) => {
+    if (totalMin == null || !Number.isFinite(totalMin)) return '';
+    const h = Math.floor(totalMin / 60) % 24;
+    const m = Math.round(totalMin % 60);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+};
+
 /**
  * Grade em intervalos de 1 hora (só :00). Seg–sex 14h–20h; sáb 13h–18h; domingo fechado.
  * Considera bloqueio de dia inteiro (blocked_full_days), bloqueios por horário, ocupação e intervalo mínimo entre inícios.
@@ -305,7 +420,7 @@ const generateTimeSlots = (
     existingAppointments,
     blockedSlotsList = [],
     blockedFullDaysList = [],
-    selectedServiceIdForPreview = ''
+    selectedServiceIdsForPreview = []
 ) => {
     if (!dateString) return [];
 
@@ -338,26 +453,28 @@ const generateTimeSlots = (
             .filter(Boolean)
     );
 
-    const activeApps = existingAppointments.filter(
-        (app) => app.date === dateString && ['pending_payment', 'confirmed', 'completed'].includes(app.status)
-    );
+    const activeApps = existingAppointments.filter((app) => {
+        if (!['pending_payment', 'confirmed', 'completed'].includes(app.status)) return false;
+        const slots = getServiceSlotsFromApp(app);
+        if (slots.length) return slots.some((s) => s.date === dateString);
+        return app.date === dateString;
+    });
 
-    const bookedIntervals = activeApps
-        .map((app) => {
-            const startMins = parseTimeToMinutes(app.time);
-            if (startMins == null) return null;
-            const service = getServiceMeta(app.serviceId);
-            const duration =
-                service && typeof service.duration === 'number' ? service.duration : DEFAULT_APPOINTMENT_DURATION_MIN;
-            return { start: startMins, end: startMins + duration };
-        })
-        .filter(Boolean);
+    const bookedIntervals = activeApps.flatMap((app) => {
+        const slots = getServiceSlotsFromApp(app);
+        const out = [];
+        for (const sl of slots) {
+            if (sl.date !== dateString) continue;
+            const startMins = parseTimeToMinutes(sl.time);
+            if (startMins == null) continue;
+            const dur = getTotalDurationMinutesForServiceIds([sl.serviceId]);
+            out.push({ start: startMins, end: startMins + dur });
+        }
+        return out;
+    });
 
-    const previewMeta = getServiceMeta(selectedServiceIdForPreview);
-    const previewDuration =
-        previewMeta && typeof previewMeta.duration === 'number'
-            ? previewMeta.duration
-            : DEFAULT_APPOINTMENT_DURATION_MIN;
+    const previewIds = Array.isArray(selectedServiceIdsForPreview) ? selectedServiceIdsForPreview : [];
+    const previewDuration = getTotalDurationMinutesForServiceIds(previewIds);
 
     return slots.map((time) => {
         const slotStartMins = parseTimeToMinutes(time);
@@ -381,9 +498,14 @@ const generateTimeSlots = (
         );
 
         const tooCloseToStart = activeApps.some((app) => {
-            const S = parseTimeToMinutes(app.time);
-            if (S == null || slotStartMins == null) return false;
-            return Math.abs(slotStartMins - S) < MIN_START_GAP_MINUTES;
+            const slotList = getServiceSlotsFromApp(app);
+            for (const sl of slotList) {
+                if (sl.date !== dateString) continue;
+                const S = parseTimeToMinutes(sl.time);
+                if (S == null || slotStartMins == null) continue;
+                if (Math.abs(slotStartMins - S) < MIN_START_GAP_MINUTES) return true;
+            }
+            return false;
         });
 
         const isBooked = isOverlapBooked || tooCloseToStart;
@@ -395,7 +517,9 @@ const generateTimeSlots = (
             isPast,
             isBooked,
             isBlockedManual,
-            hasAppointmentAtTime: activeApps.some((a) => normalizeSlotTimeLabel(a.time) === time),
+            hasAppointmentAtTime: activeApps.some((a) =>
+                getServiceSlotsFromApp(a).some((sl) => sl.date === dateString && normalizeSlotTimeLabel(sl.time) === time)
+            ),
             isFullDayBlocked: fullDayBlocked
         };
     });
@@ -498,9 +622,11 @@ const ClientArea = ({
 }) => {
     const [step, setStep] = useState(1);
     
-    const [selectedService, setSelectedService] = useState('');
+    const [selectedServiceIds, setSelectedServiceIds] = useState([]);
     const [serviceDetailOpenId, setServiceDetailOpenId] = useState(null);
     const [bookingData, setBookingData] = useState({ date: '', time: '', notes: '', location: '' });
+    const [scheduleMode, setScheduleMode] = useState(null);
+    const [perServicePlan, setPerServicePlan] = useState([]);
     const [availableTimes, setAvailableTimes] = useState([]);
     
     const [loginPhone, setLoginPhone] = useState('');
@@ -563,14 +689,56 @@ const ClientArea = ({
 
     const todayStr = getLocalTodayStr();
 
+    const selectionTotalPrice = useMemo(() => {
+        const t = selectedServiceIds.reduce((s, id) => s + Number(getServiceMeta(id)?.price || 0), 0);
+        return Math.round(t * 100) / 100;
+    }, [selectedServiceIds]);
+
+    const selectionHasPromo = useMemo(
+        () => selectedServiceIds.some((id) => PROMO_MAES_SERVICES.some((p) => p.id === id)),
+        [selectedServiceIds]
+    );
+
+    const toggleServiceSelection = (rawId) => {
+        const sid = String(rawId || '').trim();
+        if (!sid) return;
+        setSelectedServiceIds((prev) => {
+            const i = prev.indexOf(sid);
+            if (i >= 0) return prev.filter((_, j) => j !== i);
+            return [...prev, sid];
+        });
+        setServiceDetailOpenId(null);
+    };
+
+    useEffect(() => {
+        const n = selectedServiceIds.length;
+        if (n <= 1) {
+            setScheduleMode(null);
+            setPerServicePlan([]);
+            return;
+        }
+        setPerServicePlan((prev) =>
+            selectedServiceIds.map((id, i) => {
+                if (prev[i] && typeof prev[i] === 'object') {
+                    return { date: prev[i].date || '', time: prev[i].time || '' };
+                }
+                return { date: '', time: '' };
+            })
+        );
+    }, [selectedServiceIds]);
+
     useEffect(() => {
         const onPromoTab = serviceCatFilter === PROMO_CLIENT_FILTER_LABEL;
         const onTodosWithPromos = serviceCatFilter === 'Todos' && promoPackagesEnabled;
-        if (!onPromoTab && !onTodosWithPromos && PROMO_MAES_SERVICES.some((p) => p.id === selectedService)) {
-            setSelectedService('');
+        if (
+            !onPromoTab &&
+            !onTodosWithPromos &&
+            selectedServiceIds.some((id) => PROMO_MAES_SERVICES.some((p) => p.id === id))
+        ) {
+            setSelectedServiceIds((prev) => prev.filter((id) => !PROMO_MAES_SERVICES.some((p) => p.id === id)));
             setServiceDetailOpenId(null);
         }
-    }, [serviceCatFilter, selectedService, promoPackagesEnabled]);
+    }, [serviceCatFilter, selectedServiceIds, promoPackagesEnabled]);
 
     useEffect(() => {
         if (!promoPackagesEnabled && serviceCatFilter === PROMO_CLIENT_FILTER_LABEL) {
@@ -579,27 +747,107 @@ const ClientArea = ({
     }, [promoPackagesEnabled, serviceCatFilter]);
 
     useEffect(() => {
-        if (!promoPackagesEnabled && PROMO_MAES_SERVICES.some((p) => p.id === selectedService)) {
-            setSelectedService('');
+        if (!promoPackagesEnabled && selectedServiceIds.some((id) => PROMO_MAES_SERVICES.some((p) => p.id === id))) {
+            setSelectedServiceIds((prev) => prev.filter((id) => !PROMO_MAES_SERVICES.some((p) => p.id === id)));
             setServiceDetailOpenId(null);
         }
-    }, [promoPackagesEnabled, selectedService]);
+    }, [promoPackagesEnabled, selectedServiceIds]);
 
     useEffect(() => {
-        if (bookingData.date) {
+        if (!bookingData.date) {
+            setAvailableTimes([]);
+            return;
+        }
+        if (selectedServiceIds.length <= 1) {
             setAvailableTimes(
                 generateTimeSlots(
                     bookingData.date,
                     appointments,
                     blockedSlots || [],
                     blockedFullDays || [],
-                    selectedService
+                    selectedServiceIds
                 )
             );
-        } else {
-            setAvailableTimes([]);
+            return;
         }
-    }, [bookingData.date, appointments, blockedSlots, blockedFullDays, selectedService]);
+        if (scheduleMode === 'sequential') {
+            setAvailableTimes(
+                generateTimeSlots(
+                    bookingData.date,
+                    appointments,
+                    blockedSlots || [],
+                    blockedFullDays || [],
+                    selectedServiceIds
+                )
+            );
+            return;
+        }
+        setAvailableTimes([]);
+    }, [bookingData.date, appointments, blockedSlots, blockedFullDays, selectedServiceIds, scheduleMode]);
+
+    const canProceedStep1 = useMemo(() => {
+        if (selectedServiceIds.length === 0) return false;
+        if (selectedServiceIds.length === 1) {
+            return !!(bookingData.date && bookingData.time);
+        }
+        if (!scheduleMode) return false;
+        if (scheduleMode === 'sequential') {
+            return !!(bookingData.date && bookingData.time);
+        }
+        if (scheduleMode === 'per_service') {
+            return (
+                perServicePlan.length === selectedServiceIds.length &&
+                perServicePlan.every((p) => p && p.date && p.time)
+            );
+        }
+        return false;
+    }, [selectedServiceIds, bookingData.date, bookingData.time, scheduleMode, perServicePlan]);
+
+    const scheduleSummaryBlock = useMemo(() => {
+        const n = selectedServiceIds.length;
+        if (n === 0) return null;
+        if (n === 1 && bookingData.date && bookingData.time) {
+            return (
+                <div style={{ marginBottom: '10px', fontSize: '15px' }}>
+                    <strong style={{ color: 'var(--primary-color)' }}>Agendamento para:</strong>{' '}
+                    {new Date(bookingData.date + 'T12:00:00').toLocaleDateString('pt-BR')} às {bookingData.time}
+                </div>
+            );
+        }
+        if (scheduleMode === 'sequential' && bookingData.date && bookingData.time) {
+            const sm = parseTimeToMinutes(bookingData.time);
+            const dur = getTotalDurationMinutesForServiceIds(selectedServiceIds);
+            const endLabel = sm != null ? formatMinutesAsHHMM(sm + dur) : '';
+            return (
+                <div style={{ marginBottom: '10px', fontSize: '15px' }}>
+                    <strong style={{ color: 'var(--primary-color)' }}>Agendamento (sequência no mesmo dia):</strong>{' '}
+                    {new Date(bookingData.date + 'T12:00:00').toLocaleDateString('pt-BR')}, de {bookingData.time} a {endLabel}
+                </div>
+            );
+        }
+        if (scheduleMode === 'per_service' && perServicePlan.length === n) {
+            return (
+                <div style={{ marginBottom: '10px', fontSize: '15px' }}>
+                    <strong style={{ color: 'var(--primary-color)' }}>Horários por procedimento:</strong>
+                    <ul style={{ margin: '8px 0 0', paddingLeft: '1.1rem', fontSize: '14px', lineHeight: 1.55 }}>
+                        {selectedServiceIds.map((sid, i) => {
+                            const m = getServiceMeta(sid);
+                            const p = perServicePlan[i] || {};
+                            return (
+                                <li key={`sum-${sid}-${i}`}>
+                                    <strong>{m ? getClientServiceCardTitle(m) : sid}:</strong>{' '}
+                                    {p.date
+                                        ? `${new Date(p.date + 'T12:00:00').toLocaleDateString('pt-BR')} às ${p.time || '—'}`
+                                        : '—'}
+                                </li>
+                            );
+                        })}
+                    </ul>
+                </div>
+            );
+        }
+        return null;
+    }, [selectedServiceIds, bookingData.date, bookingData.time, scheduleMode, perServicePlan]);
 
     useEffect(() => {
         setBookingData(prev => ({...prev, time: ''}));
@@ -619,13 +867,32 @@ const ClientArea = ({
         if (!appRow) return;
 
         const sid = appRow.serviceId || appRow.service_id;
-        const meta = getServiceMeta(sid) || {
-            id: sid || 'servico',
-            name: appRow.serviceName || appRow.service_id || 'Serviço',
-            price: Number(appRow.paymentAmount) || 0,
-            category: '',
-            duration: DEFAULT_APPOINTMENT_DURATION_MIN
-        };
+        const idsRestore = getAppointmentServiceIdsFromApp(appRow);
+        const effectiveIds = idsRestore.length ? idsRestore : sid ? [String(sid)] : [];
+        const metas = effectiveIds.map((id) => getServiceMeta(id)).filter(Boolean);
+        let mergedService;
+        if (metas.length === 1) {
+            mergedService = metas[0];
+        } else if (metas.length > 1) {
+            const tot = metas.reduce((s, m) => s + Number(m.price || 0), 0);
+            mergedService = {
+                id: effectiveIds[0],
+                name: metas.map((m) => m.name).join(' + '),
+                cardTitle: metas.map((m) => getClientServiceCardTitle(m)).join(' + '),
+                price: Math.round(tot * 100) / 100,
+                category: '',
+                duration: getTotalDurationMinutesForServiceIds(effectiveIds)
+            };
+        } else {
+            mergedService = {
+                id: sid || 'servico',
+                name: appRow.serviceName || appRow.service_id || 'Serviço',
+                cardTitle: appRow.serviceName || appRow.service_id || 'Serviço',
+                price: Number(appRow.paymentAmount) || 0,
+                category: '',
+                duration: DEFAULT_APPOINTMENT_DURATION_MIN
+            };
+        }
 
         const cid = appRow.clientId || appRow.client_id;
         let clientRow = (clients || []).find((c) => String(c.id) === String(cid));
@@ -639,9 +906,9 @@ const ClientArea = ({
             };
         }
 
-        setSelectedService(String(sid || ''));
+        setSelectedServiceIds(effectiveIds);
         setSelectedClient(clientRow);
-        setCompletedAppInfo({ app: appRow, client: clientRow, service: meta });
+        setCompletedAppInfo({ app: appRow, client: clientRow, service: mergedService });
         setStep(4);
         setCheckedTerms(true);
         setApiError('');
@@ -661,11 +928,13 @@ const ClientArea = ({
     }, [bookingRestoreOrderNsu, appointments, clients, onBookingRestoreConsumed]);
 
     useEffect(() => {
-        const p = SERVICES.find((s) => s.id === selectedService);
-        if (p && Number(p.price) <= FIXED_SIGNAL_AMOUNT) {
+        if (selectedServiceIds.length === 0) return;
+        const hasPromo = selectedServiceIds.some((id) => PROMO_MAES_SERVICES.some((p) => p.id === id));
+        const totalP = selectedServiceIds.reduce((s, id) => s + Number(getServiceMeta(id)?.price || 0), 0);
+        if (hasPromo || totalP <= FIXED_SIGNAL_AMOUNT) {
             setPaymentType('full');
         }
-    }, [selectedService]);
+    }, [selectedServiceIds]);
 
     const handleCreateClient = async () => {
         setNewClientFormError('');
@@ -710,9 +979,10 @@ const ClientArea = ({
     };
 
     const handleConfirmBooking = async () => {
-        const serviceId = selectedService;
-        const serviceObj = SERVICES.find((s) => s.id === serviceId);
-        const forceFull = serviceObj && Number(serviceObj.price) <= FIXED_SIGNAL_AMOUNT;
+        const ids = [...selectedServiceIds];
+        const hasPromo = ids.some((id) => PROMO_MAES_SERVICES.some((p) => p.id === id));
+        const totalP = ids.reduce((s, id) => s + Number(getServiceMeta(id)?.price || 0), 0);
+        const forceFull = hasPromo || totalP <= FIXED_SIGNAL_AMOUNT;
         const payType = forceFull || paymentType === 'full' ? 'full' : 'partial';
 
         if (!checkedTerms) {
@@ -733,25 +1003,65 @@ const ClientArea = ({
         setApiError('');
         
         try {
-            if (!serviceObj) {
-                throw new Error('Selecione um procedimento válido.');
+            if (ids.length === 0) {
+                throw new Error('Selecione ao menos um procedimento.');
             }
+            if (ids.length > 1 && !scheduleMode) {
+                throw new Error('Escolha como deseja combinar os horários (sequência ou separados).');
+            }
+
+            const appointmentBody =
+                ids.length === 1
+                    ? {
+                          serviceIds: ids,
+                          clientId: selectedClient.id,
+                          clientName: selectedClient.name,
+                          clientPhone: selectedClient.phone,
+                          clientEmail: emailTrim,
+                          date: bookingData.date,
+                          time: bookingData.time,
+                          notes: bookingData.notes,
+                          location: bookingData.location,
+                          paymentType: payType
+                      }
+                    : scheduleMode === 'sequential'
+                      ? {
+                            serviceIds: ids,
+                            scheduleMode: 'sequential',
+                            clientId: selectedClient.id,
+                            clientName: selectedClient.name,
+                            clientPhone: selectedClient.phone,
+                            clientEmail: emailTrim,
+                            date: bookingData.date,
+                            time: bookingData.time,
+                            notes: bookingData.notes,
+                            location: bookingData.location,
+                            paymentType: payType
+                        }
+                      : {
+                            serviceIds: ids,
+                            scheduleMode: 'per_service',
+                            slots: ids.map((id, i) => {
+                                const row = perServicePlan[i] || {};
+                                return {
+                                    serviceId: id,
+                                    date: String(row.date || '').trim(),
+                                    time: normalizeSlotTimeLabel(row.time) || String(row.time || '').trim()
+                                };
+                            }),
+                            clientId: selectedClient.id,
+                            clientName: selectedClient.name,
+                            clientPhone: selectedClient.phone,
+                            clientEmail: emailTrim,
+                            notes: bookingData.notes,
+                            location: bookingData.location,
+                            paymentType: payType
+                        };
 
             const response = await fetch(`${API_BASE_URL}/appointments`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    serviceId: serviceId,
-                    clientId: selectedClient.id,
-                    clientName: selectedClient.name,
-                    clientPhone: selectedClient.phone,
-                    clientEmail: emailTrim,
-                    date: bookingData.date,
-                    time: bookingData.time,
-                    notes: bookingData.notes,
-                    location: bookingData.location,
-                    paymentType: payType
-                })
+                body: JSON.stringify(appointmentBody)
             });
 
             const data = await response.json();
@@ -766,7 +1076,20 @@ const ClientArea = ({
                 throw new Error(data.error || 'Falha no servidor ao agendar.');
             }
 
-            setCompletedAppInfo({ service: serviceObj, app: data, client: selectedClient });
+            const metas = ids.map((id) => getServiceMeta(id)).filter(Boolean);
+            const mergedForUi =
+                metas.length === 1
+                    ? metas[0]
+                    : {
+                          id: ids[0],
+                          name: metas.map((m) => m.name).join(' + '),
+                          cardTitle: metas.map((m) => getClientServiceCardTitle(m)).join(' + '),
+                          price: Math.round(totalP * 100) / 100,
+                          category: '',
+                          duration: getTotalDurationMinutesForServiceIds(ids)
+                      };
+
+            setCompletedAppInfo({ service: mergedForUi, app: data, client: selectedClient });
             refreshData();
             setStep(4);
 
@@ -777,9 +1100,8 @@ const ClientArea = ({
         }
     };
 
-    const priceObj = SERVICES.find(s=>s.id === selectedService);
     const adiantamento = formatPrice(FIXED_SIGNAL_AMOUNT);
-    const forceFullPayment = priceObj && Number(priceObj.price) <= FIXED_SIGNAL_AMOUNT;
+    const forceFullPayment = selectionHasPromo || selectionTotalPrice <= FIXED_SIGNAL_AMOUNT;
     const effectiveFull = forceFullPayment || paymentType === 'full';
 
     return (
@@ -787,12 +1109,9 @@ const ClientArea = ({
             {step === 1 && (
                 <div className="booking-section step-container">
                     <h2 className="section-title">O que deseja agendar?</h2>
-                    {promoPackagesEnabled && (
-                        <p className="promo-client-hint" style={{ margin: '-6px 0 14px', fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.45 }}>
-                            Pacotes <strong style={{ color: 'var(--brand-primary)', fontWeight: 600 }}>Dia das Mães</strong> ficam ao final em{' '}
-                            <strong>Todos</strong> e também na aba <strong>{PROMO_CLIENT_FILTER_LABEL}</strong>.
-                        </p>
-                    )}
+                    <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '-8px 0 12px', lineHeight: 1.45 }}>
+                        Selecione <strong>um ou mais</strong> procedimentos. Toque novamente no card para <strong>desmarcar</strong>.
+                    </p>
                     <div className="service-category-chips" role="tablist" aria-label="Filtrar por categoria ou campanha">
                         {serviceCategoryChips.map((label) => (
                             <button
@@ -818,22 +1137,18 @@ const ClientArea = ({
                                     role="button"
                                     tabIndex={0}
                                     className={`service-card${s.promotionalCampaign ? ' service-card--promo' : ''}${
-                                        selectedService === s.id ? ' selected' : ''
+                                        selectedServiceIds.includes(s.id) ? ' selected' : ''
                                     }`}
-                                    onClick={() => {
-                                        setSelectedService(s.id);
-                                        setServiceDetailOpenId(null);
-                                    }}
+                                    onClick={() => toggleServiceSelection(s.id)}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter' || e.key === ' ') {
                                             e.preventDefault();
-                                            setSelectedService(s.id);
-                                            setServiceDetailOpenId(null);
+                                            toggleServiceSelection(s.id);
                                         }
                                     }}
                                 >
                                     {s.promotionalCampaign ? (
-                                        <span className="service-card__promo-pill" title="Campanha promocional">
+                                        <span className="service-card__promo-pill" title="Vales-presente Dia das Mães">
                                             Dia das Mães
                                         </span>
                                     ) : null}
@@ -903,54 +1218,284 @@ const ClientArea = ({
                         })}
                     </div>
 
-                    <form onSubmit={e => { e.preventDefault(); if(selectedService && bookingData.date && bookingData.time) setStep(2); }} className="form-grid" style={{marginTop: '40px'}}>
-                        <div className="form-group full-width">
-                            <label className="form-label">Data Escolhida *</label>
-                            <input type="date" className="form-control" min={todayStr} value={bookingData.date} onChange={e => setBookingData({...bookingData, date: e.target.value})} required />
+                    {selectedServiceIds.length > 1 && (
+                        <div
+                            className="schedule-mode-block"
+                            style={{
+                                marginTop: '28px',
+                                padding: '16px',
+                                borderRadius: '12px',
+                                border: '1px solid var(--border-color)',
+                                background: '#faf9fb'
+                            }}
+                        >
+                            <h3 className="section-title" style={{ fontSize: '17px', marginBottom: '10px' }}>
+                                Como deseja agendar os procedimentos?
+                            </h3>
+                            <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 14px', lineHeight: 1.45 }}>
+                                <strong>Em sequência:</strong> um único dia e horário de início; cada procedimento usa sua duração no catálogo (padrão 1h).{' '}
+                                <strong>Separados:</strong> data e hora individuais para cada um. O sinal continua único (R$ 30,00 quando aplicável).
+                            </p>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                                <button
+                                    type="button"
+                                    className={`btn-admin${scheduleMode === 'sequential' ? ' active' : ''}`}
+                                    style={{
+                                        width: '100%',
+                                        justifyContent: 'center',
+                                        padding: '14px 16px',
+                                        fontWeight: 600,
+                                        border: scheduleMode === 'sequential' ? '2px solid var(--brand-primary)' : undefined
+                                    }}
+                                    onClick={() => {
+                                        setScheduleMode('sequential');
+                                        setBookingData((b) => ({ ...b, time: '' }));
+                                    }}
+                                >
+                                    <i className="fas fa-stream" style={{ marginRight: '8px' }} />
+                                    Agendar todos em sequência
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`btn-admin${scheduleMode === 'per_service' ? ' active' : ''}`}
+                                    style={{
+                                        width: '100%',
+                                        justifyContent: 'center',
+                                        padding: '14px 16px',
+                                        fontWeight: 600,
+                                        border: scheduleMode === 'per_service' ? '2px solid var(--brand-primary)' : undefined
+                                    }}
+                                    onClick={() => {
+                                        setScheduleMode('per_service');
+                                        setBookingData((b) => ({ ...b, date: '', time: '' }));
+                                        setPerServicePlan((prev) =>
+                                            selectedServiceIds.map((_, i) =>
+                                                prev[i] && typeof prev[i] === 'object'
+                                                    ? { date: prev[i].date || '', time: prev[i].time || '' }
+                                                    : { date: '', time: '' }
+                                            )
+                                        );
+                                    }}
+                                >
+                                    <i className="fas fa-calendar-alt" style={{ marginRight: '8px' }} />
+                                    Escolher horários separadamente
+                                </button>
+                            </div>
+                            {selectedServiceIds.length > 1 && !scheduleMode && (
+                                <p style={{ margin: '12px 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>
+                                    Selecione uma das opções acima para liberar os campos de data e horário.
+                                </p>
+                            )}
                         </div>
-                        
-                        <div className="form-group full-width">
-                            <label className="form-label">Horários Ofertados *</label>
-                            {!bookingData.date ? <div style={{color: 'var(--text-muted)', fontSize: '14px'}}>Escolha a data acima primeiro.</div> :
-                                availableTimes.length === 0 ? (
-                                    <div style={{color: 'var(--danger)', fontSize: '14px'}}>Nenhum horário neste dia (fechado ou indisponível).</div>
-                                ) : availableTimes.length > 0 && availableTimes.every((s) => !s.available) ? (
-                                    <div style={{ color: 'var(--danger)', fontSize: '14px' }}>
-                                        {availableTimes.some((s) => s.isFullDayBlocked)
-                                            ? 'Este dia está bloqueado para agendamentos. Escolha outra data.'
-                                            : 'Não há horários livres neste dia. Escolha outra data ou horário.'}
-                                    </div>
-                                ) : (
-                                <div className="time-slots">
-                                    {availableTimes.map((slot, idx) => {
-                                        let className = "time-slot";
-                                        if (slot.isPast) className += " past-slot";
-                                        else if (!slot.available) className += " disabled";
-                                        if (bookingData.time === slot.time) className += " selected";
+                    )}
+
+                    <form
+                        onSubmit={(e) => {
+                            e.preventDefault();
+                            if (canProceedStep1) setStep(2);
+                        }}
+                        className="form-grid"
+                        style={{ marginTop: '40px' }}
+                    >
+                        {(selectedServiceIds.length <= 1 || scheduleMode === 'sequential') && (
+                            <>
+                                <div className="form-group full-width">
+                                    <label className="form-label">Data escolhida *</label>
+                                    <input
+                                        type="date"
+                                        className="form-control"
+                                        min={todayStr}
+                                        value={bookingData.date}
+                                        onChange={(e) => setBookingData({ ...bookingData, date: e.target.value })}
+                                        required={selectedServiceIds.length <= 1 || scheduleMode === 'sequential'}
+                                    />
+                                </div>
+
+                                <div className="form-group full-width">
+                                    <label className="form-label">
+                                        {selectedServiceIds.length > 1
+                                            ? 'Horário inicial (todos em sequência no mesmo dia) *'
+                                            : 'Horários ofertados *'}
+                                    </label>
+                                    {!bookingData.date ? (
+                                        <div style={{ color: 'var(--text-muted)', fontSize: '14px' }}>Escolha a data acima primeiro.</div>
+                                    ) : availableTimes.length === 0 ? (
+                                        <div style={{ color: 'var(--danger)', fontSize: '14px' }}>
+                                            Nenhum horário neste dia (fechado ou indisponível).
+                                        </div>
+                                    ) : availableTimes.length > 0 && availableTimes.every((s) => !s.available) ? (
+                                        <div style={{ color: 'var(--danger)', fontSize: '14px' }}>
+                                            {availableTimes.some((s) => s.isFullDayBlocked)
+                                                ? 'Este dia está bloqueado para agendamentos. Escolha outra data.'
+                                                : 'Não há horários livres neste dia para esta combinação. Escolha outra data ou horário.'}
+                                        </div>
+                                    ) : (
+                                        <div className="time-slots">
+                                            {availableTimes.map((slot, idx) => {
+                                                let className = 'time-slot';
+                                                if (slot.isPast) className += ' past-slot';
+                                                else if (!slot.available) className += ' disabled';
+                                                if (bookingData.time === slot.time) className += ' selected';
+                                                return (
+                                                    <div
+                                                        key={idx}
+                                                        className={className}
+                                                        onClick={() => {
+                                                            if (slot.available && !slot.isPast) {
+                                                                setBookingData({ ...bookingData, time: slot.time });
+                                                            }
+                                                        }}
+                                                    >
+                                                        {slot.time}{' '}
+                                                        {slot.isPast && (
+                                                            <i className="fas fa-history" style={{ marginLeft: '4px', fontSize: '10px' }}></i>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
+
+                        {selectedServiceIds.length > 1 && scheduleMode === 'per_service' && (
+                            <div className="form-group full-width">
+                                <label className="form-label">Data e horário por procedimento *</label>
+                                <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 12px', lineHeight: 1.45 }}>
+                                    Cada procedimento reserva sua faixa conforme a duração cadastrada (padrão 1h). Validamos disponibilidade e bloqueios em cada escolha.
+                                </p>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                                    {selectedServiceIds.map((sid, idx) => {
+                                        const m = getServiceMeta(sid);
+                                        const row = perServicePlan[idx] || { date: '', time: '' };
+                                        const slotOpts = row.date
+                                            ? generateTimeSlots(
+                                                  row.date,
+                                                  appointments,
+                                                  blockedSlots || [],
+                                                  blockedFullDays || [],
+                                                  [sid]
+                                              )
+                                            : [];
                                         return (
-                                            <div key={idx} className={className} 
-                                                onClick={() => { if(slot.available && !slot.isPast) setBookingData({...bookingData, time: slot.time}); }}
+                                            <div
+                                                key={`${sid}-${idx}`}
+                                                style={{
+                                                    padding: '14px',
+                                                    borderRadius: '10px',
+                                                    border: '1px solid var(--border-color)',
+                                                    background: '#fff'
+                                                }}
                                             >
-                                                {slot.time} {slot.isPast && <i className="fas fa-history" style={{marginLeft: '4px', fontSize: '10px'}}></i>}
+                                                <div style={{ fontWeight: 700, marginBottom: '10px', fontSize: '15px' }}>
+                                                    {m ? getClientServiceCardTitle(m) : sid}{' '}
+                                                    <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: '13px' }}>
+                                                        ({formatPrice(Number(m?.price || 0))})
+                                                    </span>
+                                                </div>
+                                                <label className="form-label" style={{ fontSize: '12px', marginBottom: '4px' }}>
+                                                    Data *
+                                                </label>
+                                                <input
+                                                    type="date"
+                                                    className="form-control"
+                                                    style={{ marginBottom: '10px', maxWidth: '280px' }}
+                                                    min={todayStr}
+                                                    value={row.date}
+                                                    onChange={(e) => {
+                                                        const v = e.target.value;
+                                                        setPerServicePlan((prev) => {
+                                                            const base = selectedServiceIds.map((_, i) =>
+                                                                prev[i] && typeof prev[i] === 'object' ? { ...prev[i] } : { date: '', time: '' }
+                                                            );
+                                                            base[idx] = { ...base[idx], date: v, time: '' };
+                                                            return base;
+                                                        });
+                                                    }}
+                                                    required
+                                                />
+                                                {!row.date ? (
+                                                    <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
+                                                        Escolha a data deste procedimento.
+                                                    </div>
+                                                ) : slotOpts.length === 0 ? (
+                                                    <div style={{ color: 'var(--danger)', fontSize: '13px' }}>Sem grade neste dia.</div>
+                                                ) : slotOpts.every((s) => !s.available) ? (
+                                                    <div style={{ color: 'var(--danger)', fontSize: '13px' }}>
+                                                        {slotOpts.some((s) => s.isFullDayBlocked)
+                                                            ? 'Dia bloqueado para agendamentos.'
+                                                            : 'Sem horário livre neste dia para este procedimento.'}
+                                                    </div>
+                                                ) : (
+                                                    <div className="time-slots">
+                                                        {slotOpts.map((slot, sidx) => {
+                                                            let className = 'time-slot';
+                                                            if (slot.isPast) className += ' past-slot';
+                                                            else if (!slot.available) className += ' disabled';
+                                                            if (row.time === slot.time) className += ' selected';
+                                                            return (
+                                                                <div
+                                                                    key={sidx}
+                                                                    className={className}
+                                                                    onClick={() => {
+                                                                        if (slot.available && !slot.isPast) {
+                                                                            setPerServicePlan((prev) => {
+                                                                                const base = selectedServiceIds.map((_, i) =>
+                                                                                    prev[i] && typeof prev[i] === 'object'
+                                                                                        ? { ...prev[i] }
+                                                                                        : { date: '', time: '' }
+                                                                                );
+                                                                                base[idx] = { ...base[idx], time: slot.time };
+                                                                                return base;
+                                                                            });
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    {slot.time}{' '}
+                                                                    {slot.isPast && (
+                                                                        <i
+                                                                            className="fas fa-history"
+                                                                            style={{ marginLeft: '4px', fontSize: '10px' }}
+                                                                        ></i>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
                                             </div>
                                         );
                                     })}
                                 </div>
-                                )}
+                            </div>
+                        )}
+
+                        <div className="form-group full-width">
+                            <label className="form-label">Endereço do local (opcional, se a domicílio)</label>
+                            <input
+                                type="text"
+                                className="form-control"
+                                placeholder="Rua, Número, Bairro/Complemento"
+                                value={bookingData.location}
+                                onChange={(e) => setBookingData({ ...bookingData, location: e.target.value })}
+                            />
                         </div>
 
                         <div className="form-group full-width">
-                            <label className="form-label">Endereço do Local (Opcional, se a domicílio)</label>
-                            <input type="text" className="form-control" placeholder="Rua, Número, Bairro/Complemento" value={bookingData.location} onChange={e => setBookingData({...bookingData, location: e.target.value})} />
-                        </div>
-                        
-                        <div className="form-group full-width">
-                            <label className="form-label">Detalhes da Sessão</label>
-                            <textarea className="form-control" placeholder="Algo que devemos saber antes?" value={bookingData.notes} onChange={e => setBookingData({...bookingData, notes: e.target.value})}></textarea>
+                            <label className="form-label">Detalhes da sessão</label>
+                            <textarea
+                                className="form-control"
+                                placeholder="Algo que devemos saber antes?"
+                                value={bookingData.notes}
+                                onChange={(e) => setBookingData({ ...bookingData, notes: e.target.value })}
+                            ></textarea>
                         </div>
 
                         <div className="form-group full-width">
-                            <button type="submit" className="btn-submit" disabled={!selectedService || !bookingData.date || !bookingData.time}>Prosseguir à Identificação <i className="fas fa-arrow-right"></i></button>
+                            <button type="submit" className="btn-submit" disabled={!canProceedStep1}>
+                                Prosseguir à Identificação <i className="fas fa-arrow-right"></i>
+                            </button>
                         </div>
                     </form>
                 </div>
@@ -1014,14 +1559,26 @@ const ClientArea = ({
                     <p style={{fontSize: '18px', color: 'var(--text-dark)', marginBottom: '20px'}}>Por favor <strong>{selectedClient.name.split(' ')[0]}</strong>, verifique atentamente.</p>
 
                     <div style={{background: '#fcfcfc', padding: '25px', borderRadius: '12px', textAlign: 'left', marginBottom: '20px', display: 'inline-block', maxWidth: '400px', width: '100%', border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.03)'}}>
-                        <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Serviço:</strong> {getClientServiceCardTitle(priceObj)}</div>
-                        <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Agendamento para:</strong> {new Date(bookingData.date + 'T12:00:00').toLocaleDateString('pt-BR')} às {bookingData.time}</div>
+                        <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Procedimentos:</strong></div>
+                        <ul style={{ margin: '0 0 12px', paddingLeft: '1.1rem', fontSize: '14px', lineHeight: 1.5 }}>
+                            {selectedServiceIds.map((sid) => {
+                                const m = getServiceMeta(sid);
+                                return (
+                                    <li key={sid} style={{ marginBottom: '4px' }}>
+                                        {m ? getClientServiceCardTitle(m) : sid}{' '}
+                                        <span style={{ color: 'var(--text-muted)' }}>({formatPrice(Number(m?.price || 0))})</span>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                        {scheduleSummaryBlock}
                         {bookingData.location && <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Endereço Cliente:</strong> {bookingData.location}</div>}
                         <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Local do atendimento:</strong> Ateliê da Pele — Rua Rio Jaguaribe, nº 274</div>
-                        <div style={{fontSize: '16px', borderTop: '1px solid #ddd', paddingTop: '10px', marginTop: '15px'}}><strong style={{color: '#00A676'}}>Valor do procedimento:</strong> {formatPrice(priceObj.price)}</div>
-                        <div style={{fontSize: '16px', color: '#eab308', fontWeight: 'bold'}}>
+                        <div style={{fontSize: '16px', borderTop: '1px solid #ddd', paddingTop: '10px', marginTop: '15px'}}><strong style={{color: '#00A676'}}>Valor total dos procedimentos:</strong> {formatPrice(selectionTotalPrice)}</div>
+                        <div style={{fontSize: '14px', color: 'var(--text-muted)', marginTop: '6px'}}>Sinal na reserva: <strong style={{ color: 'var(--text-dark)' }}>{adiantamento}</strong> (fixo)</div>
+                        <div style={{fontSize: '16px', color: '#eab308', fontWeight: 'bold', marginTop: '10px'}}>
                             {effectiveFull ? (
-                                <><strong style={{color: '#eab308'}}>Pagamento agora (integral):</strong> {formatPrice(priceObj.price)}</>
+                                <><strong style={{color: '#eab308'}}>Pagamento agora (integral):</strong> {formatPrice(selectionTotalPrice)}</>
                             ) : (
                                 <><strong style={{color: '#eab308'}}>Pagamento agora (sinal):</strong> {adiantamento}</>
                             )}
@@ -1038,7 +1595,7 @@ const ClientArea = ({
                     <div className="payment-type-group">
                         {forceFullPayment ? (
                             <div style={{ fontSize: '13px', lineHeight: 1.45, color: 'var(--text-muted)', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border-color)', background: '#f8fafc' }}>
-                                Este procedimento é confirmado com <strong style={{ color: 'var(--text-dark)' }}>pagamento integral</strong> agora ({formatPrice(priceObj.price)}).
+                                Este agendamento é confirmado com <strong style={{ color: 'var(--text-dark)' }}>pagamento integral</strong> agora ({formatPrice(selectionTotalPrice)}).
                             </div>
                         ) : (
                             <>
@@ -1065,7 +1622,7 @@ const ClientArea = ({
                                             checked={paymentType === "full"}
                                             onChange={() => setPaymentType("full")}
                                         />
-                                        Pagar o valor total ({formatPrice(priceObj?.price || 0)})
+                                        Pagar o valor total ({formatPrice(selectionTotalPrice)})
                                     </label>
                                 </div>
                                 {paymentType === "partial" ? (
@@ -1131,26 +1688,51 @@ const ClientArea = ({
                 };
 
                 const clientName = completedAppInfo?.client?.name || 'Cliente';
-                const serviceName = getClientServiceCardTitle(completedAppInfo?.service) || 'Serviço';
-                const servicePriceBRL = formatBRL(completedAppInfo?.service?.price);
+                const { scheduleHint: step4ScheduleHint } = formatAgendaServiceSummary(liveApp);
+                const lineItemsStep4 =
+                    Array.isArray(liveApp?.serviceLineItems) && liveApp.serviceLineItems.length > 0
+                        ? liveApp.serviceLineItems
+                        : buildLineItemsFromAppointmentApp(liveApp);
+                const svcTotalFromApi =
+                    liveApp?.paymentSummary?.totalServicePrice != null
+                        ? Number(liveApp.paymentSummary.totalServicePrice)
+                        : lineItemsStep4.reduce((s, li) => s + Number(li.price || 0), 0);
+                const serviceName =
+                    lineItemsStep4.length > 1
+                        ? lineItemsStep4.map((li) => li.name || li.id).join(' + ')
+                        : getClientServiceCardTitle(completedAppInfo?.service) ||
+                          lineItemsStep4[0]?.name ||
+                          'Serviço';
+                const servicePriceBRL = formatBRL(
+                    Number.isFinite(svcTotalFromApi) && svcTotalFromApi > 0
+                        ? svcTotalFromApi
+                        : completedAppInfo?.service?.price
+                );
 
                 const paymentType = liveApp?.paymentType || null;
                 const amountChargedBRL = formatBRL(liveApp?.amountCharged);
                 const remainingAmountBRL = formatBRL(liveApp?.remainingAmount);
                 const captureMethod = liveApp?.captureMethod || null;
 
-                const svcPriceNum = Number(completedAppInfo?.service?.price);
+                const svcPriceNum = Number(
+                    liveApp?.paymentSummary?.totalServicePrice != null
+                        ? liveApp.paymentSummary.totalServicePrice
+                        : completedAppInfo?.service?.price
+                );
                 const checkoutIntegral =
                     String(paymentType || '').toLowerCase() === 'full' || isProcedurePriceAtOrBelowSignal(svcPriceNum);
                 const dueNowDisplayBRL = amountChargedBRL || servicePriceBRL;
+
+                const scheduleLineForWa = step4ScheduleHint
+                    ? `Horários: ${step4ScheduleHint}`
+                    : `Data: ${dateStr}\nHorário: ${liveApp.time}`;
 
                 const baseLines = [
                     `Olá! Sou ${safeFirstName(clientName)} e fiz um agendamento no Ateliê da Pele. Gostaria de confirmar.`,
                     ``,
                     `Cliente: ${clientName}`,
                     `Serviço: ${serviceName}`,
-                    `Data: ${dateStr}`,
-                    `Horário: ${liveApp.time}`
+                    scheduleLineForWa
                 ];
 
                 const paymentLines = (() => {
@@ -1227,8 +1809,33 @@ const ClientArea = ({
                     
                     <div style={{background: '#fcfcfc', border: '1px solid #ddd', padding: '20px', borderRadius: '8px', textAlign: 'left', marginBottom: '25px', display: 'inline-block', maxWidth: '400px', width: '100%'}}>
                         <strong>{completedAppInfo.client.name}</strong><br/>
-                        {getClientServiceCardTitle(completedAppInfo.service)} (R$ {completedAppInfo.service.price.toFixed(2).replace('.', ',')})<br/>
-                        Para: {dateStr} às {liveApp.time} <br/>
+                        {lineItemsStep4.length > 0 ? (
+                            <div style={{ marginBottom: '10px' }}>
+                                {lineItemsStep4.map((li) => (
+                                    <div key={li.id} style={{ fontSize: '14px', marginBottom: '4px' }}>
+                                        • {(li.name && String(li.name)) || li.id} — {formatBRL(Number(li.price || 0))}
+                                    </div>
+                                ))}
+                                <div style={{ fontSize: '15px', fontWeight: 700, marginTop: '8px', color: 'var(--text-dark)' }}>
+                                    Total: {formatBRL(svcTotalFromApi)}
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                {getClientServiceCardTitle(completedAppInfo.service)} (
+                                {formatBRL(Number(completedAppInfo.service?.price || 0))})<br/>
+                            </>
+                        )}
+                        {step4ScheduleHint ? (
+                            <div style={{ marginTop: '8px', fontSize: '14px', lineHeight: 1.5 }}>
+                                <strong>Horários:</strong> {step4ScheduleHint}
+                            </div>
+                        ) : (
+                            <>
+                                Para: {dateStr} às {liveApp.time}
+                                <br />
+                            </>
+                        )}
                         <div style={{marginTop: '10px'}}>
                             {liveApp.location && <span style={{display: 'block', marginBottom: '8px'}}><strong>Endereço Cliente:</strong><br/>{liveApp.location}</span>}
                             <div style={{display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px'}}>
@@ -1291,7 +1898,9 @@ const ClientArea = ({
                         <button className="btn-admin" style={{margin: '0 auto'}} onClick={() => {
                             setStep(1);
                             setBookingData({date:'', time:'', notes:'', location:''});
-                            setSelectedService('');
+                            setScheduleMode(null);
+                            setPerServicePlan([]);
+                            setSelectedServiceIds([]);
                             setServiceDetailOpenId(null);
                             setSelectedClient(null);
                             setCheckedTerms(false);
@@ -1420,16 +2029,6 @@ const AdminArea = ({
     const formatBRL = (value) => {
         const n = Number(value || 0);
         return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    };
-
-    const getServiceName = (serviceId) => {
-        const s = getServiceMeta(serviceId);
-        return s ? s.name : (serviceId || 'Serviço');
-    };
-
-    const getServicePrice = (serviceId) => {
-        const s = getServiceMeta(serviceId);
-        return s ? s.price : null;
     };
 
     const sortedApps = useMemo(() => {
@@ -1809,10 +2408,11 @@ const AdminArea = ({
                     const location = app.location || '';
                     const notes = app.notes || '';
                     const cancelReason = app.cancelReason || app.cancel_reason || '';
-                    const serviceId = app.serviceId || app.service_id || '';
-                    const serviceName = getServiceName(serviceId);
-                    const servicePrice = getServicePrice(serviceId);
-                    const servicePriceStr = (typeof servicePrice === 'number') ? formatPrice(servicePrice) : null;
+                    const { label: serviceName, total: serviceTotal, scheduleHint } = formatAgendaServiceSummary(app);
+                    const servicePriceStr =
+                        typeof serviceTotal === 'number' && Number.isFinite(serviceTotal)
+                            ? formatPrice(serviceTotal)
+                            : null;
 
                     const dateLabel = app.date
                         ? new Date(app.date + 'T12:00:00').toLocaleDateString('pt-BR')
@@ -1825,9 +2425,14 @@ const AdminArea = ({
                             <div style={{display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start', flexWrap: 'wrap'}}>
                                 <div>
                                     <div style={{fontWeight: '700', marginBottom: '6px'}}>{clientName}</div>
-                                    <div style={{fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px'}}>
+                                    <div style={{fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.45}}>
                                         {serviceName}{servicePriceStr ? ` — ${servicePriceStr}` : ''}
                                     </div>
+                                    {scheduleHint ? (
+                                        <div style={{ fontSize: '13px', color: 'var(--text-dark)', marginTop: '4px', fontWeight: 600, lineHeight: 1.45 }}>
+                                            Horários: {scheduleHint}
+                                        </div>
+                                    ) : null}
                                 </div>
                                 <div style={{display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap'}}>
                                     <StatusBadge status={app.status} />
@@ -1889,7 +2494,7 @@ const AdminArea = ({
                                 {app.status === 'pending_payment' && (
                                     <button
                                         className="btn-cancel"
-                                        onClick={() => openManualPayment(app, serviceName, servicePrice)}
+                                        onClick={() => openManualPayment(app, serviceName, serviceTotal)}
                                         style={{padding: '10px 14px', fontSize: '13px', borderColor: 'rgba(111, 76, 165, 0.35)', color: 'var(--primary-color)'}}
                                     >
                                         <i className="fas fa-hand-holding-usd"></i> Confirmar pagamento manual
@@ -1899,7 +2504,7 @@ const AdminArea = ({
                                     <button
                                         type="button"
                                         className="btn-cancel"
-                                        onClick={() => openSettleBalance(app, serviceName, servicePrice)}
+                                        onClick={() => openSettleBalance(app, serviceName, serviceTotal)}
                                         style={{padding: '10px 14px', fontSize: '13px', borderColor: 'rgba(61, 143, 101, 0.45)', color: 'var(--success, #3d8f65)'}}
                                     >
                                         <i className="fas fa-balance-scale"></i> Quitar saldo restante
@@ -2091,8 +2696,17 @@ const AdminArea = ({
                 alert(data.error || 'Não foi possível salvar a campanha.');
                 return;
             }
+            const saved =
+                data.promotionalPackagesEnabled === true ||
+                data.promotionalPackagesEnabled === 'true' ||
+                String(data.promotionalPackagesEnabled || '')
+                    .trim()
+                    .toLowerCase() === 'on';
             if (typeof onPromoPackagesChange === 'function') {
-                onPromoPackagesChange(data.promotionalPackagesEnabled === true);
+                onPromoPackagesChange(saved);
+            }
+            if (typeof refreshData === 'function') {
+                await refreshData();
             }
         } catch (e) {
             console.error(e);
@@ -2104,19 +2718,19 @@ const AdminArea = ({
 
     const renderCampaigns = () => (
         <div className="admin-campaigns-panel" style={{ textAlign: 'left', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
-            <h3 style={{ margin: '0 0 8px', fontFamily: 'var(--font-heading, Georgia, serif)' }}>Campanhas promocionais</h3>
+            <h3 style={{ margin: '0 0 8px', fontFamily: 'var(--font-heading, Georgia, serif)' }}>Vales-presente — campanha</h3>
             <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.55, marginBottom: '18px' }}>
                 Use para campanhas temporárias (ex.: <strong>Dia das Mães</strong>). Com a campanha <strong>desligada</strong>, os
-                pacotes promocionais somem da lista da cliente e novos agendamentos com esses pacotes são recusados no servidor.
+                vales-presente somem da lista da cliente e novos agendamentos com esses itens são recusados no servidor.
             </p>
 
             <div className="promo-admin-toggle-card">
                 <div style={{ flex: '1 1 220px', minWidth: 0 }}>
                     <div style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text-dark)', marginBottom: '4px' }}>
-                        Pacotes Dia das Mães (vale-presente / promoção)
+                        Vales-presente Dia das Mães
                     </div>
                     <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.45 }}>
-                        Exibidos por último na etapa de escolha de serviço, com visual destacado.
+                        Exibidos por último na etapa de escolha de serviço (e na aba Campanhas), com visual destacado.
                     </div>
                 </div>
                 <label
@@ -2144,13 +2758,13 @@ const AdminArea = ({
             </div>
 
             <div style={{ marginTop: '22px', fontSize: '13px', color: 'var(--text-muted)' }}>
-                <div style={{ fontWeight: 700, color: 'var(--text-dark)', marginBottom: '8px' }}>Pacotes configurados</div>
+                <div style={{ fontWeight: 700, color: 'var(--text-dark)', marginBottom: '8px' }}>Vales-presente configurados</div>
                 <ul style={{ margin: 0, paddingLeft: '1.15rem', lineHeight: 1.55 }}>
                     <li>
-                        <strong>Pacote 1</strong> — reflexologia com escalda-pés, massagem relaxante e hidratação profunda nos pés.
+                        <strong>Vale-presente 1</strong> (R$ 99,00) — reflexologia com escalda-pés, massagem relaxante e hidratação profunda nos pés.
                     </li>
                     <li style={{ marginTop: '6px' }}>
-                        <strong>Pacote 2</strong> — limpeza de pele suave, máscara revigorante e massagem facial.
+                        <strong>Vale-presente 2</strong> (R$ 99,00) — limpeza de pele suave, máscara revigorante e massagem facial.
                     </li>
                 </ul>
             </div>
@@ -2650,8 +3264,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
             <div style={{display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px', width: '100%', maxWidth: '100%', boxSizing: 'border-box'}}>
                 {myApps.map(app => {
                     const clientName = app.clientName || app.client_name || 'Cliente';
-                    const serviceId = app.serviceId || app.service_id || '';
-                    const serviceName = getClientServiceTitleById(serviceId);
+                    const { label: serviceName, scheduleHint } = formatAgendaServiceSummary(app);
                     const dateLabel = app.date ? new Date(app.date + 'T12:00:00').toLocaleDateString('pt-BR') : '-';
                     const timeLabel = app.time || '-';
                     const location = app.location || '';
@@ -2666,7 +3279,18 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                             <div style={{display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start', flexWrap: 'wrap'}}>
                                 <div style={{ minWidth: 0, flex: '1 1 auto' }}>
                                     <div style={{fontWeight: '700', marginBottom: '6px'}}>{serviceName}</div>
-                                    <div style={{fontSize: '13px', color: 'var(--text-muted)'}}>{dateLabel} • {timeLabel}</div>
+                                    {scheduleHint ? (
+                                        <div style={{ fontSize: '13px', color: 'var(--text-dark)', marginBottom: '6px', fontWeight: 600, lineHeight: 1.45 }}>
+                                            Horários: {scheduleHint}
+                                        </div>
+                                    ) : (
+                                        <div style={{fontSize: '13px', color: 'var(--text-muted)'}}>{dateLabel} • {timeLabel}</div>
+                                    )}
+                                    {scheduleHint ? (
+                                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                                            Referência no sistema: {dateLabel} • {timeLabel}
+                                        </div>
+                                    ) : null}
                                     <div style={{fontSize: '13px', color: 'var(--text-muted)', marginTop: '6px'}}><strong>Cliente:</strong> {clientName}</div>
                                     {paidLabel && (
                                         <div style={{ fontSize: '13px', marginTop: '8px', color: 'var(--text-dark)' }}>
@@ -2830,7 +3454,7 @@ const App = () => {
                 }
             }
 
-            const resSch = await fetch(`${API_BASE_URL}/public/schedule-blocks`);
+            const resSch = await fetch(`${API_BASE_URL}/public/schedule-blocks`, { cache: 'no-store' });
             if (resSch.ok) {
                 const sch = await resSch.json().catch(() => ({}));
                 setBlockedSlots(Array.isArray(sch.blockedSlots) ? sch.blockedSlots : []);
@@ -2840,11 +3464,18 @@ const App = () => {
                 setBlockedFullDays([]);
             }
 
-            const resCfg = await fetch(`${API_BASE_URL}/config/public`);
+            const resCfg = await fetch(`${API_BASE_URL}/config/public`, { cache: 'no-store' });
             if (resCfg.ok) {
                 const j = await resCfg.json().catch(() => ({}));
                 setAdminWhatsApp(String(j.adminWhatsApp || '').replace(/\D/g, ''));
-                setPromoPackagesEnabled(j.promotionalPackagesEnabled === true);
+                const promoRaw = j.promotionalPackagesEnabled;
+                setPromoPackagesEnabled(
+                    promoRaw === true ||
+                        promoRaw === 'true' ||
+                        String(promoRaw || '')
+                            .trim()
+                            .toLowerCase() === 'on'
+                );
             }
         } catch(e) { 
             console.error(e);

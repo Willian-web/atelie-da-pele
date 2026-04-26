@@ -1189,28 +1189,17 @@ textarea.form-control {
 @media (max-width: 640px) {
     .service-category-chips {
         justify-content: flex-start;
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        overflow-y: hidden;
-        -webkit-overflow-scrolling: touch;
-        padding-bottom: 8px;
+        flex-wrap: wrap;
+        overflow-x: hidden;
+        overflow-y: visible;
+        padding-bottom: 0;
         margin-left: 0;
         margin-right: 0;
-        scrollbar-width: thin;
         max-width: 100%;
     }
 
-    .service-category-chips::-webkit-scrollbar {
-        height: 5px;
-    }
-
-    .service-category-chips::-webkit-scrollbar-thumb {
-        background: rgba(111, 76, 165, 0.35);
-        border-radius: 99px;
-    }
-
     .service-category-chip {
-        flex: 0 0 auto;
+        flex: 1 1 auto;
     }
 }
 
@@ -1225,6 +1214,10 @@ textarea.form-control {
     cursor: pointer;
     font-family: inherit;
     transition: 0.2s;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: center;
 }
 
 .service-category-chip:hover {
