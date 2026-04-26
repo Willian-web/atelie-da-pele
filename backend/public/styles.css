@@ -564,6 +564,14 @@ main {
         width: 100%;
     }
 
+    /* Modal "Editar cadastro" (cliente): reduz somente no mobile */
+    .self-edit-overlay .modal-actions .btn-cancel,
+    .self-edit-overlay .modal-actions .btn-submit {
+        padding: 11px 14px;
+        font-size: 14px;
+        min-height: 44px;
+    }
+
     .admin-agenda-actions > .btn-cancel,
     .admin-agenda-actions > .btn-submit {
         flex: 1 1 100%;
