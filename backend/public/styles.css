@@ -412,41 +412,47 @@ main {
     flex-shrink: 0;
 }
 
+/* Painel profissional: sempre quebra em várias linhas — sem scroll horizontal */
 .filter-tabs.admin-main-tabs {
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
-    flex-wrap: nowrap;
-    justify-content: flex-start;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: stretch;
+    overflow-x: visible;
+    overflow-y: visible;
+    gap: 10px;
     padding-bottom: 6px;
     margin-bottom: 18px;
-    scrollbar-width: thin;
-}
-
-.filter-tabs.admin-main-tabs::-webkit-scrollbar {
-    height: 5px;
-}
-
-.filter-tabs.admin-main-tabs::-webkit-scrollbar-thumb {
-    background: rgba(111, 76, 165, 0.35);
-    border-radius: 99px;
 }
 
 .filter-tabs.admin-main-tabs .tab-btn {
-    flex: 0 0 auto;
-    white-space: nowrap;
+    flex: 1 1 calc(50% - 6px);
+    min-width: 0;
+    max-width: calc(50% - 6px);
+    box-sizing: border-box;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    padding: 8px 12px;
 }
 
-@media (min-width: 960px) {
-    .filter-tabs.admin-main-tabs {
-        flex-wrap: wrap;
-        overflow-x: visible;
-        justify-content: center;
-        padding-bottom: 0;
+@media (min-width: 720px) {
+    .filter-tabs.admin-main-tabs .tab-btn {
+        flex: 1 1 calc(33.333% - 8px);
+        max-width: calc(33.333% - 8px);
+    }
+}
+
+@media (min-width: 1100px) {
+    .filter-tabs.admin-main-tabs .tab-btn {
+        flex: 0 1 auto;
+        max-width: none;
+        min-width: min(200px, 100%);
+        white-space: nowrap;
     }
 }
 
