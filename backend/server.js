@@ -25,7 +25,10 @@ const crypto = require('crypto');
 const { Pool } = require('pg');
 require('dotenv').config();
 
-const { sendConfirmationEmail, sendClientConfirmationEmail } = require('./services/emailService');
+const {
+    sendConfirmationEmail,
+    sendClientConfirmationEmail
+} = require('./services/emailService');
 const { createCheckoutLink, checkPaymentStatus } = require('./services/infinitepayService');
 
 const app = express();
@@ -749,6 +752,33 @@ function normalizeAppointmentFinancials(row) {
         const fallback = findServiceById(row.service_id);
         totalServicePrice = roundMoney2(Number(fallback.price) || 0);
     }
+
+    const rawTypeEarly = row.payment_type != null ? String(row.payment_type).toLowerCase().trim() : '';
+    if (rawTypeEarly === 'local') {
+        const remDb = toMoneyNumber(row.remaining_amount);
+        const remainingAmount = Math.max(
+            0,
+            roundMoney2(remDb != null && Number.isFinite(remDb) ? remDb : totalServicePrice)
+        );
+        const amtDb = toMoneyNumber(row.amount_charged);
+        const amountCharged = amtDb != null && Number.isFinite(amtDb) ? roundMoney2(amtDb) : 0;
+        const status = row.status;
+        const paidDb = toMoneyNumber(row.paid_amount);
+        let paidAmount = null;
+        if (status === 'confirmed' || status === 'completed') {
+            paidAmount = paidDb != null && paidDb > 0 ? roundMoney2(paidDb) : 0;
+        } else if (paidDb != null) {
+            paidAmount = roundMoney2(paidDb);
+        }
+        return {
+            paymentType: 'local',
+            amountCharged,
+            remainingAmount,
+            paidAmount,
+            totalServicePrice
+        };
+    }
+
     const partialSignal = effectivePartialDownPayment(totalServicePrice);
 
     const paymentAmount = roundMoney2(row.payment_amount ?? FIXED_SIGNAL_AMOUNT);
@@ -844,6 +874,17 @@ function reportEffectiveReceivedPaid(row) {
 
     let cents = 0;
 
+    if (fin.paymentType === 'local') {
+        if (paidPos) {
+            cents = moneyToCents(rawPaid);
+        } else if (chargedPos) {
+            cents = moneyToCents(rawCharged);
+        } else if (fin.paidAmount != null && fin.paidAmount > 0) {
+            cents = moneyToCents(fin.paidAmount);
+        }
+        return centsToReais(cents);
+    }
+
     if (fin.paymentType === 'full') {
         if (paidPos && chargedPos) {
             cents = Math.max(moneyToCents(rawPaid), moneyToCents(rawCharged));
@@ -872,6 +913,9 @@ function reportEffectiveReceivedPaid(row) {
  */
 function reportPaymentKindForAggregation(row, fin, receivedReais) {
     const raw = row.payment_type != null ? String(row.payment_type).toLowerCase().trim() : '';
+    if (raw === 'local') {
+        return 'local';
+    }
     if (raw === 'full' || raw === 'partial') {
         return raw;
     }
@@ -904,14 +948,32 @@ function buildPaymentSummary(row) {
 
     const isPartial = fin.paymentType === 'partial';
     const isFull = fin.paymentType === 'full';
+    const isLocal = fin.paymentType === 'local';
 
-    const paymentTypeLabel = isFull ? 'Total' : 'Parcial';
+    const paymentTypeLabel = isLocal
+        ? 'Pagamento no local'
+        : isFull
+            ? 'Total'
+            : 'Parcial (histórico)';
 
     let paymentStatusLabel = 'Aguardando pagamento';
-    if (status === 'pending_payment') paymentStatusLabel = 'Aguardando pagamento';
-    else if (status === 'confirmed') paymentStatusLabel = 'Pagamento confirmado';
-    else if (status === 'completed') paymentStatusLabel = 'Concluído';
-    else if (status === 'cancelled') paymentStatusLabel = 'Cancelado';
+    if (status === 'pending_payment') {
+        paymentStatusLabel = isFull ? 'Pagamento online pendente' : 'Aguardando pagamento';
+    } else if (status === 'confirmed') {
+        if (isLocal) {
+            paymentStatusLabel = 'Confirmado — pagamento no local';
+        } else if (isFull) {
+            const cap = String(row.capture_method || '').toLowerCase();
+            paymentStatusLabel =
+                cap && cap !== 'manual' && cap !== 'manual_balance' ? 'Pago via InfinitePay' : 'Pagamento confirmado';
+        } else {
+            paymentStatusLabel = 'Pagamento confirmado';
+        }
+    } else if (status === 'completed') {
+        paymentStatusLabel = 'Concluído';
+    } else if (status === 'cancelled') {
+        paymentStatusLabel = 'Cancelado';
+    }
 
     const paidAmount = fin.paidAmount;
     const isPaid = (status === 'confirmed' || status === 'completed')
@@ -927,8 +989,30 @@ function buildPaymentSummary(row) {
         totalServicePrice: fin.totalServicePrice,
         isPaid,
         isPartial,
-        isFull
+        isFull,
+        isLocal,
+        paymentKind: fin.paymentType
     };
+}
+
+/**
+ * Canal da reserva para UI/WhatsApp: `local` | `online` | null.
+ * null = histórico (ex.: parcial antigo ou integral confirmado só como manual) — usar `paymentType` nos textos legados.
+ */
+function derivePaymentMethodForApi(row, fin) {
+    const pt = String(fin?.paymentType || '').toLowerCase();
+    if (pt === 'local') return 'local';
+    if (pt === 'partial') return null;
+    if (pt === 'full') {
+        const st = String(row?.status || '').toLowerCase();
+        if (st === 'pending_payment') return 'online';
+        const cap = String(row?.capture_method || '').trim().toLowerCase();
+        if (cap && cap !== 'manual' && cap !== 'manual_balance') return 'online';
+        const url = row?.payment_url != null ? String(row.payment_url).trim() : '';
+        if (url.startsWith('http')) return 'online';
+        return null;
+    }
+    return null;
 }
 
 function mapAppointmentRow(row) {
@@ -973,6 +1057,7 @@ function mapAppointmentRow(row) {
         cancelledBy: row.cancelled_by,
         cancelReason: row.cancel_reason,
         paymentSummary,
+        paymentMethod: derivePaymentMethodForApi(row, fin),
         scheduleMode: row.schedule_mode || null,
         serviceSlots: getServiceSlotsFromRow(row)
     };
@@ -990,6 +1075,7 @@ async function sweepExpiredPending() {
                 cancelled_by = 'system'
             WHERE status = 'pending_payment'
               AND created_at < CURRENT_TIMESTAMP - INTERVAL '15 minutes'
+              AND LOWER(COALESCE(payment_type, '')) <> 'local'
             RETURNING id
         `);
 
@@ -1004,6 +1090,24 @@ async function sweepExpiredPending() {
 /**
  * Envia e-mail amigável à cliente após pagamento confirmado (uma vez por agendamento).
  */
+/** E-mails admin + cliente para reserva confirmada sem checkout (pagamento no local). */
+async function notifyNewLocalBookingEmails(appointmentRow) {
+    const appointmentId = appointmentRow.id;
+    try {
+        const ids = getAppointmentServiceIdsFromRow(appointmentRow);
+        const serviceObj = buildServiceEmailAggregate(ids);
+        await sendConfirmationEmail(appointmentRow, serviceObj);
+        console.log(`[LocalBooking] E-mail administrativo enviado (${appointmentId}).`);
+    } catch (emailErr) {
+        console.error(`[LocalBooking] Falha e-mail admin (${appointmentId}):`, emailErr);
+    }
+    try {
+        await trySendClientAppointmentConfirmationIfNeeded(appointmentRow);
+    } catch (clientMailErr) {
+        console.error(`[LocalBooking] Falha e-mail cliente (${appointmentId}):`, clientMailErr);
+    }
+}
+
 async function trySendClientAppointmentConfirmationIfNeeded(appointmentRow) {
     const appointmentId = appointmentRow.id;
     if (appointmentRow.client_confirmation_email_sent_at) {
@@ -1059,6 +1163,16 @@ async function confirmAppointmentPayment({ appointmentId, transactionNsu, invoic
 
     const before = existing.rows[0];
     const previousStatus = before.status;
+
+    if (String(before.payment_type || '').trim().toLowerCase() === 'local') {
+        console.log(`[Payment] Ignorando confirmação de gateway: agendamento ${appointmentId} é pagamento no local.`);
+        return {
+            appointment: before,
+            alreadyProcessed: true,
+            updated: false,
+            previousStatus
+        };
+    }
 
     const paidFromWebhook = (paidAmount === null || paidAmount === undefined)
         ? null
@@ -1628,7 +1742,7 @@ app.get('/admin/report', requireAdminAuth, async (req, res) => {
             totalRevenueCents += receivedCents;
             summary.totalExpectedRevenue += fin.totalServicePrice || 0;
 
-            if (kind === 'partial') {
+            if (kind === 'partial' || kind === 'local') {
                 totalPartialReceivedCents += receivedCents;
                 summary.totalRemainingToReceive += reportEffectiveRemainingPartial(r, fin);
             } else if (kind === 'full') {
@@ -1936,8 +2050,7 @@ app.post('/appointments', async (req, res) => {
             clientEmail,
             email,
             notes,
-            location,
-            paymentType: rawPaymentType
+            location
         } = req.body;
 
         const serviceIdsNorm = normalizeIncomingServiceIds(req.body);
@@ -1979,14 +2092,21 @@ app.post('/appointments', async (req, res) => {
             }
         }
 
-        let paymentType = rawPaymentType ? String(rawPaymentType).toLowerCase() : 'partial';
-        if (!['partial', 'full'].includes(paymentType)) {
-            return res.status(400).json({ error: 'paymentType inválido. Use "partial" ou "full".' });
-        }
+        const rawPaymentMethodReq =
+            req.body && req.body.paymentMethod != null ? String(req.body.paymentMethod).trim().toLowerCase() : '';
+        const rawLegacyPaymentType =
+            req.body && req.body.paymentType != null ? String(req.body.paymentType).trim().toLowerCase() : '';
 
-        /* Com vales-presente no carrinho: um único checkout pelo valor total (catálogo). */
-        if (hasPromo) {
-            paymentType = 'full';
+        let paymentMethod = '';
+        if (rawPaymentMethodReq === 'local' || rawPaymentMethodReq === 'online') {
+            paymentMethod = rawPaymentMethodReq;
+        } else if (rawLegacyPaymentType === 'full' || rawLegacyPaymentType === 'partial') {
+            paymentMethod = 'online';
+        } else {
+            return res.status(400).json({
+                error:
+                    'Informe paymentMethod: "local" (pagamento no local) ou "online" (InfinitePay, valor total). Opcional: paymentType "full" ou "partial" (legado) é aceito como pagamento online pelo valor total do catálogo.'
+            });
         }
 
         const totalServicePrice = roundMoney2(
@@ -1997,21 +2117,19 @@ app.post('/appointments', async (req, res) => {
             return res.status(400).json({ error: 'Serviço inválido ou valor não encontrado para este procedimento.' });
         }
 
-        const partialNow = effectivePartialDownPayment(totalServicePrice);
-        if (partialNow >= totalServicePrice - 0.005) {
-            paymentType = 'full';
-        }
-
         const primaryServiceId = serviceIdsNorm[0];
         const serviceIdsJson = JSON.stringify(serviceIdsNorm);
         const serviceSlotsJson = JSON.stringify(resolvedSlots);
 
-        const amountCharged = paymentType === 'partial' ? partialNow : totalServicePrice;
-
-        const remainingAmount = paymentType === 'partial' ? Math.max(0, roundMoney2(totalServicePrice - partialNow)) : 0;
-
-        const paymentCents =
-            paymentType === 'partial' ? Math.round(partialNow * 100) : Math.round(totalServicePrice * 100);
+        const isLocalBooking = paymentMethod === 'local';
+        /** Novos agendamentos online: sempre valor total no checkout; `payment_type` = full (compatível com webhook/relatórios). */
+        const paymentTypeForDb = isLocalBooking ? 'local' : 'full';
+        const amountCharged = isLocalBooking ? 0 : totalServicePrice;
+        const remainingAmount = isLocalBooking ? Math.max(0, roundMoney2(totalServicePrice)) : 0;
+        const paymentCents = isLocalBooking ? 0 : Math.round(totalServicePrice * 100);
+        if (!isLocalBooking && (!Number.isFinite(paymentCents) || paymentCents <= 0)) {
+            return res.status(400).json({ error: 'Valor de checkout inválido.' });
+        }
 
         await client.query('BEGIN');
 
@@ -2074,25 +2192,32 @@ app.post('/appointments', async (req, res) => {
 
         const newId = Date.now().toString();
 
-        const appointmentPayload = {
-            id: newId,
-            serviceId: primaryServiceId,
-            clientId: finalClientId,
-            clientName,
-            clientPhone: cleanPhone,
-            date: primaryDate,
-            time: primaryTime,
-            notes,
-            location,
-            paymentType,
-            amountCharged,
-            remainingAmount,
-            paymentCents,
-            totalProcedureCents: Math.round(totalServicePrice * 100)
-        };
+        let paymentUrl = null;
+        if (!isLocalBooking) {
+            const appointmentPayload = {
+                id: newId,
+                serviceId: primaryServiceId,
+                clientId: finalClientId,
+                clientName,
+                clientPhone: cleanPhone,
+                date: primaryDate,
+                time: primaryTime,
+                notes,
+                location,
+                paymentType: 'full',
+                amountCharged,
+                remainingAmount,
+                paymentCents,
+                totalProcedureCents: Math.round(totalServicePrice * 100)
+            };
+            console.log(`[Appointments] Criando checkout InfinitePay para o agendamento ${newId}...`);
+            paymentUrl = await createCheckoutLink(appointmentPayload);
+        } else {
+            console.log(`[Appointments] Reserva com pagamento no local (sem checkout) ${newId}...`);
+        }
 
-        console.log(`[Appointments] Criando checkout InfinitePay para o agendamento ${newId}...`);
-        const paymentUrl = await createCheckoutLink(appointmentPayload);
+        const insertStatus = isLocalBooking ? 'confirmed' : 'pending_payment';
+        const paymentAmountCol = isLocalBooking ? 0 : totalServicePrice;
 
         const insert = await client.query(`
             INSERT INTO appointments (
@@ -2115,7 +2240,7 @@ app.post('/appointments', async (req, res) => {
                 amount_charged,
                 remaining_amount
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending_payment', $13, $14, $15, $16, $17)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
             RETURNING *
         `, [
             newId,
@@ -2130,10 +2255,11 @@ app.post('/appointments', async (req, res) => {
             primaryDate,
             primaryTime,
             notes || '',
+            insertStatus,
             paymentUrl,
-            amountCharged,
-            paymentType,
-            amountCharged,
+            paymentAmountCol,
+            paymentTypeForDb,
+            isLocalBooking ? null : amountCharged,
             remainingAmount
         ]);
 
@@ -2141,7 +2267,27 @@ app.post('/appointments', async (req, res) => {
 
         console.log(`[Appointments] Reserva gerada com sucesso: ${primaryDate} ${primaryTime}`);
 
-        return res.status(201).json(mapAppointmentRow(insert.rows[0]));
+        const createdRow = insert.rows[0];
+        if (isLocalBooking) {
+            await notifyNewLocalBookingEmails(createdRow);
+        } else {
+            try {
+                const idsMail = getAppointmentServiceIdsFromRow(createdRow);
+                const serviceObjMail = buildServiceEmailAggregate(idsMail);
+                await sendConfirmationEmail(createdRow, serviceObjMail);
+            } catch (adminMailErr) {
+                console.error('[Appointments] Falha e-mail admin (aguardando pagamento online):', adminMailErr);
+            }
+            try {
+                const idsMail = getAppointmentServiceIdsFromRow(createdRow);
+                const serviceObjMail = buildServiceEmailAggregate(idsMail);
+                await sendClientConfirmationEmail(createdRow, serviceObjMail, normClientEmail);
+            } catch (clientMailErr) {
+                console.error('[Appointments] Falha e-mail cliente (aguardando pagamento online):', clientMailErr);
+            }
+        }
+
+        return res.status(201).json(mapAppointmentRow(createdRow));
     } catch (error) {
         await client.query('ROLLBACK');
         console.error('[POST /appointments] Erro:', error);
@@ -2272,7 +2418,7 @@ app.patch('/admin/appointments/:id/manual-payment', requireAdminAuth, async (req
         } else {
             const rawPaid = toMoneyNumber(paidAmount);
             if (rawPaid == null || !Number.isFinite(rawPaid) || rawPaid <= 0) {
-                return res.status(400).json({ error: 'paidAmount inválido para pagamento parcial.' });
+                return res.status(400).json({ error: 'paidAmount inválido para registro histórico de valor parcial.' });
             }
             paidResolved = roundMoney2(rawPaid);
             if (paidResolved > total + 0.005) {
@@ -2366,7 +2512,9 @@ app.patch('/admin/appointments/:id/settle-remaining-balance', requireAdminAuth, 
 
         const pt = String(ap.payment_type || '').trim().toLowerCase();
         if (pt !== 'partial') {
-            return res.status(409).json({ error: 'Quitação de saldo só se aplica a pagamentos parciais (sinal + saldo).' });
+            return res.status(409).json({
+                error: 'Quitação de saldo só se aplica a reservas com registro histórico de valor parcial (valor na reserva + saldo).'
+            });
         }
 
         const remaining = toMoneyNumber(ap.remaining_amount);
@@ -2627,22 +2775,50 @@ app.post('/payments/check', async (req, res) => {
 
 app.post('/test-email', async (req, res) => {
     try {
-        console.log('[TestEmail] Chamando endpoint manual /test-email');
+        const variant = String(req.query.variant || '').trim().toLowerCase();
+        const isOnlineVariant = variant === 'online';
+        console.log(
+            `[TestEmail] Chamando endpoint manual /test-email${isOnlineVariant ? ' (variant=online, mock pendente InfinitePay)' : ' (padrão: pagamento local)'}`
+        );
 
-        const mockAp = {
-            client_name: 'Cliente Teste Manual',
-            date: '2026-04-18',
-            time: '14:30',
-            location: 'Rua de Teste, 123'
-        };
+        const mockService = { name: 'Serviço de Teste', price: 100.0 };
+        const total = Number(mockService.price) || 100;
 
-        const mockService = { name: 'Serviço de Teste', price: 100.00 };
+        const mockAp = isOnlineVariant
+            ? {
+                  client_name: 'Cliente Teste Manual',
+                  date: '2026-04-18',
+                  time: '14:30',
+                  location: 'Rua de Teste, 123',
+                  paymentMethod: 'online',
+                  payment_type: 'full',
+                  status: 'pending_payment',
+                  paid_amount: 0,
+                  remaining_amount: 0,
+                  amount_charged: total,
+                  capture_method: null,
+                  payment_url: 'https://example.invalid/infinitepay-mock-checkout-teste-email'
+              }
+            : {
+                  client_name: 'Cliente Teste Manual',
+                  date: '2026-04-18',
+                  time: '14:30',
+                  location: 'Rua de Teste, 123',
+                  payment_type: 'local',
+                  status: 'confirmed',
+                  paid_amount: 0,
+                  remaining_amount: total,
+                  amount_charged: 0,
+                  capture_method: null
+              };
 
         await sendConfirmationEmail(mockAp, mockService);
 
         return res.status(200).json({
             success: true,
-            message: 'E-mail de teste enviado com sucesso! Verifique sua caixa de entrada.'
+            message: isOnlineVariant
+                ? 'E-mail de teste (pendente InfinitePay, valor total) enviado! Verifique sua caixa de entrada.'
+                : 'E-mail de teste (pagamento no local) enviado com sucesso! Verifique sua caixa de entrada.'
         });
     } catch (e) {
         console.error('[TestEmail] Erro no teste:', e);

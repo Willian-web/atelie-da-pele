@@ -7,20 +7,12 @@ async function createCheckoutLink(appointment) {
         throw new Error('INFINITEPAY_HANDLE não configurado.');
     }
 
-    const amountInCents = Number(appointment?.paymentCents) > 0
-        ? Number(appointment.paymentCents)
-        : 3000;
+    const amountInCents = Number(appointment?.paymentCents);
+    if (!Number.isFinite(amountInCents) || amountInCents <= 0) {
+        throw new Error('paymentCents inválido ou ausente: não é possível criar checkout InfinitePay.');
+    }
 
-    const totalProcedureCents = Number(appointment?.totalProcedureCents);
-    const isFullType = String(appointment?.paymentType || '').toLowerCase() === 'full';
-    const coversFullProcedure =
-        Number.isFinite(totalProcedureCents) &&
-        totalProcedureCents > 0 &&
-        amountInCents >= totalProcedureCents - 1;
-    const isIntegralCheckout = isFullType || coversFullProcedure;
-    const itemDescription = isIntegralCheckout
-        ? 'Pagamento integral do procedimento (Ateliê da Pele)'
-        : 'Sinal do agendamento (Ateliê da Pele)';
+    const itemDescription = 'Pagamento do agendamento - Ateliê da Pele';
 
     let redirectUrl = successUrl || undefined;
     if (redirectUrl && appointment?.id != null && String(appointment.id).trim() !== '') {

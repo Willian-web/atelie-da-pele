@@ -6,7 +6,7 @@ const API_BASE_URL = window.location.hostname === 'localhost' || window.location
 /** Sessão admin (token emitido pelo backend); não armazenar senha. */
 const ADMIN_TOKEN_STORAGE_KEY = 'atelie_admin_token';
 
-/** Valor do sinal (R$) — manter alinhado a `FIXED_SIGNAL_AMOUNT` em backend/server.js */
+/** Legado: limite usado só para inferir checkout integral em registros antigos (alinhado a `FIXED_SIGNAL_AMOUNT` no backend). */
 const FIXED_SIGNAL_AMOUNT = 30;
 
 const SERVICE_CATEGORY_ORDER = ['Estética facial', 'Depilação', 'Combo depilação', 'Bem-estar', 'Legado'];
@@ -168,8 +168,9 @@ const isValidEmailFormat = (s) => {
 
 const getPaymentTypeLabel = (paymentType) => {
     const t = String(paymentType || '').toLowerCase();
-    if (t === 'partial') return 'Sinal';
-    if (t === 'full') return 'Integral';
+    if (t === 'local') return 'Pagamento no local';
+    if (t === 'partial') return 'Parcial (histórico)';
+    if (t === 'full') return 'Integral / online';
     return '';
 };
 
@@ -207,8 +208,9 @@ const getAppointmentPaymentTypeLabel = (app) => {
     if (fromSummary) return fromSummary;
 
     const summaryLabel = String(app?.paymentSummary?.paymentTypeLabel || '').toLowerCase();
-    if (summaryLabel.includes('total')) return 'Integral';
-    if (summaryLabel.includes('parcial')) return 'Sinal';
+    if (summaryLabel.includes('local')) return 'Pagamento no local';
+    if (summaryLabel.includes('total')) return 'Integral / online';
+    if (summaryLabel.includes('parcial')) return 'Parcial (histórico)';
 
     return '';
 };
@@ -258,6 +260,7 @@ const isProcedurePriceAtOrBelowSignal = (price) => {
 /** Checkout / cópias: integral explícito no registro ou procedimento que só admite total agora. */
 const appointmentIsIntegralCheckout = (app, serviceCatalogPrice) => {
     const pt = String(app?.paymentType || '').toLowerCase();
+    if (pt === 'local') return false;
     if (pt === 'full') return true;
     if (serviceCatalogPrice != null && isProcedurePriceAtOrBelowSignal(serviceCatalogPrice)) return true;
     return false;
@@ -265,7 +268,8 @@ const appointmentIsIntegralCheckout = (app, serviceCatalogPrice) => {
 
 /** Rótulo em telas (cliente e admin): “Integral” quando o fluxo é só valor total, inclusive procedimentos ≤ sinal. */
 const getAppointmentPaymentTypeLabelForDisplay = (app, serviceCatalogPrice) => {
-    if (appointmentIsIntegralCheckout(app, serviceCatalogPrice)) return 'Integral';
+    if (String(app?.paymentType || '').toLowerCase() === 'local') return 'Pagamento no local';
+    if (appointmentIsIntegralCheckout(app, serviceCatalogPrice)) return 'Integral / online';
     return getAppointmentPaymentTypeLabel(app) || '';
 };
 
@@ -1218,12 +1222,12 @@ const AdminArea = ({ appointments, refreshData, clients, blockedSlots, adminToke
                                 <ReportCard
                                     title="Total recebido"
                                     value={formatCurrencyBRL(reportData.summary.totalRevenue)}
-                                    hint="Soma do que já entrou no caixa: integral ou parcial (inclui sinal), em confirmados ou concluídos."
+                                    hint="Soma do que já entrou no caixa (integral online, parcial legado ou quitações), em confirmados ou concluídos."
                                 />
                                 <ReportCard
                                     title="Valor a receber"
                                     value={formatCurrencyBRL(reportData.summary.totalRemainingToReceive)}
-                                    hint="Saldo ainda pendente nesses agendamentos (em geral, após parcial/sinal)."
+                                    hint="Saldo ainda pendente (pagamento no local, parcial legado ou saldo após reserva)."
                                 />
                                 <ReportCard title="Agendamentos no período" value={String(reportData.summary.totalAppointments || 0)} />
                                 <ReportCard title="Clientes únicos" value={String(reportData.summary.uniqueClients || 0)} />
@@ -1511,7 +1515,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
             return;
         }
 
-        if(window.confirm('Deseja cancelar o seu horário? A taxa de adiantamento, se paga, seguirá a política de estorno do Ateliê.')) {
+        if(window.confirm('Deseja cancelar o seu horário? Se já houve pagamento online ou registro de pagamento, a política de estorno do Ateliê será aplicada.')) {
             try {
                 const req = await fetch(`${API_BASE_URL}/appointments/${app.id}/cancel`, {
                     method: 'PATCH',
@@ -1835,8 +1839,7 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
     // E-mail da reserva (obrigatório no agendamento; preenche com cadastro antigo se existir)
     const [clientEmailForBooking, setClientEmailForBooking] = useState('');
 
-    // Step 3 — tipo de pagamento (enviado ao backend; default sinal)
-    const [bookingPaymentType, setBookingPaymentType] = useState('partial');
+    const [bookingPaymentMethod, setBookingPaymentMethod] = useState('local');
     const [checkedTerms, setCheckedTerms] = useState(false);
 
     // Step 4
@@ -1936,14 +1939,7 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
 
     useEffect(() => {
         setCheckedTerms(false);
-    }, [bookingPaymentType]);
-
-    useEffect(() => {
-        const p = SERVICES.find((s) => s.id === selectedService);
-        if (p && Number(p.price) <= FIXED_SIGNAL_AMOUNT) {
-            setBookingPaymentType('full');
-        }
-    }, [selectedService]);
+    }, [bookingPaymentMethod]);
 
     const handleCreateClient = async () => {
         setNewClientFormError('');
@@ -1952,7 +1948,7 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
             return;
         }
         if (!isValidEmailFormat(newClient.email)) {
-            setNewClientFormError('Informe um e-mail válido. Usaremos para enviar a confirmação após o pagamento.');
+            setNewClientFormError('Informe um e-mail válido. Usaremos para enviar a confirmação do agendamento.');
             return;
         }
         const cleanPhone = newClient.phone.replace(/\D/g, '');
@@ -1989,20 +1985,14 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
     const handleConfirmBooking = async () => {
         const serviceId = selectedService;
         const serviceObj = SERVICES.find((s) => s.id === serviceId);
-        const forceFull = serviceObj && Number(serviceObj.price) <= FIXED_SIGNAL_AMOUNT;
-        const payType = forceFull || bookingPaymentType === 'full' ? 'full' : 'partial';
 
         if (!checkedTerms) {
-            return alert(
-                payType === 'full'
-                    ? 'Você precisa aceitar os termos de pagamento do valor total.'
-                    : 'Você precisa aceitar os termos de pagamento do sinal.'
-            );
+            return alert('Você precisa aceitar os termos para concluir o agendamento.');
         }
 
         const emailTrim = clientEmailForBooking.trim().toLowerCase();
         if (!isValidEmailFormat(emailTrim)) {
-            setApiError('Informe um e-mail válido. Enviaremos a confirmação do agendamento para esse endereço após o pagamento.');
+            setApiError('Informe um e-mail válido. Enviaremos a confirmação do agendamento para esse endereço.');
             return;
         }
 
@@ -2028,7 +2018,7 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
                     notes: bookingData.notes,
                     location: bookingData.location,
                     price: serviceObj.price,
-                    paymentType: payType
+                    paymentMethod: bookingPaymentMethod
                 })
             });
 
@@ -2053,9 +2043,8 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
     };
 
     const priceObj = SERVICES.find((s) => s.id === selectedService);
-    const signalDisplayBRL = formatPrice(FIXED_SIGNAL_AMOUNT);
-    const forceFullPayment = priceObj && Number(priceObj.price) <= FIXED_SIGNAL_AMOUNT;
-    const isBookingFull = forceFullPayment || bookingPaymentType === 'full';
+    const bookingPaymentMethodLabel =
+        bookingPaymentMethod === 'online' ? 'Pagar agora via InfinitePay' : 'Pagamento no local';
 
     const createdApp = completedAppInfo?.app;
     const createdPayUrl = createdApp?.paymentUrl;
@@ -2069,6 +2058,9 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
         !createdIntegralWording &&
         String(createdApp?.paymentType || '').toLowerCase() === 'partial' &&
         createdRemaining > 0;
+    const createdIsLocal = String(createdApp?.paymentType || '').toLowerCase() === 'local';
+    const createdIsConfirmed = createdApp?.status === 'confirmed';
+    const createdIsPending = createdApp?.status === 'pending_payment';
 
     return (
         <div style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
@@ -2302,64 +2294,65 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
                         <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Agendamento para:</strong> {new Date(bookingData.date + 'T12:00:00').toLocaleDateString('pt-BR')} às {bookingData.time}</div>
                         {bookingData.location && <div style={{marginBottom: '10px', fontSize: '14px', fontStyle: 'italic'}}><strong style={{color: 'var(--primary-color)'}}>Em:</strong> {bookingData.location}</div>}
                         <div style={{fontSize: '16px', borderTop: '1px solid var(--border-color)', paddingTop: '10px', marginTop: '15px'}}><strong style={{color: 'var(--success)'}}>Valor do procedimento:</strong> {formatPrice(priceObj.price)}</div>
-                        <div style={{fontSize: '16px', color: 'var(--brand-primary)', fontWeight: 'bold'}}>
-                            {isBookingFull ? (
-                                <><strong style={{color: 'var(--brand-primary)'}}>Pagamento agora (integral):</strong> {formatPrice(priceObj.price)}</>
-                            ) : (
-                                <><strong style={{color: 'var(--brand-primary)'}}>Pagamento agora (sinal):</strong> {signalDisplayBRL}</>
-                            )}
+                        <div style={{ fontSize: '15px', marginTop: '10px', fontWeight: 700, color: 'var(--text-dark)' }}>
+                            Forma de pagamento escolhida:{' '}
+                            <span style={{ color: 'var(--brand-primary)' }}>{bookingPaymentMethodLabel}</span>
                         </div>
                     </div>
 
                     <div className="payment-type-group" style={{ maxWidth: '400px', margin: '0 auto 16px', textAlign: 'left' }}>
-                        {forceFullPayment ? (
-                            <div
-                                style={{
-                                    fontSize: '13px',
-                                    lineHeight: 1.45,
-                                    color: 'var(--text-muted)',
-                                    padding: '10px 12px',
-                                    borderRadius: '10px',
-                                    border: '1px solid var(--border-color)',
-                                    background: 'var(--surface-muted)'
-                                }}
-                            >
-                                Este procedimento é confirmado com <strong style={{ color: 'var(--text-dark)' }}>pagamento integral</strong> agora ({formatPrice(priceObj.price)}).
-                            </div>
-                        ) : (
-                            <>
-                                <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-dark)', marginBottom: '8px' }}>Como prefere pagar?</div>
-                                <label style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer', fontSize: '14px', marginBottom: '8px' }}>
-                                    <input type="radio" name="bookingPaymentType" checked={bookingPaymentType === 'partial'} onChange={() => setBookingPaymentType('partial')} style={{ marginTop: '3px' }} />
-                                    <span>Pagar apenas o sinal ({signalDisplayBRL}) — saldo no dia do atendimento.</span>
-                                </label>
-                                <label style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer', fontSize: '14px' }}>
-                                    <input type="radio" name="bookingPaymentType" checked={bookingPaymentType === 'full'} onChange={() => setBookingPaymentType('full')} style={{ marginTop: '3px' }} />
-                                    <span>Pagar o valor total agora ({formatPrice(priceObj.price)}).</span>
-                                </label>
-                            </>
-                        )}
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-dark)', marginBottom: '8px' }}>Como deseja pagar?</div>
+                        <label style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer', fontSize: '14px', marginBottom: '10px' }}>
+                            <input
+                                type="radio"
+                                name="bookingPaymentMethod"
+                                checked={bookingPaymentMethod === 'local'}
+                                onChange={() => setBookingPaymentMethod('local')}
+                                style={{ marginTop: '3px' }}
+                            />
+                            <span>
+                                <strong>Pagamento no local</strong>
+                                <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                    O pagamento será realizado presencialmente no dia do atendimento.
+                                </div>
+                            </span>
+                        </label>
+                        <label style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer', fontSize: '14px' }}>
+                            <input
+                                type="radio"
+                                name="bookingPaymentMethod"
+                                checked={bookingPaymentMethod === 'online'}
+                                onChange={() => setBookingPaymentMethod('online')}
+                                style={{ marginTop: '3px' }}
+                            />
+                            <span>
+                                <strong>Pagar agora via InfinitePay</strong>
+                                <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                    O pagamento será realizado online pelo valor total do procedimento ({formatPrice(priceObj.price)}).
+                                </div>
+                            </span>
+                        </label>
                     </div>
 
                     <div className="form-group full-width" style={{maxWidth: '400px', margin: '0 auto 16px', textAlign: 'left'}}>
                         <label className="form-label">E-mail para confirmação *</label>
                         <input type="email" autoComplete="email" className="form-control" placeholder="seu@email.com" value={clientEmailForBooking} onChange={e => setClientEmailForBooking(e.target.value)} />
-                        <p style={{fontSize: '12px', color: 'var(--text-muted)', margin: '6px 0 0'}}>Enviaremos um resumo amigável assim que o pagamento for confirmado.</p>
+                        <p style={{fontSize: '12px', color: 'var(--text-muted)', margin: '6px 0 0'}}>Enviaremos um resumo por e-mail conforme a forma de pagamento escolhida.</p>
                     </div>
 
                     <div style={{background: 'var(--pending-bg)', border: '1px solid var(--border-color)', padding: '15px', borderRadius: '8px', maxWidth: 'min(100%, 400px)', margin: '0 auto 20px', textAlign: 'left'}}>
                         <label style={{display: 'flex', gap: '10px', alignItems: 'flex-start', cursor: 'pointer', fontSize: '14px', color: 'var(--pending-text)'}}>
                             <input type="checkbox" checked={checkedTerms} onChange={e => setCheckedTerms(e.target.checked)} style={{marginTop: '3px', transform: 'scale(1.2)'}} />
                             <span>
-                                {isBookingFull ? (
+                                {bookingPaymentMethod === 'online' ? (
                                     <>
-                                        <strong>Estou ciente</strong> de que o agendamento só será confirmado em definitivo após o <strong>pagamento integral</strong> (valor total do procedimento) na próxima tela via InfinitePay. <br/><br/>
-                                        <i className="fas fa-exclamation-triangle"></i> Sem o pagamento em até 15 minutos, o horário será cancelado e o espaço liberado para outra pessoa.
+                                        <strong>Estou ciente</strong> de que o horário fica reservado aguardando o pagamento online do <strong>valor total</strong> do procedimento na próxima tela (InfinitePay).{' '}
+                                        <br /><br />
+                                        <i className="fas fa-exclamation-triangle"></i> Sem a confirmação do pagamento em até cerca de 15 minutos, o horário poderá ser cancelado automaticamente.
                                     </>
                                 ) : (
                                     <>
-                                        <strong>Estou ciente</strong> de que o agendamento só será confirmado em definitivo após o pagamento do sinal na próxima tela via InfinitePay. <br/><br/>
-                                        <i className="fas fa-exclamation-triangle"></i> Sem o pagamento em até 15 minutos, o horário será cancelado e o espaço liberado para outra pessoa.
+                                        <strong>Estou ciente</strong> de que o agendamento será confirmado agora e o <strong>pagamento será feito no local</strong>, presencialmente, no dia do atendimento.
                                     </>
                                 )}
                             </span>
@@ -2368,7 +2361,16 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
 
                     <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
                         <button className="btn-submit" onClick={handleConfirmBooking} disabled={isLoading || !checkedTerms} style={{width: '100%', maxWidth: '400px', padding: '16px', fontSize: '18px', opacity: !checkedTerms ? 0.5 : 1}}>
-                            {isLoading ? <><i className="fas fa-spinner fa-spin"></i> Gerando link InfinitePay…</> : 'Solicitar horário e ir ao pagamento'}
+                            {isLoading ? (
+                                <>
+                                    <i className="fas fa-spinner fa-spin"></i>{' '}
+                                    {bookingPaymentMethod === 'online' ? 'Gerando link InfinitePay…' : 'Confirmando…'}
+                                </>
+                            ) : bookingPaymentMethod === 'online' ? (
+                                'Confirmar e ir para pagamento'
+                            ) : (
+                                'Confirmar agendamento'
+                            )}
                         </button>
                         {apiError && <div className="alert alert-error" style={{marginTop: '20px'}}>{apiError}</div>}
                     </div>
@@ -2377,17 +2379,31 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
 
             {step === 4 && completedAppInfo && (
                 <div className="booking-section step-container" style={{textAlign: 'center', width: '100%', maxWidth: '100%', boxSizing: 'border-box'}}>
-                    <i className="fas fa-shield-halved" style={{fontSize: '46px', color: 'var(--brand-light)', marginBottom: '12px' }}></i>
-                    <h2 style={{ color: 'var(--brand-primary)', marginBottom: '8px' }}>Quase lá — falta confirmar o pagamento</h2>
+                    <i
+                        className={createdIsLocal && createdIsConfirmed ? 'fas fa-check-circle' : 'fas fa-shield-halved'}
+                        style={{
+                            fontSize: '46px',
+                            color: createdIsLocal && createdIsConfirmed ? 'var(--success)' : 'var(--brand-light)',
+                            marginBottom: '12px'
+                        }}
+                    />
+                    <h2 style={{ color: 'var(--brand-primary)', marginBottom: '8px' }}>
+                        {createdIsLocal && createdIsConfirmed
+                            ? 'Agendamento confirmado'
+                            : 'Quase lá — falta confirmar o pagamento online'}
+                    </h2>
                     <p style={{ color: 'var(--text-muted)', marginBottom: '18px', maxWidth: '520px', marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.55 }}>
-                        {createdIntegralWording ? (
+                        {createdIsLocal && createdIsConfirmed ? (
                             <>
-                                Seu horário está <strong>pendente</strong> até o InfinitePay confirmar o <strong>pagamento integral</strong> do procedimento. Finalize agora — em geral o sistema libera o horário após <strong>15 minutos</strong> sem pagamento.
+                                Seu horário está <strong>confirmado</strong>. O pagamento será feito <strong>presencialmente</strong> no dia do atendimento.
+                            </>
+                        ) : createdIsPending ? (
+                            <>
+                                Seu horário está <strong>reservado</strong> aguardando o pagamento online do <strong>valor total</strong> do procedimento (InfinitePay). Em geral o sistema libera o horário após cerca de{' '}
+                                <strong>15 minutos</strong> sem confirmação do pagamento.
                             </>
                         ) : (
-                            <>
-                                Seu horário foi reservado como <strong>pendente</strong> até o pagamento ser identificado. Para não perder o espaço, finalize agora — em geral o sistema libera o horário após <strong>15 minutos</strong> sem pagamento.
-                            </>
+                            <>Acompanhe o status em <strong>Meus Agendamentos</strong>.</>
                         )}
                     </p>
 
@@ -2429,13 +2445,15 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
                                     </div>
                                 )}
                                 <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.45 }}>
-                                    {createdIntegralWording ? (
+                                    {createdIsLocal ? (
+                                        <>Nada será cobrado online. O valor total será acertado no local no dia do atendimento.</>
+                                    ) : createdIntegralWording ? (
                                         <>
-                                            O valor em <strong>Valor cobrado agora</strong> é o <strong>pagamento integral</strong> do procedimento e corresponde ao que será cobrado no InfinitePay.
+                                            O valor em <strong>Valor cobrado agora</strong> corresponde ao <strong>pagamento integral</strong> do procedimento no InfinitePay.
                                         </>
                                     ) : (
                                         <>
-                                            O sinal padrão é <strong>{signalDisplayBRL}</strong> (fixo). O valor acima em “Valor cobrado agora” é o que será cobrado no InfinitePay; o saldo restante, se houver, será acertado no atendimento.
+                                            O valor em <strong>Valor cobrado agora</strong> é o que será cobrado no InfinitePay; o saldo restante, se houver, será acertado no atendimento (registro legado).
                                         </>
                                     )}
                                 </div>

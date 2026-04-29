@@ -22,11 +22,12 @@ function toMoneyNumberEmail(value) {
 
 function normalizePaymentKindForEmail(raw) {
     const t = String(raw ?? '').trim().toLowerCase();
+    if (t === 'local') return 'local';
     if (t === 'full' || t === 'integral' || t === 'total') return 'full';
     return 'partial';
 }
 
-/** Mesma regra do app: procedimentos até o sinal padrão são tratados como pagamento integral na comunicação. */
+/** Mesma regra do app: procedimentos de valor muito baixo no catálogo eram tratados como integral na comunicação (legado). */
 function treatPaymentAsIntegralForEmail(paymentTypeNorm, servicePriceNum) {
     if (paymentTypeNorm === 'full') return true;
     const sp = Number(servicePriceNum);
@@ -35,7 +36,7 @@ function treatPaymentAsIntegralForEmail(paymentTypeNorm, servicePriceNum) {
 
 /**
  * Valor exibido nos e-mails: em pagamento integral o checkout correto está em `amount_charged`;
- * o gateway às vezes envia `paid_amount` do sinal (ex.: R$ 30) — não priorizar isso sobre o total.
+ * Em integral, o gateway pode enviar `paid_amount` menor que o total — não priorizar isso sobre `amount_charged`.
  */
 function resolvePaidAmountForDisplay({ paymentType, paid_amount, amount_charged, servicePrice }) {
     const paid = toMoneyNumberEmail(paid_amount);
@@ -47,6 +48,9 @@ function resolvePaidAmountForDisplay({ paymentType, paid_amount, amount_charged,
             ? Number(servicePrice)
             : null;
 
+    if (normalizePaymentKindForEmail(paymentType) === 'local') {
+        return null;
+    }
     if (normalizePaymentKindForEmail(paymentType) === 'full') {
         if (cOk) return charged;
         if (pOk) return paid;
@@ -104,6 +108,7 @@ async function sendConfirmationEmail(appointmentData, serviceData) {
 
         const paymentType = normalizePaymentKindForEmail(appointmentData.payment_type);
         const captureMethod = appointmentData.capture_method || null;
+        const statusNorm = String(appointmentData.status || '').trim().toLowerCase();
 
         const paidAmountValue = appointmentData.paid_amount ?? null;
         const amountChargedValue = appointmentData.amount_charged ?? null;
@@ -112,14 +117,49 @@ async function sendConfirmationEmail(appointmentData, serviceData) {
         const servicePriceNum =
             typeof serviceData?.price === 'number' && Number.isFinite(serviceData.price) ? serviceData.price : null;
 
-        const treatAsIntegral = treatPaymentAsIntegralForEmail(paymentType, servicePriceNum);
+        const paymentMethodLine = captureMethod ? `Forma de pagamento: ${captureMethod}` : '';
 
-        const paidNow = resolvePaidAmountForDisplay({
-            paymentType: treatAsIntegral ? 'full' : paymentType,
-            paid_amount: paidAmountValue,
-            amount_charged: amountChargedValue,
-            servicePrice: servicePriceNum
-        });
+        let paymentIntro = 'Pagamento aprovado e agendamento confirmado no sistema.';
+        let paymentLines = '';
+        let subject = `Novo Agendamento Confirmado - ${clientName}`;
+
+        if (paymentType === 'local') {
+            const rem = toMoneyNumberEmail(remainingAmountValue);
+            const remTxt =
+                rem != null && Number.isFinite(rem) && rem >= 0 ? formatCurrencyBRL(rem) : serviceValue;
+            paymentIntro =
+                'Agendamento confirmado com pagamento no local. Nada foi cobrado online; o valor será acertado presencialmente no dia do atendimento.';
+            paymentLines = [
+                'Forma de pagamento: pagamento no local (presencialmente no dia).',
+                servicePriceNum != null ? `Valor total dos procedimentos: ${formatCurrencyBRL(servicePriceNum)}` : `Valor total dos procedimentos: ${serviceValue}`,
+                `Saldo previsto a receber no atendimento: ${remTxt}`,
+                paymentMethodLine
+            ]
+                .filter(Boolean)
+                .join('\n');
+            subject = `Novo agendamento (pagamento no local) - ${clientName}`;
+        } else if (statusNorm === 'pending_payment' && paymentType === 'full') {
+            const link = appointmentData.payment_url ? String(appointmentData.payment_url).trim() : '';
+            paymentIntro =
+                'Um novo agendamento foi criado e aguarda pagamento online (InfinitePay) pelo valor total dos procedimentos.';
+            paymentLines = [
+                servicePriceNum != null ? `Valor total a pagar online: ${formatCurrencyBRL(servicePriceNum)}` : `Valor total a pagar online: ${serviceValue}`,
+                link ? `Link InfinitePay: ${link}` : 'Link de pagamento: (indisponível — verifique no sistema)',
+                'Prazo: em geral o horário é liberado após 15 minutos sem confirmação de pagamento.'
+            ].join('\n');
+            subject = `Agendamento aguardando pagamento online - ${clientName}`;
+        }
+
+        const treatAsIntegral = paymentType !== 'local' ? treatPaymentAsIntegralForEmail(paymentType, servicePriceNum) : false;
+
+        const paidNow = paymentType === 'local'
+            ? null
+            : resolvePaidAmountForDisplay({
+                paymentType: treatAsIntegral ? 'full' : paymentType,
+                paid_amount: paidAmountValue,
+                amount_charged: amountChargedValue,
+                servicePrice: servicePriceNum
+            });
 
         let remainingAmount = toMoneyNumberEmail(remainingAmountValue);
         if (
@@ -132,42 +172,44 @@ async function sendConfirmationEmail(appointmentData, serviceData) {
             remainingAmount = Math.max(0, roundMoney2(servicePriceNum - basePaid));
         }
 
-        const paymentMethodLine = captureMethod ? `Forma de pagamento: ${captureMethod}` : '';
-
-        let paymentIntro = 'Pagamento aprovado e agendamento confirmado no sistema.';
-        let paymentLines = '';
-
-        if (treatAsIntegral) {
-            paymentIntro = 'Pagamento integral aprovado e agendamento confirmado no sistema.';
-            paymentLines = [
-                'Procedimento quitado integralmente nesta etapa.',
-                paidNow != null ? `Valor pago: ${formatCurrencyBRL(paidNow)}` : '',
-                paymentMethodLine
-            ]
-                .filter(Boolean)
-                .join('\n');
-        } else if (paymentType === 'partial') {
-            paymentIntro = 'Pagamento parcial aprovado e agendamento confirmado no sistema.';
-            const paidLine =
-                paidNow != null && Number.isFinite(paidNow) && paidNow > 0
-                    ? paidNow
-                    : FIXED_SIGNAL_AMOUNT;
-            paymentLines = [
-                `Valor pago agora: ${formatCurrencyBRL(paidLine)}`,
-                remainingAmount != null && Number.isFinite(remainingAmount) && remainingAmount >= 0
-                    ? `Valor restante (para o dia do atendimento): ${formatCurrencyBRL(remainingAmount)}`
-                    : '',
-                paymentMethodLine,
-                'Observação: o valor restante será acertado presencialmente no dia do atendimento.'
-            ].filter(Boolean).join('\n');
+        if (paymentType !== 'local' && !(statusNorm === 'pending_payment' && paymentType === 'full')) {
+            if (treatAsIntegral) {
+                paymentIntro = 'Pagamento integral aprovado e agendamento confirmado no sistema.';
+                paymentLines = [
+                    'Procedimento quitado integralmente nesta etapa.',
+                    paidNow != null ? `Valor pago: ${formatCurrencyBRL(paidNow)}` : '',
+                    paymentMethodLine
+                ]
+                    .filter(Boolean)
+                    .join('\n');
+            } else if (paymentType === 'partial') {
+                paymentIntro = 'Pagamento com valor parcial (histórico no sistema) aprovado e agendamento confirmado.';
+                const paidLine =
+                    paidNow != null && Number.isFinite(paidNow) && paidNow > 0 ? formatCurrencyBRL(paidNow) : null;
+                paymentLines = [
+                    paidLine ? `Valor registrado na reserva: ${paidLine}` : 'Valor registrado na reserva: (consulte o registro no sistema)',
+                    remainingAmount != null && Number.isFinite(remainingAmount) && remainingAmount >= 0
+                        ? `Valor restante (para o dia do atendimento): ${formatCurrencyBRL(remainingAmount)}`
+                        : '',
+                    paymentMethodLine,
+                    'Observação: o valor restante será acertado presencialmente no dia do atendimento.'
+                ].filter(Boolean).join('\n');
+            }
         }
+
+        const statusLine =
+            statusNorm === 'pending_payment' && paymentType === 'full'
+                ? 'Aguardando pagamento online'
+                : paymentType === 'local'
+                    ? 'Confirmado — pagamento no local'
+                    : appointmentData.status || 'Confirmado';
 
         const emailData = {
             from: process.env.FROM_EMAIL || 'Ateliê da Pele <onboarding@resend.dev>',
             to: process.env.NOTIFICATION_EMAIL,
-            subject: `Novo Agendamento Confirmado - ${clientName}`,
+            subject,
             text: `
-NOVO AGENDAMENTO CONFIRMADO!
+NOVO AGENDAMENTO — ATELIÊ DA PELE
 
 ${paymentIntro}
 
@@ -180,7 +222,7 @@ Horário: ${appointmentTime}
 Local do atendimento: Ateliê da Pele — Rua Rio Jaguaribe, nº 274${clientAddress}
 Valor do Serviço: ${serviceValue}
 ${paymentLines}
-Status: Confirmado
+Status: ${statusLine}
 
 ------------------------------------------
 Este é um e-mail automático enviado via API HTTPS.
@@ -245,67 +287,98 @@ async function sendClientConfirmationEmail(appointmentRow, serviceData, clientEm
             : null;
 
     const paymentKind = normalizePaymentKindForEmail(appointmentRow.payment_type);
+    const statusNorm = String(appointmentRow.status || '').trim().toLowerCase();
     const servicePriceNum =
         typeof serviceData?.price === 'number' && Number.isFinite(serviceData.price) ? serviceData.price : null;
 
-    const treatAsIntegralClient = treatPaymentAsIntegralForEmail(paymentKind, servicePriceNum);
-
-    const paidNow = resolvePaidAmountForDisplay({
-        paymentType: treatAsIntegralClient ? 'full' : paymentKind,
-        paid_amount: appointmentRow.paid_amount,
-        amount_charged: appointmentRow.amount_charged,
-        servicePrice: servicePriceNum
-    });
-
-    let remaining = toMoneyNumberEmail(appointmentRow.remaining_amount);
-    if (
-        paymentKind === 'partial' &&
-        !treatAsIntegralClient &&
-        (remaining == null || !Number.isFinite(remaining)) &&
-        servicePriceNum != null
-    ) {
-        const basePaid =
-            paidNow != null && Number.isFinite(paidNow) && paidNow > 0 ? paidNow : FIXED_SIGNAL_AMOUNT;
-        remaining = Math.max(0, roundMoney2(servicePriceNum - basePaid));
-    }
-
     const captureMethod = appointmentRow.capture_method || null;
+    const paymentUrl = appointmentRow.payment_url ? String(appointmentRow.payment_url).trim() : '';
 
     let paymentSummaryLines = '';
-    if (treatAsIntegralClient || paymentKind === 'full') {
+    let subject = `${clientName.split(' ')[0]}, seu horário está confirmado — Ateliê da Pele`;
+    let opening = 'Seu pagamento foi confirmado e seu horário no Ateliê da Pele está garantido.';
+
+    if (paymentKind === 'local') {
+        opening =
+            'Seu agendamento está confirmado. O pagamento será realizado presencialmente no dia do atendimento.';
+        const rem = toMoneyNumberEmail(appointmentRow.remaining_amount);
+        const remTxt =
+            rem != null && Number.isFinite(rem) && rem >= 0 ? formatCurrencyBRL(rem) : servicePrice || '';
         paymentSummaryLines = [
-            'Forma de pagamento: valor integral do procedimento (quitado nesta etapa).',
-            paidNow != null && Number.isFinite(paidNow) && paidNow > 0 ? `Valor pago: ${formatCurrencyBRL(paidNow)}` : '',
-            captureMethod ? `Registro do pagamento: ${captureMethod}` : ''
+            'Forma de pagamento: pagamento no local.',
+            servicePriceNum != null ? `Valor total dos procedimentos: ${formatCurrencyBRL(servicePriceNum)}` : '',
+            remTxt ? `Valor a acertar no atendimento: ${remTxt}` : '',
+            captureMethod ? `Registro: ${captureMethod}` : ''
         ]
             .filter(Boolean)
             .join('\n');
+        subject = `${clientName.split(' ')[0]}, agendamento confirmado (pagamento no local) — Ateliê da Pele`;
+    } else if (statusNorm === 'pending_payment' && paymentKind === 'full') {
+        opening =
+            'Recebemos seu pedido de agendamento. Para garantir o horário, finalize o pagamento online pelo valor total dos procedimentos (InfinitePay).';
+        paymentSummaryLines = [
+            'Forma de pagamento: pagamento online — valor total dos procedimentos.',
+            servicePriceNum != null ? `Valor total a pagar: ${formatCurrencyBRL(servicePriceNum)}` : '',
+            paymentUrl ? `Link para pagamento: ${paymentUrl}` : '',
+            'Em geral, o sistema libera o horário reservado após cerca de 15 minutos sem a confirmação do pagamento.',
+            'Quando o pagamento for confirmado, enviaremos outro e-mail confirmando seu horário.'
+        ].join('\n');
+        subject = `${clientName.split(' ')[0]}, finalize o pagamento do seu agendamento — Ateliê da Pele`;
     } else {
-        const paidDisplay =
-            paidNow != null && Number.isFinite(paidNow) && paidNow > 0 ? paidNow : FIXED_SIGNAL_AMOUNT;
-        paymentSummaryLines = [
-            'Forma de pagamento: sinal (reserva) + saldo no dia do atendimento.',
-            `Valor pago agora (sinal): ${formatCurrencyBRL(paidDisplay)}`,
-            remaining != null && Number.isFinite(remaining) && remaining > 0
-                ? `Saldo restante (no atendimento): ${formatCurrencyBRL(remaining)}`
-                : '',
-            captureMethod ? `Registro do pagamento: ${captureMethod}` : '',
-            'Observação: o saldo restante será acertado presencialmente no dia do atendimento.'
-        ]
-            .filter(Boolean)
-            .join('\n');
+        const treatAsIntegralClient = treatPaymentAsIntegralForEmail(paymentKind, servicePriceNum);
+
+        const paidNow = resolvePaidAmountForDisplay({
+            paymentType: treatAsIntegralClient ? 'full' : paymentKind,
+            paid_amount: appointmentRow.paid_amount,
+            amount_charged: appointmentRow.amount_charged,
+            servicePrice: servicePriceNum
+        });
+
+        let remaining = toMoneyNumberEmail(appointmentRow.remaining_amount);
+        if (
+            paymentKind === 'partial' &&
+            !treatAsIntegralClient &&
+            (remaining == null || !Number.isFinite(remaining)) &&
+            servicePriceNum != null
+        ) {
+            const basePaid =
+                paidNow != null && Number.isFinite(paidNow) && paidNow > 0 ? paidNow : FIXED_SIGNAL_AMOUNT;
+            remaining = Math.max(0, roundMoney2(servicePriceNum - basePaid));
+        }
+
+        if (treatAsIntegralClient || paymentKind === 'full') {
+            paymentSummaryLines = [
+                'Forma de pagamento: valor integral do procedimento (quitado nesta etapa).',
+                paidNow != null && Number.isFinite(paidNow) && paidNow > 0 ? `Valor pago: ${formatCurrencyBRL(paidNow)}` : '',
+                captureMethod ? `Registro do pagamento: ${captureMethod}` : ''
+            ]
+                .filter(Boolean)
+                .join('\n');
+        } else {
+            const paidDisplay =
+                paidNow != null && Number.isFinite(paidNow) && paidNow > 0 ? formatCurrencyBRL(paidNow) : null;
+            paymentSummaryLines = [
+                'Forma de pagamento (histórico): reserva com valor parcial + saldo no dia do atendimento.',
+                paidDisplay ? `Valor pago nesta etapa: ${paidDisplay}` : 'Valor pago nesta etapa: (veja o registro no sistema ou entre em contato)',
+                remaining != null && Number.isFinite(remaining) && remaining > 0
+                    ? `Saldo restante (no atendimento): ${formatCurrencyBRL(remaining)}`
+                    : '',
+                captureMethod ? `Registro do pagamento: ${captureMethod}` : '',
+                'Observação: o saldo restante será acertado presencialmente no dia do atendimento.'
+            ]
+                .filter(Boolean)
+                .join('\n');
+        }
     }
 
     const locationLine = appointmentRow.location
         ? `\nLocal informado: ${appointmentRow.location}`
         : '';
 
-    const subject = `${clientName.split(' ')[0]}, seu horário está confirmado — Ateliê da Pele`;
-
     const text = `
 Olá, ${clientName.split(' ')[0]}!
 
-Seu pagamento foi confirmado e seu horário no Ateliê da Pele está garantido.
+${opening}
 
 Resumo do seu agendamento
 -------------------------
