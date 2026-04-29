@@ -596,8 +596,15 @@ const PasswordModal = ({ onSuccess, onCancel }) => {
     );
 };
 
-const StatusBadge = ({ status, paymentType }) => {
+const StatusBadge = ({ status, paymentType, paymentMethod, remainingAmount }) => {
     const pt = String(paymentType || '').toLowerCase();
+    const pm = String(paymentMethod || '').toLowerCase();
+    const isLocalKind = pt === 'local' || pm === 'local';
+    const hadRemainingProp =
+        remainingAmount !== undefined && remainingAmount !== null && remainingAmount !== '';
+    const rem = hadRemainingProp ? Number(remainingAmount) : null;
+    const remPending = hadRemainingProp && rem != null && Number.isFinite(rem) && rem > 0.005;
+
     switch (status) {
         case 'pending_payment':
             if (pt === 'full') {
@@ -613,10 +620,45 @@ const StatusBadge = ({ status, paymentType }) => {
                 </span>
             );
         case 'confirmed':
-            if (pt === 'local') {
+            if (isLocalKind && !hadRemainingProp) {
                 return (
                     <span className="status-badge st-confirmed">
                         <i className="fas fa-check"></i> Confirmado — pagamento no local
+                    </span>
+                );
+            }
+            if (isLocalKind && remPending) {
+                return (
+                    <span className="status-badge st-pending">
+                        <i className="fas fa-store"></i> Pagamento no local — pendente
+                    </span>
+                );
+            }
+            if (isLocalKind) {
+                return (
+                    <span className="status-badge st-confirmed">
+                        <i className="fas fa-check"></i> Pagamento confirmado
+                    </span>
+                );
+            }
+            if (pt === 'full') {
+                return (
+                    <span className="status-badge st-confirmed">
+                        <i className="fas fa-check"></i> Pagamento confirmado
+                    </span>
+                );
+            }
+            if (pt === 'partial' && remPending) {
+                return (
+                    <span className="status-badge st-pending">
+                        <i className="fas fa-history"></i> Confirmado — valor histórico pendente
+                    </span>
+                );
+            }
+            if (pt === 'partial' && hadRemainingProp && !remPending) {
+                return (
+                    <span className="status-badge st-confirmed">
+                        <i className="fas fa-check"></i> Pagamento confirmado
                     </span>
                 );
             }
@@ -632,6 +674,20 @@ const StatusBadge = ({ status, paymentType }) => {
                 </span>
             );
         case 'completed':
+            if (isLocalKind && hadRemainingProp && remPending) {
+                return (
+                    <span className="status-badge st-pending">
+                        <i className="fas fa-store"></i> Pagamento no local — pendente
+                    </span>
+                );
+            }
+            if (isLocalKind || pt === 'full') {
+                return (
+                    <span className="status-badge st-completed">
+                        <i className="fas fa-flag-checkered"></i> Concluído — pagamento confirmado
+                    </span>
+                );
+            }
             return (
                 <span className="status-badge st-completed">
                     <i className="fas fa-flag-checkered"></i> Concluído
@@ -1995,6 +2051,7 @@ const AdminArea = ({
     const [clientEditSaving, setClientEditSaving] = useState(false);
     const [manualPayModal, setManualPayModal] = useState(null); // { id, clientName, serviceName, total, paymentType, paidAmount, note, saving, error }
     const [settleBalanceModal, setSettleBalanceModal] = useState(null); // { id, clientName, serviceName, total, paidSoFar, remaining, note, saving, error }
+    const [confirmLocalPayModal, setConfirmLocalPayModal] = useState(null); // { id, clientName, serviceName, total, remaining, note, saving, error }
 
     const todayStr = getLocalTodayStr();
 
@@ -2159,12 +2216,15 @@ const AdminArea = ({
         if (!app || !app.id) return;
         const clientName = app.clientName || app.client_name || 'Cliente';
         const total = (typeof servicePrice === 'number' && Number.isFinite(servicePrice)) ? servicePrice : null;
+        const ptApp = String(app.paymentType || app.payment_type || '').trim().toLowerCase();
+        const defaultType =
+            String(app.status || '').trim() === 'pending_payment' && ptApp === 'full' ? 'full' : 'partial';
         setManualPayModal({
             id: app.id,
             clientName,
             serviceName: serviceName || 'Serviço',
             total,
-            paymentType: 'partial',
+            paymentType: defaultType,
             paidAmount: '',
             note: '',
             saving: false,
@@ -2194,10 +2254,10 @@ const AdminArea = ({
         }
 
         const summaryLines = [
-            `Confirmar pagamento manual?`,
+            `Confirmar pagamento?`,
             ``,
             `Agendamento: ${manualPayModal.clientName} — ${manualPayModal.serviceName}`,
-            `Tipo: ${type === 'full' ? 'integral' : 'parcial (histórico legado)'}`
+            `Tipo: ${type === 'full' ? 'integral (online / total)' : 'histórico de valor parcial'}`
         ];
         if (type === 'partial') summaryLines.push(`Valor pago: R$ ${paidNum.toFixed(2).replace('.', ',')}`);
         if ((manualPayModal.note || '').trim()) summaryLines.push(`Obs.: ${(manualPayModal.note || '').trim()}`);
@@ -2218,12 +2278,71 @@ const AdminArea = ({
                 body: JSON.stringify(body)
             });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || 'Erro ao confirmar pagamento manual.');
+            if (!res.ok) throw new Error(data.error || 'Erro ao confirmar pagamento.');
 
             setManualPayModal(null);
             await refreshData();
         } catch (e) {
-            setManualPayModal((m) => ({ ...m, saving: false, error: e.message || 'Erro ao confirmar pagamento manual.' }));
+            setManualPayModal((m) => ({ ...m, saving: false, error: e.message || 'Erro ao confirmar pagamento.' }));
+        }
+    };
+
+    const canConfirmLocalPaymentReceived = (app) => {
+        if (!app) return false;
+        const st = String(app.status || '').trim();
+        if (st !== 'confirmed' && st !== 'completed') return false;
+        const pt = String(app.paymentType || app.payment_type || '').trim().toLowerCase();
+        const pm = String(app.paymentMethod || '').trim().toLowerCase();
+        if (pt !== 'local' && pm !== 'local') return false;
+        const rem = Number(app.remainingAmount ?? app.remaining_amount);
+        return Number.isFinite(rem) && rem > 0.005;
+    };
+
+    const openConfirmLocalPayment = (app, serviceName, servicePrice) => {
+        if (!app || !app.id) return;
+        const remaining = Number(app.remainingAmount ?? app.remaining_amount);
+        const total = (typeof servicePrice === 'number' && Number.isFinite(servicePrice)) ? servicePrice : null;
+        setConfirmLocalPayModal({
+            id: app.id,
+            clientName: app.clientName || app.client_name || 'Cliente',
+            serviceName: serviceName || 'Serviço',
+            total,
+            remaining: Number.isFinite(remaining) ? remaining : null,
+            note: '',
+            saving: false,
+            error: ''
+        });
+    };
+
+    const submitConfirmLocalPayment = async () => {
+        if (!confirmLocalPayModal || !confirmLocalPayModal.id) return;
+        const lines = [
+            'Confirmar recebimento presencial?',
+            '',
+            `${confirmLocalPayModal.clientName} — ${confirmLocalPayModal.serviceName}`,
+            confirmLocalPayModal.remaining != null && Number.isFinite(confirmLocalPayModal.remaining)
+                ? `Valor a registrar como recebido: R$ ${confirmLocalPayModal.remaining.toFixed(2).replace('.', ',')}`
+                : ''
+        ].filter(Boolean);
+        if ((confirmLocalPayModal.note || '').trim()) lines.push(`Obs.: ${(confirmLocalPayModal.note || '').trim()}`);
+        if (!window.confirm(lines.join('\n'))) return;
+
+        setConfirmLocalPayModal((m) => ({ ...m, saving: true, error: '' }));
+        try {
+            const res = await adminFetch(
+                `${API_BASE_URL}/admin/appointments/${encodeURIComponent(confirmLocalPayModal.id)}/confirm-local-payment-received`,
+                {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ note: (confirmLocalPayModal.note || '').trim() || undefined })
+                }
+            );
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'Erro ao registrar recebimento no local.');
+            setConfirmLocalPayModal(null);
+            await refreshData();
+        } catch (e) {
+            setConfirmLocalPayModal((m) => ({ ...m, saving: false, error: e.message || 'Erro ao registrar recebimento no local.' }));
         }
     };
 
@@ -2259,15 +2378,15 @@ const AdminArea = ({
         if (!settleBalanceModal || !settleBalanceModal.id) return;
         const rem = settleBalanceModal.remaining;
         if (rem == null || !Number.isFinite(rem) || rem <= 0) {
-            setSettleBalanceModal((m) => ({ ...m, error: 'Sem saldo restante para quitar.' }));
+            setSettleBalanceModal((m) => ({ ...m, error: 'Não há valor histórico pendente para registrar.' }));
             return;
         }
         const lines = [
-            'Quitar saldo restante manualmente?',
+            'Registrar pagamento (histórico parcial)?',
             '',
             `${settleBalanceModal.clientName} — ${settleBalanceModal.serviceName}`,
-            `Saldo a registrar: R$ ${rem.toFixed(2).replace('.', ',')}`,
-            '(será somado ao valor já pago; saldo pendente ficará R$ 0,00)'
+            `Valor a registrar: R$ ${rem.toFixed(2).replace('.', ',')}`,
+            '(será somado ao valor já pago; pendência no registro ficará zerada)'
         ];
         if ((settleBalanceModal.note || '').trim()) lines.push(`Obs.: ${(settleBalanceModal.note || '').trim()}`);
         if (!window.confirm(lines.join('\n'))) return;
@@ -2282,11 +2401,11 @@ const AdminArea = ({
                 })
             });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok) throw new Error(data.error || 'Erro ao quitar saldo restante.');
+            if (!res.ok) throw new Error(data.error || 'Erro ao registrar pagamento.');
             setSettleBalanceModal(null);
             await refreshData();
         } catch (e) {
-            setSettleBalanceModal((m) => ({ ...m, saving: false, error: e.message || 'Erro ao quitar saldo restante.' }));
+            setSettleBalanceModal((m) => ({ ...m, saving: false, error: e.message || 'Erro ao registrar pagamento.' }));
         }
     };
 
@@ -2489,7 +2608,12 @@ const AdminArea = ({
                                     ) : null}
                                 </div>
                                 <div style={{display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap'}}>
-                                    <StatusBadge status={app.status} paymentType={app.paymentType} />
+                                    <StatusBadge
+                                        status={app.status}
+                                        paymentType={app.paymentType}
+                                        paymentMethod={app.paymentMethod}
+                                        remainingAmount={app.remainingAmount ?? app.remaining_amount}
+                                    />
                                     <div style={{fontSize: '13px', color: 'var(--text-muted)'}}>
                                         {dateLabel} • {app.time || 'Sem horário'}
                                     </div>
@@ -2551,7 +2675,17 @@ const AdminArea = ({
                                         onClick={() => openManualPayment(app, serviceName, serviceTotal)}
                                         style={{padding: '10px 14px', fontSize: '13px', borderColor: 'rgba(111, 76, 165, 0.35)', color: 'var(--primary-color)'}}
                                     >
-                                        <i className="fas fa-hand-holding-usd"></i> Confirmar pagamento manual
+                                        <i className="fas fa-hand-holding-usd"></i> Confirmar pagamento
+                                    </button>
+                                )}
+                                {canConfirmLocalPaymentReceived(app) && (
+                                    <button
+                                        type="button"
+                                        className="btn-cancel"
+                                        onClick={() => openConfirmLocalPayment(app, serviceName, serviceTotal)}
+                                        style={{padding: '10px 14px', fontSize: '13px', borderColor: 'rgba(14, 165, 233, 0.45)', color: '#0284c7'}}
+                                    >
+                                        <i className="fas fa-store"></i> Confirmar pagamento no local
                                     </button>
                                 )}
                                 {canSettleRemainingBalance(app) && (
@@ -2561,7 +2695,7 @@ const AdminArea = ({
                                         onClick={() => openSettleBalance(app, serviceName, serviceTotal)}
                                         style={{padding: '10px 14px', fontSize: '13px', borderColor: 'rgba(61, 143, 101, 0.45)', color: 'var(--success, #3d8f65)'}}
                                     >
-                                        <i className="fas fa-balance-scale"></i> Quitar saldo restante
+                                        <i className="fas fa-clipboard-check"></i> Registrar pagamento
                                     </button>
                                 )}
                                 <button className="btn-cancel" onClick={() => handleDelete(app.id)} style={{padding: '10px 14px', fontSize: '13px', borderColor: '#ef4444', color: '#ef4444'}}>
@@ -2921,7 +3055,14 @@ const AdminArea = ({
                                                 <td style={{padding: '10px', fontSize: '13px'}}>{it.serviceName || it.serviceId || '-'}</td>
                                                 <td style={{padding: '10px', fontSize: '13px'}}>{dateLabel}</td>
                                                 <td style={{padding: '10px', fontSize: '13px'}}>{it.time || '-'}</td>
-                                                <td style={{padding: '10px', fontSize: '13px'}}><StatusBadge status={it.status} paymentType={it.paymentType} /></td>
+                                                <td style={{padding: '10px', fontSize: '13px'}}>
+                                                    <StatusBadge
+                                                        status={it.status}
+                                                        paymentType={it.paymentType}
+                                                        paymentMethod={it.paymentMethod}
+                                                        remainingAmount={it.remainingAmount ?? it.remaining_amount}
+                                                    />
+                                                </td>
                                                 <td style={{padding: '10px', fontSize: '13px'}}>{paymentType}</td>
                                                 <td style={{padding: '10px', fontSize: '13px', textAlign: 'right'}}>{procTotal != null && Number.isFinite(procTotal) ? formatBRL(procTotal) : '—'}</td>
                                                 <td style={{padding: '10px', fontSize: '13px', textAlign: 'right'}}>{effPaid != null && Number.isFinite(effPaid) && effPaid > 0 ? formatBRL(effPaid) : '—'}</td>
@@ -2973,12 +3114,61 @@ const AdminArea = ({
                 {adminView === 'campaigns' && renderCampaigns()}
             </div>
 
+            {confirmLocalPayModal && (
+                <div className="password-overlay" style={{zIndex: 10044}} role="dialog" aria-modal="true">
+                    <div className="password-modal manual-payment-modal" style={{maxWidth: '520px', width: '100%', textAlign: 'left'}}>
+                        <h3 style={{marginBottom: '12px', textAlign: 'center'}}>Confirmar pagamento no local</h3>
+                        <div style={{fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px', lineHeight: 1.4, textAlign: 'center'}}>
+                            Registre que a cliente pagou presencialmente (dinheiro, Pix no salão, cartão no atendimento, etc.). O tipo de registro continua como pagamento no local.
+                        </div>
+
+                        <div style={{background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '12px 14px', marginBottom: '12px'}}>
+                            <div style={{fontWeight: 700, marginBottom: '6px'}}>{confirmLocalPayModal.clientName}</div>
+                            <div style={{fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px'}}>
+                                {confirmLocalPayModal.serviceName}
+                                {typeof confirmLocalPayModal.total === 'number' ? ` — total ${formatPrice(confirmLocalPayModal.total)}` : ''}
+                            </div>
+                            {confirmLocalPayModal.remaining != null && (
+                                <div style={{fontSize: '13px', lineHeight: 1.5}}>
+                                    <strong>Valor pendente no registro:</strong> R$ {confirmLocalPayModal.remaining.toFixed(2).replace('.', ',')}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="form-group full-width" style={{marginBottom: 0}}>
+                            <label className="form-label">Observação (opcional)</label>
+                            <input
+                                className="form-control"
+                                placeholder="Ex.: Pago em dinheiro no atendimento"
+                                value={confirmLocalPayModal.note}
+                                onChange={(e) => setConfirmLocalPayModal((m) => ({ ...m, note: e.target.value, error: '' }))}
+                            />
+                        </div>
+
+                        {confirmLocalPayModal.error && (
+                            <div className="alert alert-error" style={{marginTop: '12px', marginBottom: 0, fontSize: '13px'}}>
+                                {confirmLocalPayModal.error}
+                            </div>
+                        )}
+
+                        <div className="modal-actions" style={{marginTop: '12px'}}>
+                            <button type="button" className="btn-cancel" onClick={() => setConfirmLocalPayModal(null)} disabled={confirmLocalPayModal.saving}>
+                                Cancelar
+                            </button>
+                            <button type="button" className="btn-submit" style={{flex: 1}} onClick={submitConfirmLocalPayment} disabled={confirmLocalPayModal.saving}>
+                                {confirmLocalPayModal.saving ? 'Salvando…' : 'Confirmar recebimento'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {settleBalanceModal && (
                 <div className="password-overlay" style={{zIndex: 10045}} role="dialog" aria-modal="true">
                     <div className="password-modal manual-payment-modal" style={{maxWidth: '520px', width: '100%', textAlign: 'left'}}>
-                        <h3 style={{marginBottom: '12px', textAlign: 'center'}}>Quitar saldo restante</h3>
+                        <h3 style={{marginBottom: '12px', textAlign: 'center'}}>Registrar pagamento</h3>
                         <div style={{fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px', lineHeight: 1.4, textAlign: 'center'}}>
-                            Registre o pagamento do saldo (presencial, Pix manual, dinheiro ou transferência). O valor já registrado como pago não será apagado — apenas somado.
+                            Complemento de registro histórico (valor parcial + presença no atendimento). O valor já registrado como pago não será apagado — apenas somado.
                         </div>
 
                         <div style={{background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '12px 14px', marginBottom: '12px'}}>
@@ -2989,10 +3179,10 @@ const AdminArea = ({
                             </div>
                             <div style={{fontSize: '13px', lineHeight: 1.5}}>
                                 {settleBalanceModal.paidSoFar != null && (
-                                    <div><strong>Já pago:</strong> R$ {settleBalanceModal.paidSoFar.toFixed(2).replace('.', ',')}</div>
+                                    <div><strong>Já registrado como pago:</strong> R$ {settleBalanceModal.paidSoFar.toFixed(2).replace('.', ',')}</div>
                                 )}
                                 {settleBalanceModal.remaining != null && (
-                                    <div><strong>Saldo a quitar agora:</strong> R$ {settleBalanceModal.remaining.toFixed(2).replace('.', ',')}</div>
+                                    <div><strong>Valor a registrar agora:</strong> R$ {settleBalanceModal.remaining.toFixed(2).replace('.', ',')}</div>
                                 )}
                             </div>
                         </div>
@@ -3018,7 +3208,7 @@ const AdminArea = ({
                                 Cancelar
                             </button>
                             <button type="button" className="btn-submit" style={{flex: 1}} onClick={submitSettleRemaining} disabled={settleBalanceModal.saving}>
-                                {settleBalanceModal.saving ? 'Salvando…' : 'Confirmar quitação'}
+                                {settleBalanceModal.saving ? 'Salvando…' : 'Registrar pagamento'}
                             </button>
                         </div>
                     </div>
@@ -3028,9 +3218,9 @@ const AdminArea = ({
             {manualPayModal && (
                 <div className="password-overlay" style={{zIndex: 10040}} role="dialog" aria-modal="true">
                     <div className="password-modal manual-payment-modal" style={{maxWidth: '520px', width: '100%', textAlign: 'left'}}>
-                        <h3 style={{marginBottom: '12px', textAlign: 'center'}}>Confirmar pagamento manual</h3>
+                        <h3 style={{marginBottom: '12px', textAlign: 'center'}}>Confirmar pagamento</h3>
                         <div style={{fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px', lineHeight: 1.4, textAlign: 'center'}}>
-                            Use quando a cliente pagou fora da InfinitePay (Pix manual, dinheiro, transferência, presencial).
+                            Use quando o pagamento online (InfinitePay) precisa ser confirmado manualmente no sistema, ou para registro histórico de valor parcial pago fora do checkout.
                         </div>
 
                         <div style={{background: '#fff', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '12px 14px', marginBottom: '12px'}}>
@@ -3378,7 +3568,12 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                                         </div>
                                     )}
                                 </div>
-                                <StatusBadge status={app.status} paymentType={app.paymentType} />
+                                <StatusBadge
+                                    status={app.status}
+                                    paymentType={app.paymentType}
+                                    paymentMethod={app.paymentMethod}
+                                    remainingAmount={app.remainingAmount ?? app.remaining_amount}
+                                />
                             </div>
 
                             {location && (

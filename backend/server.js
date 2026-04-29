@@ -961,7 +961,11 @@ function buildPaymentSummary(row) {
         paymentStatusLabel = isFull ? 'Pagamento online pendente' : 'Aguardando pagamento';
     } else if (status === 'confirmed') {
         if (isLocal) {
-            paymentStatusLabel = 'Confirmado — pagamento no local';
+            const remL = fin.remainingAmount != null ? Number(fin.remainingAmount) : null;
+            paymentStatusLabel =
+                remL != null && Number.isFinite(remL) && remL > 0.005
+                    ? 'Pagamento no local — pendente'
+                    : 'Pagamento confirmado';
         } else if (isFull) {
             const cap = String(row.capture_method || '').toLowerCase();
             paymentStatusLabel =
@@ -2468,6 +2472,101 @@ app.patch('/admin/appointments/:id/manual-payment', requireAdminAuth, async (req
     }
 });
 
+// ====================== ADMIN: CONFIRMAR RECEBIMENTO (PAGAMENTO NO LOCAL) ======================
+/**
+ * Registra que o valor foi recebido presencialmente (mantém payment_type = local).
+ * Não altera InfinitePay; não converte para full/parcial.
+ */
+app.patch('/admin/appointments/:id/confirm-local-payment-received', requireAdminAuth, async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+
+    const rawId = req.params.id;
+    const id = rawId != null ? String(rawId).trim() : '';
+    if (!id) {
+        return res.status(400).json({ error: 'ID inválido.' });
+    }
+
+    try {
+        const { note } = req.body || {};
+        const noteUser = (note == null ? '' : String(note)).trim();
+
+        const check = await pool.query('SELECT * FROM appointments WHERE id = $1', [id]);
+        if (check.rows.length === 0) {
+            return res.status(404).json({ error: 'Agendamento inexistente.' });
+        }
+
+        const ap = check.rows[0];
+        const prevStatus = ap.status;
+
+        if (prevStatus === 'cancelled') {
+            return res.status(409).json({ error: 'Não é possível registrar recebimento: agendamento está cancelado.' });
+        }
+
+        if (prevStatus !== 'confirmed' && prevStatus !== 'completed') {
+            return res.status(409).json({
+                error: 'Registro de recebimento no local só é permitido para agendamentos confirmados ou concluídos.'
+            });
+        }
+
+        const pt = String(ap.payment_type || '').trim().toLowerCase();
+        if (pt !== 'local') {
+            return res.status(409).json({
+                error: 'Este registro não é pagamento no local. Use as ações de pagamento online ou histórico legado.'
+            });
+        }
+
+        const fin = normalizeAppointmentFinancials(ap);
+        const total = roundMoney2(Number(fin.totalServicePrice || 0));
+        if (!Number.isFinite(total) || total <= 0) {
+            return res.status(400).json({ error: 'Não foi possível determinar o valor total do procedimento.' });
+        }
+
+        const remaining = toMoneyNumber(ap.remaining_amount);
+        if (remaining == null || remaining <= 0.005) {
+            return res.status(409).json({
+                error: 'Não há valor pendente de recebimento presencial para registrar (já consta como recebido).'
+            });
+        }
+
+        const prevNote = String(ap.manual_payment_note || '').trim();
+        const stamp = `[Recebimento no local registrado R$ ${total.toFixed(2).replace('.', ',')}]`;
+        const noteCombined = [prevNote, noteUser, stamp].filter(Boolean).join(' — ').slice(0, 8000);
+
+        const upd = await pool.query(
+            `
+            UPDATE appointments
+            SET paid_amount = $2::numeric,
+                remaining_amount = 0::numeric,
+                capture_method = 'presencial',
+                manual_payment_note = NULLIF($3, '')
+            WHERE id = $1
+              AND status IN ('confirmed', 'completed')
+              AND LOWER(COALESCE(payment_type, '')) = 'local'
+              AND COALESCE(remaining_amount, 0) > 0.005
+            RETURNING *
+        `,
+            [id, total, noteCombined || null]
+        );
+
+        if (upd.rows.length === 0) {
+            return res.status(409).json({
+                error: 'Não foi possível registrar o recebimento (dados podem ter mudado ou valor já estava quitado no registro).'
+            });
+        }
+
+        return res.json({
+            ok: true,
+            previousStatus: prevStatus,
+            appointment: mapAppointmentRow(upd.rows[0])
+        });
+    } catch (e) {
+        console.error('[PATCH /admin/appointments/:id/confirm-local-payment-received] Erro:', e);
+        return res.status(500).json({ error: 'Erro ao registrar recebimento no local.' });
+    }
+});
+
 // ====================== ADMIN: QUITAR SALDO RESTANTE (PARCIAL) ======================
 /**
  * Registra quitação manual do saldo restante (após sinal via InfinitePay, etc.).
@@ -2503,23 +2602,25 @@ app.patch('/admin/appointments/:id/settle-remaining-balance', requireAdminAuth, 
         const prevStatus = ap.status;
 
         if (prevStatus === 'cancelled') {
-            return res.status(409).json({ error: 'Não é possível quitar saldo: agendamento está cancelado.' });
+            return res.status(409).json({ error: 'Não é possível registrar o pagamento: agendamento está cancelado.' });
         }
 
         if (prevStatus !== 'confirmed' && prevStatus !== 'completed') {
-            return res.status(409).json({ error: 'Quitação de saldo só é permitida para agendamentos confirmados ou concluídos.' });
+            return res.status(409).json({
+                error: 'Registro de pagamento só é permitido para agendamentos confirmados ou concluídos.'
+            });
         }
 
         const pt = String(ap.payment_type || '').trim().toLowerCase();
         if (pt !== 'partial') {
             return res.status(409).json({
-                error: 'Quitação de saldo só se aplica a reservas com registro histórico de valor parcial (valor na reserva + saldo).'
+                error: 'Este registro só se aplica a reservas com histórico de valor parcial (valor na reserva + complemento).'
             });
         }
 
         const remaining = toMoneyNumber(ap.remaining_amount);
         if (remaining == null || remaining <= 0.005) {
-            return res.status(409).json({ error: 'Não há saldo restante a quitar (remaining_amount já é zero).' });
+            return res.status(409).json({ error: 'Não há valor histórico pendente a registrar (saldo já zerado no sistema).' });
         }
 
         const paidBefore = toMoneyNumber(ap.paid_amount);
@@ -2533,7 +2634,7 @@ app.patch('/admin/appointments/:id/settle-remaining-balance', requireAdminAuth, 
         const finAp = normalizeAppointmentFinancials(ap);
         const total = roundMoney2(Number(finAp.totalServicePrice || 0));
         if (Number.isFinite(total) && total > 0 && newPaid - total > 0.02) {
-            return res.status(400).json({ error: 'Inconsistência: valor pago após quitação ultrapassa o total do procedimento.' });
+            return res.status(400).json({ error: 'Inconsistência: valor pago após o registro ultrapassa o total do procedimento.' });
         }
 
         const prevCap = String(ap.capture_method || '').trim().toLowerCase();
@@ -2551,7 +2652,7 @@ app.patch('/admin/appointments/:id/settle-remaining-balance', requireAdminAuth, 
         }
 
         const prevNote = String(ap.manual_payment_note || '').trim();
-        const stamp = `[Quitação saldo manual +R$ ${remaining.toFixed(2).replace('.', ',')}]`;
+        const stamp = `[Registro histórico complemento +R$ ${remaining.toFixed(2).replace('.', ',')}]`;
         const noteCombined = [prevNote, noteUser, stamp].filter(Boolean).join(' — ').slice(0, 8000);
 
         console.log(`[AdminSettleRemaining] id=${id} status=${prevStatus} paid_before=${paidBeforeSafe} add=${remaining} paid_after=${newPaid} capture=${newCapture}`);
@@ -2576,7 +2677,7 @@ app.patch('/admin/appointments/:id/settle-remaining-balance', requireAdminAuth, 
 
         if (upd.rows.length === 0) {
             return res.status(409).json({
-                error: 'Não foi possível quitar o saldo (dados podem ter mudado: saldo já quitado ou tipo de pagamento incompatível).'
+                error: 'Não foi possível registrar o pagamento (dados podem ter mudado ou tipo de registro incompatível).'
             });
         }
 
@@ -2587,7 +2688,7 @@ app.patch('/admin/appointments/:id/settle-remaining-balance', requireAdminAuth, 
         });
     } catch (e) {
         console.error('[PATCH /admin/appointments/:id/settle-remaining-balance] Erro:', e);
-        return res.status(500).json({ error: 'Erro ao quitar saldo restante.' });
+        return res.status(500).json({ error: 'Erro ao registrar o pagamento.' });
     }
 });
 
