@@ -43,13 +43,15 @@
     <div id="root"></div>
 
     <script type="text/babel">
-const { useState, useEffect, useMemo, useCallback } = React;
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
 const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://localhost:8080'
     : 'https://' + window.location.hostname;
 
 const ADMIN_TOKEN_STORAGE_KEY = 'atelie_admin_token';
+/** Dígitos do telefone usados em “Meus agendamentos” (sessão) para mesclar detalhes sem listar tudo. */
+const MY_APPOINTMENTS_PHONE_STORAGE_KEY = 'atelie_my_appointments_phone_digits';
 
 /**
  * Catálogo ativo (etapa 1). Manter ids e preços alinhados a `SERVICES_CATALOG` em backend/server.js.
@@ -711,7 +713,8 @@ const ClientArea = ({
     blockedFullDays,
     promoPackagesEnabled,
     bookingRestoreOrderNsu,
-    onBookingRestoreConsumed
+    onBookingRestoreConsumed,
+    mergeAppointmentRow
 }) => {
     const [step, setStep] = useState(1);
     
@@ -741,6 +744,7 @@ const ClientArea = ({
     const [completedAppInfo, setCompletedAppInfo] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [apiError, setApiError] = useState('');
+    const lastBookingRestoreAppliedId = useRef('');
 
     const [serviceCatFilter, setServiceCatFilter] = useState('Todos');
     const serviceCategoryChips = useMemo(() => {
@@ -952,72 +956,102 @@ const ClientArea = ({
     }, [selectedClient?.id]);
 
     useEffect(() => {
-        if (!bookingRestoreOrderNsu) return;
+        if (!bookingRestoreOrderNsu) {
+            lastBookingRestoreAppliedId.current = '';
+            return;
+        }
         const idStr = String(bookingRestoreOrderNsu).trim();
         if (!idStr) return;
-        const appRow = (appointments || []).find((a) => String(a.id) === idStr);
-        if (!appRow) return;
+        if (lastBookingRestoreAppliedId.current === idStr) return;
 
-        const sid = appRow.serviceId || appRow.service_id;
-        const idsRestore = getAppointmentServiceIdsFromApp(appRow);
-        const effectiveIds = idsRestore.length ? idsRestore : sid ? [String(sid)] : [];
-        const metas = effectiveIds.map((id) => getServiceMeta(id)).filter(Boolean);
-        let mergedService;
-        if (metas.length === 1) {
-            mergedService = metas[0];
-        } else if (metas.length > 1) {
-            const tot = metas.reduce((s, m) => s + Number(m.price || 0), 0);
-            mergedService = {
-                id: effectiveIds[0],
-                name: metas.map((m) => m.name).join(' + '),
-                cardTitle: metas.map((m) => getClientServiceCardTitle(m)).join(' + '),
-                price: Math.round(tot * 100) / 100,
-                category: '',
-                duration: getTotalDurationMinutesForServiceIds(effectiveIds)
-            };
-        } else {
-            mergedService = {
-                id: sid || 'servico',
-                name: appRow.serviceName || appRow.service_id || 'Serviço',
-                cardTitle: appRow.serviceName || appRow.service_id || 'Serviço',
-                price: Number(appRow.paymentAmount) || 0,
-                category: '',
-                duration: DEFAULT_APPOINTMENT_DURATION_MIN
-            };
+        const applyRestore = (appRow) => {
+            if (!appRow) return;
+            const sid = appRow.serviceId || appRow.service_id;
+            const idsRestore = getAppointmentServiceIdsFromApp(appRow);
+            const effectiveIds = idsRestore.length ? idsRestore : sid ? [String(sid)] : [];
+            const metas = effectiveIds.map((id) => getServiceMeta(id)).filter(Boolean);
+            let mergedService;
+            if (metas.length === 1) {
+                mergedService = metas[0];
+            } else if (metas.length > 1) {
+                const tot = metas.reduce((s, m) => s + Number(m.price || 0), 0);
+                mergedService = {
+                    id: effectiveIds[0],
+                    name: metas.map((m) => m.name).join(' + '),
+                    cardTitle: metas.map((m) => getClientServiceCardTitle(m)).join(' + '),
+                    price: Math.round(tot * 100) / 100,
+                    category: '',
+                    duration: getTotalDurationMinutesForServiceIds(effectiveIds)
+                };
+            } else {
+                mergedService = {
+                    id: sid || 'servico',
+                    name: appRow.serviceName || appRow.service_id || 'Serviço',
+                    cardTitle: appRow.serviceName || appRow.service_id || 'Serviço',
+                    price: Number(appRow.paymentAmount) || 0,
+                    category: '',
+                    duration: DEFAULT_APPOINTMENT_DURATION_MIN
+                };
+            }
+
+            const cid = appRow.clientId || appRow.client_id;
+            let clientRow = (clients || []).find((c) => String(c.id) === String(cid));
+            if (!clientRow) {
+                clientRow = {
+                    id: cid || idStr,
+                    name: appRow.clientName || appRow.client_name || 'Cliente',
+                    phone: appRow.clientPhone || appRow.client_phone || '',
+                    address: appRow.location || '',
+                    email: String(appRow.clientEmail || '').trim()
+                };
+            }
+
+            setSelectedServiceIds(effectiveIds);
+            setSelectedClient(clientRow);
+            setCompletedAppInfo({ app: appRow, client: clientRow, service: mergedService });
+            setStep(4);
+            setCheckedTerms(true);
+            setApiError('');
+            setLoginError('');
+
+            try {
+                const u = new URL(window.location.href);
+                u.searchParams.delete('return');
+                u.searchParams.delete('order_nsu');
+                const qs = u.searchParams.toString();
+                window.history.replaceState({}, '', `${u.pathname}${qs ? `?${qs}` : ''}${u.hash || ''}`);
+            } catch (_) { /* ignore */ }
+
+            if (typeof onBookingRestoreConsumed === 'function') {
+                onBookingRestoreConsumed();
+            }
+            lastBookingRestoreAppliedId.current = idStr;
+        };
+
+        const local = (appointments || []).find((a) => String(a.id) === idStr);
+        if (local && (local.clientPhone || local.client_phone || local.paymentUrl)) {
+            applyRestore(local);
+            return;
         }
 
-        const cid = appRow.clientId || appRow.client_id;
-        let clientRow = (clients || []).find((c) => String(c.id) === String(cid));
-        if (!clientRow) {
-            clientRow = {
-                id: cid || idStr,
-                name: appRow.clientName || appRow.client_name || 'Cliente',
-                phone: appRow.clientPhone || appRow.client_phone || '',
-                address: appRow.location || '',
-                email: String(appRow.clientEmail || '').trim()
-            };
-        }
+        let cancelled = false;
+        (async () => {
+            try {
+                const r = await fetch(`${API_BASE_URL}/public/appointment/${encodeURIComponent(idStr)}`, { cache: 'no-store' });
+                if (!r.ok || cancelled) return;
+                const fetched = await r.json().catch(() => null);
+                if (!fetched || cancelled) return;
+                if (typeof mergeAppointmentRow === 'function') {
+                    mergeAppointmentRow(fetched);
+                }
+                applyRestore(fetched);
+            } catch (_) { /* ignore */ }
+        })();
 
-        setSelectedServiceIds(effectiveIds);
-        setSelectedClient(clientRow);
-        setCompletedAppInfo({ app: appRow, client: clientRow, service: mergedService });
-        setStep(4);
-        setCheckedTerms(true);
-        setApiError('');
-        setLoginError('');
-
-        try {
-            const u = new URL(window.location.href);
-            u.searchParams.delete('return');
-            u.searchParams.delete('order_nsu');
-            const qs = u.searchParams.toString();
-            window.history.replaceState({}, '', `${u.pathname}${qs ? `?${qs}` : ''}${u.hash || ''}`);
-        } catch (_) { /* ignore */ }
-
-        if (typeof onBookingRestoreConsumed === 'function') {
-            onBookingRestoreConsumed();
-        }
-    }, [bookingRestoreOrderNsu, appointments, clients, onBookingRestoreConsumed]);
+        return () => {
+            cancelled = true;
+        };
+    }, [bookingRestoreOrderNsu, appointments, clients, onBookingRestoreConsumed, mergeAppointmentRow]);
 
     const handleCreateClient = async () => {
         setNewClientFormError('');
@@ -1585,14 +1619,29 @@ const ClientArea = ({
                                 <label className="form-label" style={{fontWeight: 600}}>Já sou cliente (Número do seu WhatsApp)</label>
                                 <input type="text" className="form-control" placeholder="Ex: 11999999999..." value={loginPhone} onChange={e => setLoginPhone(e.target.value)} />
                                 {loginError && <div style={{color: 'var(--danger)', fontSize: '13px', marginTop: '8px'}}>{loginError}</div>}
-                                <button className="btn-submit" style={{marginTop: '15px', width: '100%'}} onClick={() => {
+                                <button className="btn-submit" style={{marginTop: '15px', width: '100%'}} onClick={async () => {
                                     const cleanLogin = loginPhone.replace(/\D/g, '');
-                                    const c = clients.find(cl => cl.phone.replace(/\D/g, '') === cleanLogin);
-                                    if(c) {
-                                        setSelectedClient(c); setLoginError('');
-                                        setStep(3);
-                                    } else {
-                                        setLoginError('Número não encontrado. Tente cadastrar logo abaixo.');
+                                    if (cleanLogin.length < 10) {
+                                        setLoginError('Informe um número válido com DDD.');
+                                        return;
+                                    }
+                                    setLoginError('');
+                                    try {
+                                        const res = await fetch(
+                                            `${API_BASE_URL}/public/clients?phoneDigits=${encodeURIComponent(cleanLogin)}`,
+                                            { cache: 'no-store' }
+                                        );
+                                        const arr = await res.json().catch(() => []);
+                                        const c = Array.isArray(arr) && arr[0] ? arr[0] : null;
+                                        if (c) {
+                                            setSelectedClient(c);
+                                            setLoginError('');
+                                            setStep(3);
+                                        } else {
+                                            setLoginError('Número não encontrado. Tente cadastrar logo abaixo.');
+                                        }
+                                    } catch {
+                                        setLoginError('Falha de conexão. Tente novamente.');
                                     }
                                 }}>Acessar com meu número</button>
                             </div>
@@ -3325,10 +3374,44 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
     const [selfEditError, setSelfEditError] = useState('');
     const [selfEditSaving, setSelfEditSaving] = useState(false);
     const [selfEditBanner, setSelfEditBanner] = useState('');
+    const [profileFromServer, setProfileFromServer] = useState(null);
 
     const cleanPhone = (p) => String(p || '').replace(/\D/g, '');
     const myPhone = cleanPhone(phoneInput);
     const todayStr = getLocalTodayStr();
+
+    useEffect(() => {
+        if (myPhone.length >= 10) {
+            try {
+                sessionStorage.setItem(MY_APPOINTMENTS_PHONE_STORAGE_KEY, myPhone);
+            } catch (_) { /* ignore */ }
+        }
+    }, [myPhone]);
+
+    useEffect(() => {
+        if (myPhone.length < 10) {
+            setProfileFromServer(null);
+            return undefined;
+        }
+        let cancelled = false;
+        (async () => {
+            try {
+                const r = await fetch(
+                    `${API_BASE_URL}/public/clients?phoneDigits=${encodeURIComponent(myPhone)}`,
+                    { cache: 'no-store' }
+                );
+                const arr = await r.json().catch(() => []);
+                if (!cancelled) {
+                    setProfileFromServer(Array.isArray(arr) && arr[0] ? arr[0] : null);
+                }
+            } catch {
+                if (!cancelled) setProfileFromServer(null);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [myPhone]);
 
     const myApps = useMemo(() => {
         if (!myPhone) return [];
@@ -3356,16 +3439,30 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
         if (!myPhone) return null;
         const list = clients || [];
         let c = list.find((cl) => cleanPhone(cl.phone) === myPhone);
-        if (!c && myApps.length) {
+        if (c) return c;
+        if (profileFromServer && cleanPhone(profileFromServer.phone) === myPhone) {
+            return profileFromServer;
+        }
+        if (myApps.length) {
             const cid = myApps[0].clientId || myApps[0].client_id;
             if (cid) {
                 const byId = list.find((cl) => cl.id === cid);
                 const apPh = cleanPhone(myApps[0].clientPhone || myApps[0].client_phone);
-                if (byId && apPh === myPhone) c = byId;
+                if (byId && apPh === myPhone) return byId;
+            }
+            const apPh2 = cleanPhone(myApps[0].clientPhone || myApps[0].client_phone);
+            if (apPh2 === myPhone) {
+                return {
+                    id: myApps[0].clientId || myApps[0].client_id || '',
+                    name: myApps[0].clientName || myApps[0].client_name || 'Cliente',
+                    phone: myApps[0].clientPhone || myApps[0].client_phone || '',
+                    address: '',
+                    email: ''
+                };
             }
         }
-        return c || null;
-    }, [clients, myPhone, myApps]);
+        return null;
+    }, [clients, myPhone, myApps, profileFromServer]);
 
     useEffect(() => {
         if (!selfEditBanner) return undefined;
@@ -3708,22 +3805,71 @@ const App = () => {
         setShowPassword(true);
     }, []);
 
+    const mergeAppointmentRow = useCallback((row) => {
+        if (!row || row.id == null) return;
+        setAppointments((prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            const byId = new Map(list.map((a) => [String(a.id), a]));
+            byId.set(String(row.id), row);
+            return [...byId.values()].sort((a, b) => {
+                const da = a.date || '';
+                const db = b.date || '';
+                if (da !== db) return da.localeCompare(db);
+                return String(a.time || '').localeCompare(String(b.time || ''));
+            });
+        });
+    }, []);
+
     const refreshData = useCallback(async () => {
         try {
-            const resAps = await fetch(`${API_BASE_URL}/appointments`);
-            if (resAps.ok) {
-                const aps = await resAps.json();
-                if (Array.isArray(aps)) {
-                    setAppointments(aps);
-                }
-            }
+            const authHeaders = adminToken ? { Authorization: `Bearer ${adminToken}` } : {};
 
-            const resClis = await fetch(`${API_BASE_URL}/clients`);
-            if (resClis.ok) {
-                const cls = await resClis.json();
-                if (Array.isArray(cls)) {
-                    setClients(cls);
+            if (adminToken && view === 'admin') {
+                const resAps = await fetch(`${API_BASE_URL}/appointments`, { headers: authHeaders });
+                if (resAps.ok) {
+                    const aps = await resAps.json();
+                    if (Array.isArray(aps)) setAppointments(aps);
                 }
+
+                const resClis = await fetch(`${API_BASE_URL}/clients`, { headers: authHeaders });
+                if (resClis.ok) {
+                    const cls = await resClis.json();
+                    if (Array.isArray(cls)) setClients(cls);
+                }
+            } else {
+                const resOcc = await fetch(`${API_BASE_URL}/public/appointments?purpose=occupancy`, { cache: 'no-store' });
+                let merged = resOcc.ok ? await resOcc.json().catch(() => []) : [];
+                if (!Array.isArray(merged)) merged = [];
+
+                let savedDigits = '';
+                try {
+                    savedDigits = String(sessionStorage.getItem(MY_APPOINTMENTS_PHONE_STORAGE_KEY) || '').replace(/\D/g, '');
+                } catch (_) { /* ignore */ }
+                if (savedDigits.length >= 10) {
+                    const mRes = await fetch(
+                        `${API_BASE_URL}/public/my-appointments?phoneDigits=${encodeURIComponent(savedDigits)}`,
+                        { cache: 'no-store' }
+                    );
+                    if (mRes.ok) {
+                        const myRows = await mRes.json().catch(() => []);
+                        if (Array.isArray(myRows) && myRows.length) {
+                            const byId = new Map(merged.map((a) => [String(a.id), a]));
+                            for (const row of myRows) {
+                                if (row && row.id != null) byId.set(String(row.id), row);
+                            }
+                            merged = [...byId.values()];
+                        }
+                    }
+                }
+
+                merged.sort((a, b) => {
+                    const da = a.date || '';
+                    const db = b.date || '';
+                    if (da !== db) return da.localeCompare(db);
+                    return String(a.time || '').localeCompare(String(b.time || ''));
+                });
+                setAppointments(merged);
+                setClients([]);
             }
 
             const resSch = await fetch(`${API_BASE_URL}/public/schedule-blocks`, { cache: 'no-store' });
@@ -3749,10 +3895,10 @@ const App = () => {
                             .toLowerCase() === 'on'
                 );
             }
-        } catch(e) { 
+        } catch (e) {
             console.error(e);
         }
-    }, []);
+    }, [adminToken, view]);
 
     useEffect(() => {
         refreshData();
@@ -3796,6 +3942,7 @@ const App = () => {
                         promoPackagesEnabled={promoPackagesEnabled}
                         bookingRestoreOrderNsu={bookingRestoreOrderNsu}
                         onBookingRestoreConsumed={clearBookingRestore}
+                        mergeAppointmentRow={mergeAppointmentRow}
                     />
                 )}
                 {view === 'my_apps' && <MyAppointmentsArea appointments={appointments} refreshData={refreshData} clients={clients} setView={setView} />}

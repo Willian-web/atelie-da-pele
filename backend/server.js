@@ -110,6 +110,81 @@ function extractAdminToken(req) {
     return '';
 }
 
+function getRequestIpForRateLimit(req) {
+    const xf = req.headers['x-forwarded-for'];
+    if (xf && typeof xf === 'string') {
+        const first = xf.split(',')[0].trim();
+        if (first) return first;
+    }
+    return req.socket?.remoteAddress || 'unknown';
+}
+
+const paymentCheckRateBuckets = new Map();
+
+/** Limite simples por IP para POST /payments/check (janela deslizante). */
+function allowPaymentCheckRate(req, maxPerWindow = 45, windowMs = 60000) {
+    const ip = getRequestIpForRateLimit(req);
+    const now = Date.now();
+    let arr = paymentCheckRateBuckets.get(ip);
+    if (!Array.isArray(arr)) arr = [];
+    arr = arr.filter((t) => now - t < windowMs);
+    if (arr.length >= maxPerWindow) {
+        paymentCheckRateBuckets.set(ip, arr);
+        return false;
+    }
+    arr.push(now);
+    paymentCheckRateBuckets.set(ip, arr);
+    return true;
+}
+
+function maskEmailForLog(email) {
+    const s = String(email || '').trim();
+    if (!s.includes('@')) return '(vazio)';
+    const [u, dom] = s.split('@');
+    if (!dom) return '(inválido)';
+    const safeUser = u.length <= 1 ? `${u}***` : `${u[0]}***`;
+    return `${safeUser}@${dom}`;
+}
+
+function maskPhoneForLog(phone) {
+    const d = String(phone || '').replace(/\D/g, '');
+    if (d.length < 4) return '(curto)';
+    return `***${d.slice(-4)}`;
+}
+
+function timingSafeEqualUtf8(a, b) {
+    const x = String(a || '');
+    const y = String(b || '');
+    if (x.length !== y.length) return false;
+    try {
+        return crypto.timingSafeEqual(Buffer.from(x, 'utf8'), Buffer.from(y, 'utf8'));
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Visão pública da agenda: mantém shape de mapAppointmentRow para o frontend (slots / status),
+ * sem expor PII nem links de pagamento de terceiros.
+ */
+function sanitizeAppointmentForPublicOccupancy(mapped) {
+    if (!mapped || typeof mapped !== 'object') return mapped;
+    return {
+        ...mapped,
+        clientId: null,
+        clientName: null,
+        clientPhone: null,
+        location: null,
+        notes: null,
+        manualPaymentNote: null,
+        cancelReason: null,
+        paymentUrl: null,
+        transactionNsu: null,
+        invoiceSlug: null,
+        receiptUrl: null
+    };
+}
+
 function requireAdminAuth(req, res, next) {
     const tok = extractAdminToken(req);
     if (!verifyAdminToken(tok)) {
@@ -1152,7 +1227,7 @@ async function trySendClientAppointmentConfirmationIfNeeded(appointmentRow) {
         [appointmentId]
     );
 
-    console.log(`[Payment] E-mail ao cliente enviado (${em}) agendamento ${appointmentId}.`);
+    console.log(`[Payment] E-mail ao cliente enviado (${maskEmailForLog(em)}) agendamento ${appointmentId}.`);
 }
 
 async function confirmAppointmentPayment({ appointmentId, transactionNsu, invoiceSlug, receiptUrl, captureMethod, paidAmount }) {
@@ -1354,7 +1429,7 @@ app.get('/health', async (req, res) => {
 
 // ======================== API CLIENTES ========================
 
-app.get('/clients', async (req, res) => {
+app.get('/clients', requireAdminAuth, async (req, res) => {
     if (!isPostgresSetup) {
         return res.json([]);
     }
@@ -1613,7 +1688,7 @@ app.delete('/admin/clients/:id', requireAdminAuth, async (req, res) => {
 
 // ====================== API AGENDAMENTOS ======================
 
-app.get('/appointments', async (req, res) => {
+app.get('/appointments', requireAdminAuth, async (req, res) => {
     if (!isPostgresSetup) {
         return res.json([]);
     }
@@ -1847,6 +1922,108 @@ app.get('/config/public', async (_req, res) => {
     } catch (error) {
         console.error('[GET /config/public] Erro:', error);
         res.json({ adminWhatsApp: getPublicAdminWhatsappDigits(), promotionalPackagesEnabled: false });
+    }
+});
+
+// ====================== API PÚBLICA (AGENDA / CADASTRO — SEM LISTAGEM TOTAL) ======================
+
+app.get('/public/appointments', async (req, res) => {
+    res.set('Cache-Control', 'private, no-store, max-age=0, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    const purpose = String(req.query.purpose || '').trim().toLowerCase();
+    if (purpose !== 'occupancy') {
+        return res.status(400).json({ error: 'Informe purpose=occupancy para esta rota.' });
+    }
+    if (!isPostgresSetup) {
+        return res.json([]);
+    }
+    try {
+        const { rows } = await pool.query('SELECT * FROM appointments ORDER BY date ASC, time ASC');
+        const formatted = rows.map((r) => sanitizeAppointmentForPublicOccupancy(mapAppointmentRow(r)));
+        return res.json(formatted);
+    } catch (error) {
+        console.error('[GET /public/appointments] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao buscar ocupação da agenda.' });
+    }
+});
+
+app.get('/public/my-appointments', async (req, res) => {
+    res.set('Cache-Control', 'private, no-store, max-age=0, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    const digits = String(req.query.phoneDigits || '').replace(/\D/g, '');
+    if (digits.length < 10) {
+        return res.status(400).json({ error: 'Informe phoneDigits com ao menos 10 dígitos.' });
+    }
+    if (!isPostgresSetup) {
+        return res.json([]);
+    }
+    try {
+        const { rows } = await pool.query(
+            `
+            SELECT *
+            FROM appointments
+            WHERE regexp_replace(coalesce(client_phone, ''), '[^0-9]', '', 'g') = $1
+            ORDER BY date ASC, time ASC
+        `,
+            [digits]
+        );
+        return res.json(rows.map((r) => mapAppointmentRow(r)));
+    } catch (error) {
+        console.error('[GET /public/my-appointments] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao buscar agendamentos.' });
+    }
+});
+
+app.get('/public/appointment/:id', async (req, res) => {
+    res.set('Cache-Control', 'private, no-store, max-age=0, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    const id = req.params.id != null ? String(req.params.id).trim() : '';
+    if (!id) {
+        return res.status(400).json({ error: 'ID inválido.' });
+    }
+    if (!isPostgresSetup) {
+        return res.status(404).json({ error: 'Não encontrado.' });
+    }
+    try {
+        const { rows } = await pool.query('SELECT * FROM appointments WHERE id = $1', [id]);
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Agendamento não encontrado.' });
+        }
+        return res.json(mapAppointmentRow(rows[0]));
+    } catch (error) {
+        console.error('[GET /public/appointment/:id] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao buscar agendamento.' });
+    }
+});
+
+app.get('/public/clients', async (req, res) => {
+    res.set('Cache-Control', 'private, no-store, max-age=0, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    const digits = String(req.query.phoneDigits || '').replace(/\D/g, '');
+    if (digits.length < 10) {
+        return res.status(400).json({ error: 'Informe phoneDigits com ao menos 10 dígitos.' });
+    }
+    if (!isPostgresSetup) {
+        return res.json([]);
+    }
+    try {
+        const { rows } = await pool.query(
+            `
+            SELECT *
+            FROM clients
+            WHERE regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') = $1
+            ORDER BY name ASC
+            LIMIT 3
+        `,
+            [digits]
+        );
+        if (rows.length > 1) {
+            console.warn('[GET /public/clients] Múltiplos cadastros para o mesmo telefone; retornando o primeiro.');
+        }
+        return res.json(rows.length ? [rows[0]] : []);
+    } catch (error) {
+        console.error('[GET /public/clients] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao buscar cadastro.' });
     }
 });
 
@@ -2716,7 +2893,22 @@ app.post('/webhook/infinitepay', async (req, res) => {
     }
 
     try {
-        console.log('[InfinitePay Webhook] Payload recebido:', JSON.stringify(req.body));
+        const whSecret = process.env.INFINITEPAY_WEBHOOK_SECRET;
+        if (whSecret != null && String(whSecret).trim().length > 0) {
+            const expected = String(whSecret).trim();
+            const hdr =
+                String(req.headers['x-webhook-secret'] || '').trim() ||
+                String(req.headers['x-infinitepay-webhook-secret'] || '').trim() ||
+                String(req.headers['x-atelie-webhook-secret'] || '').trim();
+            if (!timingSafeEqualUtf8(hdr, expected)) {
+                console.warn('[InfinitePay Webhook] Requisição rejeitada: segredo de webhook inválido ou ausente.');
+                return res.status(401).json({ error: 'Webhook não autorizado.' });
+            }
+        } else {
+            console.warn(
+                '[InfinitePay Webhook] INFINITEPAY_WEBHOOK_SECRET não definida — aceitando requisições sem validação de segredo (compatibilidade).'
+            );
+        }
 
         const {
             invoice_slug,
@@ -2729,6 +2921,20 @@ app.post('/webhook/infinitepay', async (req, res) => {
             receipt_url,
             items
         } = req.body || {};
+
+        console.log(
+            '[InfinitePay Webhook] Evento recebido:',
+            JSON.stringify({
+                order_nsu: order_nsu || null,
+                transaction_nsu: transaction_nsu || null,
+                invoice_slug: invoice_slug || null,
+                amount: amount || 0,
+                paid_amount: paid_amount,
+                installments: installments || 1,
+                capture_method: capture_method || null,
+                items_count: Array.isArray(items) ? items.length : 0
+            })
+        );
 
         if (!order_nsu) {
             return res.status(400).json({ error: 'order_nsu não informado no webhook.' });
@@ -2781,10 +2987,6 @@ app.post('/webhook/infinitepay', async (req, res) => {
             console.log(`[InfinitePay Webhook] Processado: id=${appointmentId} ${confirmResult.previousStatus} -> ${finalStatus} updated=${confirmResult.updated}`);
         }
 
-        console.log('[InfinitePay Webhook] Itens recebidos:', JSON.stringify(items || []));
-        console.log('[InfinitePay Webhook] Parcela(s):', installments || 1);
-        console.log('[InfinitePay Webhook] Valor cobrado (centavos):', amount || 0);
-
         const ignoredBecauseProcessed =
             !!confirmResult.alreadyProcessed &&
             (finalStatus === 'confirmed' || finalStatus === 'completed');
@@ -2812,6 +3014,10 @@ app.post('/webhook/infinitepay', async (req, res) => {
 app.post('/payments/check', async (req, res) => {
     if (!isPostgresSetup) {
         return res.status(500).json({ error: 'Sem DB' });
+    }
+
+    if (!allowPaymentCheckRate(req)) {
+        return res.status(429).json({ error: 'Muitas consultas. Aguarde um instante e tente novamente.' });
     }
 
     try {
@@ -2874,7 +3080,7 @@ app.post('/payments/check', async (req, res) => {
 
 // ====================== TESTE DE EMAIL ====================
 
-app.post('/test-email', async (req, res) => {
+app.post('/test-email', requireAdminAuth, async (req, res) => {
     try {
         const variant = String(req.query.variant || '').trim().toLowerCase();
         const isOnlineVariant = variant === 'online';

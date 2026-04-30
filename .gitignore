@@ -6,6 +6,7 @@ yarn-debug.log*
 yarn-error.log*
 
 # Configs e Sessões Sigilosas
+.env
 backend/.env
 backend/.wwebjs_auth
 backend/.wwebjs_cache

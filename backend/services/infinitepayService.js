@@ -72,7 +72,7 @@ async function createCheckoutLink(appointment) {
         throw new Error('InfinitePay não retornou URL de pagamento.');
     }
 
-    console.log(`[InfinitePayService] Checkout criado com sucesso: ${data.url}`);
+    console.log(`[InfinitePayService] Checkout criado com sucesso (url length=${data.url ? String(data.url).length : 0})`);
     return data.url;
 }
 

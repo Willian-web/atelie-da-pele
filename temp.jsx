@@ -1,10 +1,12 @@
 
-const { useState, useEffect, useMemo, useCallback } = React;
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
 const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://localhost:8080' : 'https://' + window.location.hostname;
 
 /** Sessão admin (token emitido pelo backend); não armazenar senha. */
 const ADMIN_TOKEN_STORAGE_KEY = 'atelie_admin_token';
+/** Dígitos do telefone usados em “Meus agendamentos” (sessão) para mesclar detalhes sem listar tudo. */
+const MY_APPOINTMENTS_PHONE_STORAGE_KEY = 'atelie_my_appointments_phone_digits';
 
 /** Legado: limite usado só para inferir checkout integral em registros antigos (alinhado a `FIXED_SIGNAL_AMOUNT` no backend). */
 const FIXED_SIGNAL_AMOUNT = 30;
@@ -1464,13 +1466,14 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
     const [searchAttempted, setSearchAttempted] = useState(false);
     const [loginError, setLoginError] = useState('');
 
+    const cleanPhone = (p) => String(p || '').replace(/\D/g, '');
     const inputClean = String(phoneInput).replace(/\D/g, '');
     /** Lista e cabeçalho só quando o que está no campo bate com o último número buscado (evita resultados “fantasma” ao editar). */
     const showCommittedResults =
         searchedPhoneDigits !== null && inputClean === searchedPhoneDigits;
     const displayClient = showCommittedResults ? searchedClient : null;
 
-    const handleSearch = () => {
+    const handleSearch = async () => {
         setLoginError('');
         const clean = String(phoneInput).replace(/\D/g, '');
         setSearchAttempted(true);
@@ -1480,8 +1483,30 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
             setLoginError('Digite o número cadastrado (com DDD).');
             return;
         }
+        if (clean.length < 10) {
+            setSearchedPhoneDigits(null);
+            setSearchedClient(null);
+            setLoginError('Informe um número válido com DDD.');
+            return;
+        }
         setSearchedPhoneDigits(clean);
-        const c = clients.find((cl) => cl.phone.replace(/\D/g, '') === clean);
+        try {
+            sessionStorage.setItem(MY_APPOINTMENTS_PHONE_STORAGE_KEY, clean);
+        } catch (_) { /* ignore */ }
+
+        let c = (clients || []).find((cl) => cleanPhone(cl.phone) === clean);
+        if (!c) {
+            try {
+                const res = await fetch(
+                    `${API_BASE_URL}/public/clients?phoneDigits=${encodeURIComponent(clean)}`,
+                    { cache: 'no-store' }
+                );
+                const arr = await res.json().catch(() => []);
+                c = Array.isArray(arr) && arr[0] ? arr[0] : null;
+            } catch {
+                c = null;
+            }
+        }
         if (c) {
             setSearchedClient(c);
             setLoginError('');
@@ -1543,9 +1568,18 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
     }
 
     const myApps = displayClient
-        ? appointments
-            .filter((a) => a.clientId === displayClient.id)
-            .sort((a, b) => new Date(b.date + 'T' + b.time) - new Date(a.date + 'T' + a.time))
+        ? (() => {
+              const idMatch = String(displayClient.id || '');
+              const ph = cleanPhone(displayClient.phone);
+              return (appointments || [])
+                  .filter((a) => {
+                      const apPh = cleanPhone(a.clientPhone || a.client_phone);
+                      if (ph.length >= 10 && apPh && apPh === ph) return true;
+                      if (idMatch && String(a.clientId || a.client_id || '') === idMatch) return true;
+                      return false;
+                  })
+                  .sort((a, b) => new Date(b.date + 'T' + b.time) - new Date(a.date + 'T' + a.time));
+          })()
         : [];
 
     const showLoginError =
@@ -1819,7 +1853,15 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
 
 // ============== ÁREA NOVO AGENDAMENTO (FLOW PRINCIPAL) ==============
 
-const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingRestoreOrderNsu, onBookingRestoreConsumed }) => {
+const ClientArea = ({
+    appointments,
+    refreshData,
+    clients,
+    blockedSlots,
+    bookingRestoreOrderNsu,
+    onBookingRestoreConsumed,
+    mergeAppointmentRow
+}) => {
     const [step, setStep] = useState(1);
     
     // Step 1
@@ -1846,6 +1888,7 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
     const [completedAppInfo, setCompletedAppInfo] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [apiError, setApiError] = useState('');
+    const lastBookingRestoreAppliedId = useRef('');
 
     const [serviceCatFilter, setServiceCatFilter] = useState('Todos');
     const serviceCategoryChips = useMemo(() => {
@@ -1889,53 +1932,83 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
     }, [selectedClient?.id]);
 
     useEffect(() => {
-        if (!bookingRestoreOrderNsu) return;
+        if (!bookingRestoreOrderNsu) {
+            lastBookingRestoreAppliedId.current = '';
+            return;
+        }
         const idStr = String(bookingRestoreOrderNsu).trim();
         if (!idStr) return;
-        const appRow = (appointments || []).find((a) => String(a.id) === idStr);
-        if (!appRow) return;
+        if (lastBookingRestoreAppliedId.current === idStr) return;
 
-        const sid = appRow.serviceId || appRow.service_id;
-        const meta = getServiceMeta(sid) || {
-            id: sid || 'servico',
-            name: appRow.serviceName || appRow.service_id || 'Serviço',
-            price: Number(appRow.paymentAmount) || 0,
-            category: '',
-            duration: DEFAULT_APPOINTMENT_DURATION_MIN
+        const applyRestore = (appRow) => {
+            if (!appRow) return;
+            const sid = appRow.serviceId || appRow.service_id;
+            const meta = getServiceMeta(sid) || {
+                id: sid || 'servico',
+                name: appRow.serviceName || appRow.service_id || 'Serviço',
+                price: Number(appRow.paymentAmount) || 0,
+                category: '',
+                duration: DEFAULT_APPOINTMENT_DURATION_MIN
+            };
+
+            const cid = appRow.clientId || appRow.client_id;
+            let clientRow = (clients || []).find((c) => String(c.id) === String(cid));
+            if (!clientRow) {
+                clientRow = {
+                    id: cid || idStr,
+                    name: appRow.clientName || appRow.client_name || 'Cliente',
+                    phone: appRow.clientPhone || appRow.client_phone || '',
+                    address: appRow.location || '',
+                    email: String(appRow.clientEmail || '').trim()
+                };
+            }
+
+            setSelectedService(String(sid || ''));
+            setSelectedClient(clientRow);
+            setCompletedAppInfo({ app: appRow, client: clientRow, service: meta });
+            setStep(4);
+            setCheckedTerms(true);
+            setApiError('');
+            setLoginError('');
+
+            try {
+                const u = new URL(window.location.href);
+                u.searchParams.delete('return');
+                u.searchParams.delete('order_nsu');
+                const qs = u.searchParams.toString();
+                window.history.replaceState({}, '', `${u.pathname}${qs ? `?${qs}` : ''}${u.hash || ''}`);
+            } catch (_) { /* ignore */ }
+
+            if (typeof onBookingRestoreConsumed === 'function') {
+                onBookingRestoreConsumed();
+            }
+            lastBookingRestoreAppliedId.current = idStr;
         };
 
-        const cid = appRow.clientId || appRow.client_id;
-        let clientRow = (clients || []).find((c) => String(c.id) === String(cid));
-        if (!clientRow) {
-            clientRow = {
-                id: cid || idStr,
-                name: appRow.clientName || appRow.client_name || 'Cliente',
-                phone: appRow.clientPhone || appRow.client_phone || '',
-                address: appRow.location || '',
-                email: String(appRow.clientEmail || '').trim()
-            };
+        const local = (appointments || []).find((a) => String(a.id) === idStr);
+        if (local && (local.clientPhone || local.client_phone || local.paymentUrl)) {
+            applyRestore(local);
+            return;
         }
 
-        setSelectedService(String(sid || ''));
-        setSelectedClient(clientRow);
-        setCompletedAppInfo({ app: appRow, client: clientRow, service: meta });
-        setStep(4);
-        setCheckedTerms(true);
-        setApiError('');
-        setLoginError('');
+        let cancelled = false;
+        (async () => {
+            try {
+                const r = await fetch(`${API_BASE_URL}/public/appointment/${encodeURIComponent(idStr)}`, { cache: 'no-store' });
+                if (!r.ok || cancelled) return;
+                const fetched = await r.json().catch(() => null);
+                if (!fetched || cancelled) return;
+                if (typeof mergeAppointmentRow === 'function') {
+                    mergeAppointmentRow(fetched);
+                }
+                applyRestore(fetched);
+            } catch (_) { /* ignore */ }
+        })();
 
-        try {
-            const u = new URL(window.location.href);
-            u.searchParams.delete('return');
-            u.searchParams.delete('order_nsu');
-            const qs = u.searchParams.toString();
-            window.history.replaceState({}, '', `${u.pathname}${qs ? `?${qs}` : ''}${u.hash || ''}`);
-        } catch (_) { /* ignore */ }
-
-        if (typeof onBookingRestoreConsumed === 'function') {
-            onBookingRestoreConsumed();
-        }
-    }, [bookingRestoreOrderNsu, appointments, clients, onBookingRestoreConsumed]);
+        return () => {
+            cancelled = true;
+        };
+    }, [bookingRestoreOrderNsu, appointments, clients, onBookingRestoreConsumed, mergeAppointmentRow]);
 
     useEffect(() => {
         setCheckedTerms(false);
@@ -2243,14 +2316,29 @@ const ClientArea = ({ appointments, refreshData, clients, blockedSlots, bookingR
                                 <label className="form-label" style={{fontWeight: 600}}>Já sou cliente (Número do seu WhatsApp)</label>
                                 <input type="text" className="form-control" placeholder="Ex: 11999999999..." value={loginPhone} onChange={e => setLoginPhone(e.target.value)} />
                                 {loginError && <div style={{color: 'var(--danger)', fontSize: '13px', marginTop: '8px'}}>{loginError}</div>}
-                                <button className="btn-submit" style={{marginTop: '15px', width: '100%'}} onClick={() => {
+                                <button className="btn-submit" style={{marginTop: '15px', width: '100%'}} onClick={async () => {
                                     const cleanLogin = loginPhone.replace(/\D/g, '');
-                                    const c = clients.find(cl => cl.phone.replace(/\D/g, '') === cleanLogin);
-                                    if(c) {
-                                        setSelectedClient(c); setLoginError('');
-                                        setStep(3);
-                                    } else {
-                                        setLoginError('Número não encontrado. Tente cadastrar logo abaixo.');
+                                    if (cleanLogin.length < 10) {
+                                        setLoginError('Informe um número válido com DDD.');
+                                        return;
+                                    }
+                                    setLoginError('');
+                                    try {
+                                        const res = await fetch(
+                                            `${API_BASE_URL}/public/clients?phoneDigits=${encodeURIComponent(cleanLogin)}`,
+                                            { cache: 'no-store' }
+                                        );
+                                        const arr = await res.json().catch(() => []);
+                                        const c = Array.isArray(arr) && arr[0] ? arr[0] : null;
+                                        if (c) {
+                                            setSelectedClient(c);
+                                            setLoginError('');
+                                            setStep(3);
+                                        } else {
+                                            setLoginError('Número não encontrado. Tente cadastrar logo abaixo.');
+                                        }
+                                    } catch {
+                                        setLoginError('Falha de conexão. Tente novamente.');
                                     }
                                 }}>Acessar com meu número</button>
                             </div>
@@ -2550,36 +2638,91 @@ const App = () => {
         setShowPassword(true);
     }, []);
 
+    const mergeAppointmentRow = useCallback((row) => {
+        if (!row || row.id == null) return;
+        setAppointments((prev) => {
+            const list = Array.isArray(prev) ? prev : [];
+            const byId = new Map(list.map((a) => [String(a.id), a]));
+            byId.set(String(row.id), row);
+            return [...byId.values()].sort((a, b) => {
+                const da = a.date || '';
+                const db = b.date || '';
+                if (da !== db) return da.localeCompare(db);
+                return String(a.time || '').localeCompare(String(b.time || ''));
+            });
+        });
+    }, []);
+
     // Função de Refresh Principal
     const refreshData = useCallback(async () => {
-        const blkHeaders = adminToken ? { Authorization: `Bearer ${adminToken}` } : {};
         try {
-            const resAps = await fetch(`${API_BASE_URL}/appointments`);
-            if (resAps.ok) {
-                const aps = await resAps.json();
-                setAppointments(aps);
-                setDbStatus('PostgreSQL Conectado');
-            } else { setDbStatus('Erro Conexão API'); }
+            const authHeaders = adminToken ? { Authorization: `Bearer ${adminToken}` } : {};
 
-            const resClis = await fetch(`${API_BASE_URL}/clients`);
-            if (resClis.ok) setClients(await resClis.json());
+            if (adminToken && view === 'admin') {
+                const resAps = await fetch(`${API_BASE_URL}/appointments`, { headers: authHeaders });
+                if (resAps.ok) {
+                    const aps = await resAps.json();
+                    if (Array.isArray(aps)) setAppointments(aps);
+                    setDbStatus('PostgreSQL Conectado');
+                } else {
+                    setDbStatus('Erro Conexão API');
+                }
 
-            const resBlk = await fetch(`${API_BASE_URL}/admin/blocked-slots`, { headers: blkHeaders });
-            if (resBlk.status === 401) {
+                const resClis = await fetch(`${API_BASE_URL}/clients`, { headers: authHeaders });
+                if (resClis.ok) {
+                    const cls = await resClis.json();
+                    if (Array.isArray(cls)) setClients(cls);
+                }
+            } else {
+                const resOcc = await fetch(`${API_BASE_URL}/public/appointments?purpose=occupancy`, { cache: 'no-store' });
+                let merged = resOcc.ok ? await resOcc.json().catch(() => []) : [];
+                if (!Array.isArray(merged)) merged = [];
+
+                let savedDigits = '';
                 try {
-                    sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+                    savedDigits = String(sessionStorage.getItem(MY_APPOINTMENTS_PHONE_STORAGE_KEY) || '').replace(/\D/g, '');
                 } catch (_) { /* ignore */ }
-                setAdminToken('');
-                setBlockedSlots([]);
-            } else if (resBlk.ok) {
-                setBlockedSlots(await resBlk.json());
+                if (savedDigits.length >= 10) {
+                    const mRes = await fetch(
+                        `${API_BASE_URL}/public/my-appointments?phoneDigits=${encodeURIComponent(savedDigits)}`,
+                        { cache: 'no-store' }
+                    );
+                    if (mRes.ok) {
+                        const myRows = await mRes.json().catch(() => []);
+                        if (Array.isArray(myRows) && myRows.length) {
+                            const byId = new Map(merged.map((a) => [String(a.id), a]));
+                            for (const row of myRows) {
+                                if (row && row.id != null) byId.set(String(row.id), row);
+                            }
+                            merged = [...byId.values()];
+                        }
+                    }
+                }
+
+                merged.sort((a, b) => {
+                    const da = a.date || '';
+                    const db = b.date || '';
+                    if (da !== db) return da.localeCompare(db);
+                    return String(a.time || '').localeCompare(String(b.time || ''));
+                });
+                setAppointments(merged);
+                setClients([]);
+                if (resOcc.ok) setDbStatus('PostgreSQL Conectado');
+                else setDbStatus('Erro Conexão API');
+            }
+
+            const resSch = await fetch(`${API_BASE_URL}/public/schedule-blocks`, { cache: 'no-store' });
+            if (resSch.ok) {
+                const sch = await resSch.json().catch(() => ({}));
+                setBlockedSlots(Array.isArray(sch.blockedSlots) ? sch.blockedSlots : []);
             } else {
                 setBlockedSlots([]);
             }
-        } catch(e) { 
-            console.error(e); setDbStatus('Offline'); 
+        } catch (e) {
+            console.error(e);
+            setDbStatus('Offline');
         }
-    }, [adminToken]);
+    }, [adminToken, view]);
 
     useEffect(() => {
         refreshData();
@@ -2627,6 +2770,7 @@ const App = () => {
                         blockedSlots={blockedSlots}
                         bookingRestoreOrderNsu={bookingRestoreOrderNsu}
                         onBookingRestoreConsumed={clearBookingRestore}
+                        mergeAppointmentRow={mergeAppointmentRow}
                     />
                 )}
                 {view === 'my_apps' && <MyAppointmentsArea appointments={appointments} refreshData={refreshData} clients={clients} setView={setView} />}

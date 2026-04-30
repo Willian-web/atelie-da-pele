@@ -63,9 +63,15 @@ function resolvePaidAmountForDisplay({ paymentType, paid_amount, amount_charged,
 
 async function sendConfirmationEmail(appointmentData, serviceData) {
     console.log('[EmailService] Iniciando envio via HTTPS REST (Resend)...');
-    console.log(
-        `[EmailService] Variáveis - Destino: ${process.env.NOTIFICATION_EMAIL || 'NÃO DEFINIDO'}, Remetente: ${process.env.FROM_EMAIL || 'onboarding@resend.dev'}`
-    );
+    const maskAddr = (addr, fallback) => {
+        const s = String(addr || '').trim();
+        if (!s) return fallback;
+        if (!s.includes('@')) return s;
+        return s.replace(/^(.{1,2})[^@]*(@.*)$/, '$1***$2');
+    };
+    const destLog = maskAddr(process.env.NOTIFICATION_EMAIL, 'NÃO DEFINIDO');
+    const fromLog = maskAddr(process.env.FROM_EMAIL, 'onboarding@resend.dev');
+    console.log(`[EmailService] Variáveis - Destino: ${destLog}, Remetente: ${fromLog}`);
 
     if (!process.env.RESEND_API_KEY) {
         console.error('[EmailService] ERRO CRÍTICO: RESEND_API_KEY não está definida!');
