@@ -86,6 +86,59 @@
         .report-col-service { min-width: 140px; max-width: 280px; white-space: normal; word-break: break-word; }
         .report-col-client { min-width: 120px; max-width: 220px; word-break: break-word; }
         .report-kpi-value { white-space: nowrap; }
+        /* Filtros de período — Relatório de Faturamento (somente visual / mobile) */
+        .report-filters-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-end;
+            gap: 10px;
+        }
+        .report-date-field {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            flex: 0 1 auto;
+            min-width: 0;
+            max-width: 220px;
+        }
+        .report-date-field .report-date-label {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+        .report-date-input.form-control {
+            width: 100%;
+            min-width: 148px;
+            min-height: 44px;
+            padding: 10px 12px;
+            font-size: 16px;
+            line-height: 1.25;
+            box-sizing: border-box;
+        }
+        .report-filters-row .report-filters-search {
+            flex: 0 0 auto;
+        }
+        @media (max-width: 520px) {
+            .report-date-field {
+                flex: 1 1 calc(50% - 8px);
+                max-width: none;
+                min-width: min(100%, 168px);
+            }
+            .report-date-input.form-control {
+                min-width: 0;
+                max-width: none;
+            }
+        }
+        @media (max-width: 360px) {
+            .report-date-field {
+                flex: 1 1 100%;
+                min-width: 100%;
+            }
+            .report-filters-row .report-filters-search {
+                flex: 1 1 100%;
+                width: 100%;
+                box-sizing: border-box;
+            }
+        }
         .st-pending { background: #fff3cd; color: #856404; }
         .st-confirmed { background: #d4edda; color: #155724; }
         .st-cancelled { background: #f8d7da; color: #721c24; }
@@ -3057,16 +3110,28 @@ const AdminArea = ({
             <div style={{textAlign: 'left'}}>
                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '12px', flexWrap: 'wrap', marginBottom: '14px'}}>
                     <h3 style={{margin: 0}}>Relatório de Faturamento</h3>
-                    <div style={{display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end'}}>
-                        <div style={{display: 'flex', flexDirection: 'column', gap: '6px'}}>
-                            <label style={{fontSize: '13px', color: 'var(--text-muted)'}}>Data inicial</label>
-                            <input type="date" className="form-control" value={reportStartDate} onChange={e => setReportStartDate(e.target.value)} style={{maxWidth: '190px'}} />
+                    <div className="report-filters-row">
+                        <div className="report-date-field">
+                            <label className="report-date-label" htmlFor="report-date-start">Data inicial</label>
+                            <input
+                                id="report-date-start"
+                                type="date"
+                                className="form-control report-date-input"
+                                value={reportStartDate}
+                                onChange={e => setReportStartDate(e.target.value)}
+                            />
                         </div>
-                        <div style={{display: 'flex', flexDirection: 'column', gap: '6px'}}>
-                            <label style={{fontSize: '13px', color: 'var(--text-muted)'}}>Data final</label>
-                            <input type="date" className="form-control" value={reportEndDate} onChange={e => setReportEndDate(e.target.value)} style={{maxWidth: '190px'}} />
+                        <div className="report-date-field">
+                            <label className="report-date-label" htmlFor="report-date-end">Data final</label>
+                            <input
+                                id="report-date-end"
+                                type="date"
+                                className="form-control report-date-input"
+                                value={reportEndDate}
+                                onChange={e => setReportEndDate(e.target.value)}
+                            />
                         </div>
-                        <button className="btn-submit" onClick={fetchReport} style={{padding: '10px 14px', fontSize: '13px'}}>
+                        <button type="button" className="btn-submit report-filters-search" onClick={fetchReport} style={{padding: '10px 14px', fontSize: '13px', minHeight: '44px'}}>
                             Buscar
                         </button>
                     </div>
