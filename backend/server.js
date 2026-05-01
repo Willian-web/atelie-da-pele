@@ -28,7 +28,8 @@ require('dotenv').config();
 const {
     sendConfirmationEmail,
     sendClientConfirmationEmail,
-    sendClientAppointmentCancelledEmail
+    sendClientAppointmentCancelledEmail,
+    sendAdminAppointmentCancelledEmail
 } = require('./services/emailService');
 const { createCheckoutLink, checkPaymentStatus } = require('./services/infinitepayService');
 
@@ -2579,21 +2580,28 @@ app.patch('/appointments/:id/cancel', async (req, res) => {
         }
 
         const cancelledRow = update.rows[0];
+        const idsForCancelMail = getAppointmentServiceIdsFromRow(cancelledRow);
+        const serviceObjForCancelMail = buildServiceEmailAggregate(idsForCancelMail);
+
         try {
             const cid = cancelledRow.client_id;
             if (cid) {
                 const cr = await pool.query('SELECT email FROM clients WHERE id = $1', [cid]);
                 const em = normalizeEmail(cr.rows[0]?.email);
                 if (isValidEmailBasic(em)) {
-                    const ids = getAppointmentServiceIdsFromRow(cancelledRow);
-                    const serviceObj = buildServiceEmailAggregate(ids);
-                    await sendClientAppointmentCancelledEmail(cancelledRow, serviceObj, em);
+                    await sendClientAppointmentCancelledEmail(cancelledRow, serviceObjForCancelMail, em);
                 } else {
                     console.warn(`[PATCH /appointments/:id/cancel] E-mail da cliente ausente; sem aviso de cancelamento (${id}).`);
                 }
             }
         } catch (mailErr) {
             console.error(`[PATCH /appointments/:id/cancel] Falha e-mail de cancelamento ao cliente (${id}):`, mailErr);
+        }
+
+        try {
+            await sendAdminAppointmentCancelledEmail(cancelledRow, serviceObjForCancelMail);
+        } catch (adminMailErr) {
+            console.error(`[PATCH /appointments/:id/cancel] Falha e-mail de cancelamento ao admin (${id}):`, adminMailErr);
         }
 
         return res.json(mapAppointmentRow(cancelledRow));

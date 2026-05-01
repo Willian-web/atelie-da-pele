@@ -190,6 +190,16 @@ function noteWhoCancelledAppointment(appointmentRow) {
     return '';
 }
 
+/** Rótulo curto para cópia administrativa (e-mail interno). */
+function labelCancelledByForAdminEmail(appointmentRow) {
+    const by = String(appointmentRow.cancelled_by || appointmentRow.cancelledBy || '').trim().toLowerCase();
+    if (by === 'admin') return 'Admin';
+    if (by === 'client') return 'Cliente';
+    if (by === 'system') return 'Sistema';
+    if (by) return by.charAt(0).toUpperCase() + by.slice(1);
+    return 'Não informado';
+}
+
 async function sendConfirmationEmail(appointmentData, serviceData) {
     console.log('[EmailService] Iniciando envio via HTTPS REST (Resend)...');
     const maskAddr = (addr, fallback) => {
@@ -635,10 +645,108 @@ async function sendClientAppointmentCancelledEmail(appointmentRow, serviceData, 
     }
 }
 
+/**
+ * Cópia interna para o profissional quando um agendamento é cancelado (mesmo fluxo do PATCH ao cliente).
+ * Usa NOTIFICATION_EMAIL; falha de envio não deve afetar o cancelamento (apenas log no chamador).
+ */
+async function sendAdminAppointmentCancelledEmail(appointmentRow, serviceData) {
+    if (!process.env.RESEND_API_KEY) {
+        console.error('[EmailService] RESEND_API_KEY ausente; não enviando cópia de cancelamento ao admin.');
+        return;
+    }
+
+    const adminTo = String(process.env.NOTIFICATION_EMAIL || '').trim();
+    if (!adminTo) {
+        console.error('[EmailService] NOTIFICATION_EMAIL ausente; não enviando cópia de cancelamento ao admin.');
+        return;
+    }
+
+    const resend = new Resend(process.env.RESEND_API_KEY);
+
+    const clientName =
+        appointmentRow.client_name || appointmentRow.clientName || 'Cliente';
+
+    const serviceName =
+        (serviceData && String(serviceData.name || '').trim()) ||
+        appointmentRow.service_name ||
+        appointmentRow.service_id ||
+        'Serviço';
+
+    const appointmentDate = appointmentRow.date
+        ? new Date(`${appointmentRow.date}T12:00:00`).toLocaleDateString('pt-BR')
+        : '—';
+
+    const appointmentTime = appointmentRow.time || '—';
+
+    const paymentLine = describePaymentForCancelEmail(appointmentRow);
+    const cancelledByLabel = labelCancelledByForAdminEmail(appointmentRow);
+    const cancelReasonRaw = appointmentRow.cancel_reason || appointmentRow.cancelReason;
+    const cancelReason =
+        cancelReasonRaw != null && String(cancelReasonRaw).trim() ? String(cancelReasonRaw).trim() : '';
+
+    const subject = 'Agendamento cancelado — Ateliê da Pele';
+
+    const parts = [
+        'Agendamento cancelado',
+        '',
+        'Um agendamento foi cancelado.',
+        '',
+        'Cliente:',
+        clientName,
+        '',
+        'Serviço(s):',
+        serviceName,
+        '',
+        'Data e horário:',
+        `${appointmentDate} às ${appointmentTime}`,
+        '',
+        'Forma de pagamento:',
+        paymentLine,
+        '',
+        'Cancelado por:',
+        cancelledByLabel,
+        '',
+        'Status:',
+        'Cancelado'
+    ];
+
+    if (cancelReason) {
+        parts.push('');
+        parts.push('Motivo registrado:');
+        parts.push(cancelReason);
+    }
+
+    parts.push('');
+    parts.push('Este é um e-mail automático.');
+
+    const text = parts.join('\n');
+
+    try {
+        const { data, error } = await resend.emails.send({
+            from: process.env.FROM_EMAIL || 'Ateliê da Pele <onboarding@resend.dev>',
+            to: adminTo,
+            subject,
+            text
+        });
+
+        if (error) {
+            console.error('[EmailService] Falha Resend (cancelamento admin):', error.message || error);
+            throw new Error(error.message || 'Falha no envio ao admin');
+        }
+
+        console.log(`[EmailService] Cópia de cancelamento ao admin enviada. Resend ID: ${data?.id || 'N/A'}`);
+        return data;
+    } catch (error) {
+        console.error('[EmailService] Falha geral e-mail cancelamento admin:', error.message || error);
+        throw error;
+    }
+}
+
 module.exports = {
     sendConfirmationEmail,
     sendClientConfirmationEmail,
     sendClientAppointmentCancelledEmail,
+    sendAdminAppointmentCancelledEmail,
     buildEmailTemplate,
     ATELIE_SALON_LOCATION_LINE,
     ATELIE_EMAIL_STANDARD_FOOTER

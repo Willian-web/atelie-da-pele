@@ -178,15 +178,17 @@
             box-sizing: border-box;
         }
         .my-app-card__maps-link {
-            display: inline-flex;
+            display: flex;
             align-items: center;
             gap: 6px;
-            margin-top: 6px;
+            margin-top: 8px;
             font-size: 13px;
             color: #0ea5e9;
             text-decoration: none;
             max-width: 100%;
             box-sizing: border-box;
+            flex-wrap: wrap;
+            row-gap: 4px;
         }
         .my-app-card__maps-link i { flex-shrink: 0; }
         .my-app-card__cancel {
@@ -3571,7 +3573,16 @@ const AdminArea = ({
 };
 
 const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => {
-    const [phoneInput, setPhoneInput] = useState('');
+    const readStoredMyAppointmentsDigits = () => {
+        try {
+            const d = String(sessionStorage.getItem(MY_APPOINTMENTS_PHONE_STORAGE_KEY) || '').replace(/\D/g, '');
+            return d.length >= 10 ? d : '';
+        } catch (_) {
+            return '';
+        }
+    };
+
+    const [phoneInput, setPhoneInput] = useState(() => readStoredMyAppointmentsDigits());
     const [filter, setFilter] = useState('next'); // next | all | past
     const [selfEditModal, setSelfEditModal] = useState(null);
     const [selfEditError, setSelfEditError] = useState('');
@@ -3579,18 +3590,73 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
     const [selfEditBanner, setSelfEditBanner] = useState('');
     const [cancelBanner, setCancelBanner] = useState('');
     const [profileFromServer, setProfileFromServer] = useState(null);
+    const [myAppsRefreshing, setMyAppsRefreshing] = useState(false);
+    const myAppsRefreshDebounceRef = useRef(null);
+    const myAppsRefreshInFlight = useRef(false);
 
     const cleanPhone = (p) => String(p || '').replace(/\D/g, '');
     const myPhone = cleanPhone(phoneInput);
     const todayStr = getLocalTodayStr();
 
     useEffect(() => {
-        if (myPhone.length >= 10) {
+        if (myPhone.length < 10) {
+            try {
+                sessionStorage.removeItem(MY_APPOINTMENTS_PHONE_STORAGE_KEY);
+            } catch (_) { /* ignore */ }
+        } else {
             try {
                 sessionStorage.setItem(MY_APPOINTMENTS_PHONE_STORAGE_KEY, myPhone);
             } catch (_) { /* ignore */ }
         }
     }, [myPhone]);
+
+    const runRefreshAppointmentsList = useCallback(async () => {
+        if (myAppsRefreshInFlight.current) return;
+        myAppsRefreshInFlight.current = true;
+        setMyAppsRefreshing(true);
+        try {
+            await refreshData();
+        } finally {
+            myAppsRefreshInFlight.current = false;
+            setMyAppsRefreshing(false);
+        }
+    }, [refreshData]);
+
+    /** Telefone com ≥10 dígitos: recarrega lista após debounce (alinhado ao sessionStorage usado em refreshData). */
+    useEffect(() => {
+        if (myPhone.length < 10) {
+            if (myAppsRefreshDebounceRef.current) {
+                clearTimeout(myAppsRefreshDebounceRef.current);
+                myAppsRefreshDebounceRef.current = null;
+            }
+            return undefined;
+        }
+        if (myAppsRefreshDebounceRef.current) {
+            clearTimeout(myAppsRefreshDebounceRef.current);
+        }
+        myAppsRefreshDebounceRef.current = setTimeout(() => {
+            myAppsRefreshDebounceRef.current = null;
+            void runRefreshAppointmentsList();
+        }, 450);
+        return () => {
+            if (myAppsRefreshDebounceRef.current) {
+                clearTimeout(myAppsRefreshDebounceRef.current);
+                myAppsRefreshDebounceRef.current = null;
+            }
+        };
+    }, [myPhone, runRefreshAppointmentsList]);
+
+    const handleMyAppsRefreshClick = useCallback(async () => {
+        if (myAppsRefreshDebounceRef.current) {
+            clearTimeout(myAppsRefreshDebounceRef.current);
+            myAppsRefreshDebounceRef.current = null;
+        }
+        if (myPhone.length < 10) {
+            await refreshData();
+            return;
+        }
+        await runRefreshAppointmentsList();
+    }, [myPhone, refreshData, runRefreshAppointmentsList]);
 
     useEffect(() => {
         if (myPhone.length < 10) {
@@ -3618,7 +3684,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
     }, [myPhone]);
 
     const myApps = useMemo(() => {
-        if (!myPhone) return [];
+        if (!myPhone || myPhone.length < 10) return [];
 
         const list = (appointments || []).filter(a => {
             const apPhone = cleanPhone(a.clientPhone || a.client_phone);
@@ -3640,7 +3706,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
     }, [appointments, myPhone, filter, todayStr]);
 
     const matchedClient = useMemo(() => {
-        if (!myPhone) return null;
+        if (!myPhone || myPhone.length < 10) return null;
         const list = clients || [];
         let c = list.find((cl) => cleanPhone(cl.phone) === myPhone);
         if (c) return c;
@@ -3796,11 +3862,23 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                             Editar cadastro
                         </button>
                     )}
-                    <button className="btn-admin" onClick={refreshData}>
-                        <i className="fas fa-sync-alt"></i> Atualizar
+                    <button
+                        type="button"
+                        className="btn-admin"
+                        onClick={() => void handleMyAppsRefreshClick()}
+                        disabled={myAppsRefreshing}
+                    >
+                        <i className={`fas fa-sync-alt${myAppsRefreshing ? ' fa-spin' : ''}`} aria-hidden="true"></i>{' '}
+                        Atualizar
                     </button>
                 </div>
             </div>
+
+            {myAppsRefreshing && (
+                <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 12px', textAlign: 'center' }}>
+                    Atualizando…
+                </p>
+            )}
 
             <div style={{maxWidth: '520px', margin: '0 auto', textAlign: 'left', width: '100%', boxSizing: 'border-box', padding: '0 4px'}}>
                 <label style={{fontSize: '13px', color: 'var(--text-muted)', display: 'block', marginBottom: '8px'}}>
@@ -3854,13 +3932,13 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                 </div>
             )}
 
-            {!myPhone && (
+            {myPhone.length < 10 && (
                 <div className="alert" style={{background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155'}}>
                     Informe seu telefone acima para carregar seus agendamentos.
                 </div>
             )}
 
-            {myPhone && myApps.length === 0 && (
+            {myPhone.length >= 10 && myApps.length === 0 && (
                 <div className="alert" style={{background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155'}}>
                     Nenhum agendamento encontrado para este telefone.
                 </div>
