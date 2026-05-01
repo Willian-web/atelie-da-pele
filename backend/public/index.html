@@ -117,6 +117,30 @@
         .report-filters-row .report-filters-search {
             flex: 0 0 auto;
         }
+        /* Explicação sequência vs separados — etapa de agendamento (somente leitura visual) */
+        .schedule-mode-help {
+            margin: 0 0 16px;
+            text-align: left;
+        }
+        .schedule-mode-help__block {
+            margin-bottom: 14px;
+            padding: 12px 14px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.65);
+            border: 1px solid rgba(111, 76, 165, 0.12);
+            font-size: 13px;
+            color: var(--text-muted);
+            line-height: 1.55;
+        }
+        .schedule-mode-help__block:last-of-type {
+            margin-bottom: 0;
+        }
+        .schedule-mode-help__title {
+            display: block;
+            font-weight: 700;
+            color: var(--text-dark);
+            margin-bottom: 6px;
+        }
         @media (max-width: 520px) {
             .report-date-field {
                 flex: 1 1 calc(50% - 8px);
@@ -1508,10 +1532,16 @@ const ClientArea = ({
                             <h3 className="section-title" style={{ fontSize: '17px', marginBottom: '10px' }}>
                                 Como deseja agendar os procedimentos?
                             </h3>
-                            <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 14px', lineHeight: 1.45 }}>
-                                <strong>Em sequência:</strong> um único dia e horário de início; cada procedimento usa sua duração no catálogo (padrão 1h).{' '}
-                                <strong>Separados:</strong> data e hora individuais para cada um. O valor total no checkout (se você escolher pagar online) considera todos os procedimentos selecionados.
-                            </p>
+                            <div className="schedule-mode-help">
+                                <div className="schedule-mode-help__block">
+                                    <span className="schedule-mode-help__title">Em sequência</span>
+                                    Os procedimentos serão agendados no mesmo dia, em horários consecutivos.
+                                </div>
+                                <div className="schedule-mode-help__block">
+                                    <span className="schedule-mode-help__title">Separados</span>
+                                    Você poderá escolher uma data e um horário para cada procedimento.
+                                </div>
+                            </div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
                                 <button
                                     type="button"
@@ -2168,6 +2198,7 @@ const AdminArea = ({
     promoPackagesEnabled,
     onPromoPackagesChange
 }) => {
+    const [adminPanelRefreshing, setAdminPanelRefreshing] = useState(false);
     const [adminView, setAdminView] = useState('agenda'); // agenda | clients | report | blocks | campaigns
     const [filter, setFilter] = useState('today'); // today | next | all
     const [filterDate, setFilterDate] = useState('');
@@ -3039,6 +3070,15 @@ const AdminArea = ({
         }
     };
 
+    const handleAdminPanelRefresh = async () => {
+        setAdminPanelRefreshing(true);
+        try {
+            await refreshData();
+        } finally {
+            setAdminPanelRefreshing(false);
+        }
+    };
+
     const renderCampaigns = () => (
         <div className="admin-campaigns-panel" style={{ textAlign: 'left', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
             <h3 style={{ margin: '0 0 8px', fontFamily: 'var(--font-heading, Georgia, serif)' }}>Vales-presente — campanha</h3>
@@ -3232,8 +3272,15 @@ const AdminArea = ({
         <div className="booking-section step-container" style={{textAlign: 'center'}}>
             <div className="admin-panel-head">
                 <h2>Painel Profissional</h2>
-                <button type="button" className="btn-admin" onClick={refreshData}>
-                    <i className="fas fa-sync-alt"></i> Atualizar
+                <button
+                    type="button"
+                    className="btn-admin"
+                    onClick={handleAdminPanelRefresh}
+                    disabled={adminPanelRefreshing}
+                    aria-busy={adminPanelRefreshing}
+                >
+                    <i className={`fas fa-sync-alt${adminPanelRefreshing ? ' fa-spin' : ''}`} aria-hidden="true" />
+                    {adminPanelRefreshing ? ' Atualizando…' : ' Atualizar'}
                 </button>
             </div>
 

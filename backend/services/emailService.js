@@ -460,9 +460,26 @@ function describePaymentForCancelEmail(appointmentRow) {
     return 'Pagamento parcial (histórico) — com saldo previsto para o dia do atendimento.';
 }
 
+const ATELIE_SALON_LOCATION_LINE = 'Ateliê da Pele — Rua Rio Jaguaribe, nº 274';
+
+/** Contexto de quem registrou o cancelamento (usa `cancelled_by` já gravado no registro). */
+function noteWhoCancelledAppointment(appointmentRow) {
+    const by = String(appointmentRow.cancelled_by || appointmentRow.cancelledBy || '').trim().toLowerCase();
+    if (by === 'admin') {
+        return 'Este agendamento foi cancelado pela equipe do Ateliê da Pele.';
+    }
+    if (by === 'client') {
+        return 'Este cancelamento foi registrado por você na área Meus agendamentos.';
+    }
+    if (by === 'system') {
+        return 'Este agendamento foi cancelado automaticamente pelo sistema (ex.: prazo de pagamento online).';
+    }
+    return '';
+}
+
 /**
  * Aviso ao cliente quando o agendamento é cancelado (admin, cliente ou fluxo que use o mesmo PATCH).
- * Inclui dados principais do agendamento; não altera outros templates nem fluxos.
+ * Mesmo modelo para todos os casos; mensagem alinhada ao combinado com o Ateliê.
  */
 async function sendClientAppointmentCancelledEmail(appointmentRow, serviceData, clientEmailTo) {
     const to = String(clientEmailTo || '').trim().toLowerCase();
@@ -497,6 +514,8 @@ async function sendClientAppointmentCancelledEmail(appointmentRow, serviceData, 
     const appointmentTime = appointmentRow.time || '—';
 
     const paymentLine = describePaymentForCancelEmail(appointmentRow);
+    const whoNote = noteWhoCancelledAppointment(appointmentRow);
+    const clientLocation = appointmentRow.location ? String(appointmentRow.location).trim() : '';
 
     const subject = 'Agendamento cancelado';
 
@@ -505,13 +524,16 @@ Olá, ${firstName}!
 
 Seu agendamento foi cancelado.
 
-Detalhes do agendamento cancelado
----------------------------------
+${whoNote ? `${whoNote}\n\n` : ''}Detalhes do agendamento:
+${serviceName}
+${appointmentDate} às ${appointmentTime}
+
 Cliente: ${clientName}
-Procedimento(s): ${serviceName}
-Data: ${appointmentDate}
-Horário: ${appointmentTime}
 Forma de pagamento: ${paymentLine}
+
+Local do atendimento: ${ATELIE_SALON_LOCATION_LINE}${
+        clientLocation ? `\nEndereço informado (quando aplicável): ${clientLocation}` : ''
+    }
 
 Se precisar reagendar, estaremos à disposição.
 
