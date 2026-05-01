@@ -208,7 +208,7 @@ function buildEmailHtmlTemplate(opts) {
     const title = escapeHtml(opts.title || '');
     const subtitle = escapeHtml(opts.subtitle || '');
     const note = opts.noteAfterCard && String(opts.noteAfterCard).trim()
-        ? `<p style="margin:20px 0 0;font-size:14px;line-height:1.55;color:#5c5268;">${escapeHtml(String(opts.noteAfterCard).trim()).replace(/\n/g, '<br/>')}</p>`
+        ? `<p style="margin:24px 0 0;font-size:15px;line-height:1.6;color:#5c5268;">${escapeHtml(String(opts.noteAfterCard).trim()).replace(/\n/g, '<br/>')}</p>`
         : '';
 
     const detailRowsHtml = (Array.isArray(opts.details) ? opts.details : [])
@@ -217,15 +217,15 @@ function buildEmailHtmlTemplate(opts) {
             const vl = escapeHtml(row.value || '').replace(/\n/g, '<br/>');
             return `
 <tr>
-<td style="padding:10px 0;border-bottom:1px solid #ebe4f2;font-size:13px;color:#7a6f8c;width:36%;vertical-align:top;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${lb}</td>
-<td style="padding:10px 0;border-bottom:1px solid #ebe4f2;font-size:14px;color:#3d3554;font-weight:500;vertical-align:top;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${vl}</td>
+<td class="atelie-email-label" width="28%" style="padding:14px 16px 14px 0;border-bottom:1px solid #ebe4f2;font-size:14px;color:#7a6f8c;width:28%;max-width:220px;vertical-align:top;word-wrap:break-word;overflow-wrap:break-word;line-height:1.45;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${lb}</td>
+<td class="atelie-email-value" width="72%" style="padding:14px 0 14px 16px;border-bottom:1px solid #ebe4f2;font-size:15px;color:#3d3554;font-weight:500;vertical-align:top;word-wrap:break-word;overflow-wrap:break-word;line-height:1.5;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${vl}</td>
 </tr>`;
         })
         .join('');
 
     const btn = opts.actionButton && opts.actionButton.href && opts.actionButton.label
-        ? `<table role="presentation" cellspacing="0" cellpadding="0" style="margin:24px auto 0;"><tr><td align="center">
-<a href="${escapeHtml(opts.actionButton.href)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:14px 28px;background:#8b6bb5;color:#ffffff;text-decoration:none;border-radius:999px;font-size:15px;font-weight:600;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${escapeHtml(opts.actionButton.label)}</a>
+        ? `<table role="presentation" cellspacing="0" cellpadding="0" width="100%" style="margin:28px auto 0;"><tr><td align="center" style="padding:0 8px;">
+<a href="${escapeHtml(opts.actionButton.href)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:14px 32px;background:#8b6bb5;color:#ffffff;text-decoration:none;border-radius:999px;font-size:15px;font-weight:600;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${escapeHtml(opts.actionButton.label)}</a>
 </td></tr></table>`
         : '';
 
@@ -235,29 +235,36 @@ function buildEmailHtmlTemplate(opts) {
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>${title}</title>
+<style type="text/css">
+@media only screen and (max-width: 600px) {
+  .atelie-email-shell { width: 100% !important; max-width: 100% !important; }
+  .atelie-email-label { display: block !important; width: 100% !important; max-width: 100% !important; padding: 0 0 6px 0 !important; }
+  .atelie-email-value { display: block !important; width: 100% !important; max-width: 100% !important; padding: 0 0 16px 0 !important; }
+}
+</style>
 </head>
-<body style="margin:0;padding:0;background:#f4eef8;">
+<body style="margin:0;padding:0;background:#f4eef8;-webkit-text-size-adjust:100%;">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4eef8;">
 <tr>
-<td align="center" style="padding:24px 12px;font-family:Georgia,'Times New Roman',serif;">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e5dcef;box-shadow:0 4px 24px rgba(90,69,120,0.08);">
+<td align="center" style="padding:28px 20px;font-family:Georgia,'Times New Roman',serif;">
+<table role="presentation" class="atelie-email-shell" width="100%" cellspacing="0" cellpadding="0" style="width:100%;max-width:680px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e5dcef;box-shadow:0 4px 24px rgba(90,69,120,0.08);">
 <tr>
-<td style="padding:28px 24px 20px;text-align:center;background:linear-gradient(165deg,#f5e8f2 0%,#ebe4f8 45%,#e8dff5 100%);border-bottom:1px solid #e5dcef;">
-<div style="font-size:21px;color:#5a4578;font-weight:600;letter-spacing:0.02em;">Ateliê da Pele</div>
-<div style="font-size:13px;color:#8b7aa3;margin-top:6px;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">Estética &amp; Bem-estar</div>
+<td style="padding:36px 40px 28px;text-align:center;background:linear-gradient(165deg,#f5e8f2 0%,#ebe4f8 45%,#e8dff5 100%);border-bottom:1px solid #e5dcef;">
+<div style="font-size:22px;color:#5a4578;font-weight:600;letter-spacing:0.02em;">Ateliê da Pele</div>
+<div style="font-size:14px;color:#8b7aa3;margin-top:8px;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">Estética &amp; Bem-estar</div>
 </td>
 </tr>
 <tr>
-<td style="padding:24px 22px 8px;">
-${greeting ? `<p style="margin:0 0 16px;font-size:15px;color:#5c5268;line-height:1.5;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${greeting}</p>` : ''}
-<h1 style="margin:0 0 10px;font-size:22px;line-height:1.25;color:#4a3d63;font-weight:600;font-family:Georgia,'Times New Roman',serif;">${title}</h1>
-<p style="margin:0;font-size:15px;line-height:1.55;color:#6b6080;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${subtitle}</p>
+<td style="padding:32px 40px 12px;">
+${greeting ? `<p style="margin:0 0 18px;font-size:16px;color:#5c5268;line-height:1.55;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${greeting}</p>` : ''}
+<h1 style="margin:0 0 12px;font-size:24px;line-height:1.3;color:#4a3d63;font-weight:600;font-family:Georgia,'Times New Roman',serif;">${title}</h1>
+<p style="margin:0;font-size:16px;line-height:1.6;color:#6b6080;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${subtitle}</p>
 </td>
 </tr>
 <tr>
-<td style="padding:8px 22px 24px;">
+<td style="padding:12px 40px 32px;">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fdfbff;border-radius:12px;border:1px solid #ebe4f2;">
-<tr><td style="padding:16px 18px;">
+<tr><td style="padding:22px 28px;">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0">${detailRowsHtml}</table>
 </td></tr>
 </table>
@@ -266,9 +273,9 @@ ${note}
 </td>
 </tr>
 <tr>
-<td style="padding:20px 22px 28px;border-top:1px solid #ebe4f2;background:#faf7fc;">
-<p style="margin:0;font-size:13px;line-height:1.6;color:#7a6f8c;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;text-align:center;">Ateliê da Pele<br/>WhatsApp: (41) 8485-0169</p>
-<p style="margin:12px 0 0;font-size:12px;line-height:1.5;color:#9a90ac;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;text-align:center;">Este é um e-mail automático.</p>
+<td style="padding:28px 40px 36px;border-top:1px solid #ebe4f2;background:#faf7fc;">
+<p style="margin:0;font-size:14px;line-height:1.65;color:#7a6f8c;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;text-align:center;">Ateliê da Pele<br/>WhatsApp: (41) 8485-0169</p>
+<p style="margin:14px 0 0;font-size:12px;line-height:1.55;color:#9a90ac;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;text-align:center;">Este é um e-mail automático.</p>
 </td>
 </tr>
 </table>
