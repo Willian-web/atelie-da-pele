@@ -27,7 +27,8 @@ require('dotenv').config();
 
 const {
     sendConfirmationEmail,
-    sendClientConfirmationEmail
+    sendClientConfirmationEmail,
+    sendClientAppointmentCancelledEmail
 } = require('./services/emailService');
 const { createCheckoutLink, checkPaymentStatus } = require('./services/infinitepayService');
 
@@ -2538,7 +2539,11 @@ app.patch('/appointments/:id/cancel', async (req, res) => {
 
         const ap = check.rows[0];
 
-        if (cancelledBy === 'client' && ap.status !== 'cancelled') {
+        if (ap.status === 'cancelled') {
+            return res.json(mapAppointmentRow(ap));
+        }
+
+        if (cancelledBy === 'client') {
             const apDateTimeStr = `${ap.date}T${ap.time}:00-03:00`;
             const apTime = new Date(apDateTimeStr).getTime();
             const now = new Date().getTime();
@@ -2551,21 +2556,47 @@ app.patch('/appointments/:id/cancel', async (req, res) => {
             }
         }
 
-        const update = await pool.query(`
+        const update = await pool.query(
+            `
             UPDATE appointments
             SET status = 'cancelled',
                 cancelled_by = $1,
                 cancel_reason = $2,
                 cancelled_at = CURRENT_TIMESTAMP
             WHERE id = $3
+              AND status <> 'cancelled'
             RETURNING *
-        `, [
-            cancelledBy || 'client',
-            cancelReason || 'Cancelado pelo usuário',
-            id
-        ]);
+        `,
+            [cancelledBy || 'client', cancelReason || 'Cancelado pelo usuário', id]
+        );
 
-        return res.json(mapAppointmentRow(update.rows[0]));
+        if (update.rows.length === 0) {
+            const again = await pool.query('SELECT * FROM appointments WHERE id = $1', [id]);
+            if (again.rows.length === 0) {
+                return res.status(404).json({ error: 'Agendamento inexistente.' });
+            }
+            return res.json(mapAppointmentRow(again.rows[0]));
+        }
+
+        const cancelledRow = update.rows[0];
+        try {
+            const cid = cancelledRow.client_id;
+            if (cid) {
+                const cr = await pool.query('SELECT email FROM clients WHERE id = $1', [cid]);
+                const em = normalizeEmail(cr.rows[0]?.email);
+                if (isValidEmailBasic(em)) {
+                    const ids = getAppointmentServiceIdsFromRow(cancelledRow);
+                    const serviceObj = buildServiceEmailAggregate(ids);
+                    await sendClientAppointmentCancelledEmail(cancelledRow, serviceObj, em);
+                } else {
+                    console.warn(`[PATCH /appointments/:id/cancel] E-mail da cliente ausente; sem aviso de cancelamento (${id}).`);
+                }
+            }
+        } catch (mailErr) {
+            console.error(`[PATCH /appointments/:id/cancel] Falha e-mail de cancelamento ao cliente (${id}):`, mailErr);
+        }
+
+        return res.json(mapAppointmentRow(cancelledRow));
     } catch (e) {
         console.error('[PATCH /appointments/:id/cancel] Erro:', e);
         return res.status(500).json({ error: 'Erro ao cancelar agendamento.' });

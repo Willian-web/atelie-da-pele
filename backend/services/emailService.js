@@ -429,7 +429,119 @@ Equipe Ateliê da Pele
     }
 }
 
+/** Linha única de “forma de pagamento” para o e-mail de cancelamento (somente leitura do registro). */
+function describePaymentForCancelEmail(appointmentRow) {
+    const kind = normalizePaymentKindForEmail(appointmentRow.payment_type);
+    const cap = String(appointmentRow.capture_method || '').trim().toLowerCase();
+    const paid = toMoneyNumberEmail(appointmentRow.paid_amount);
+    const charged = toMoneyNumberEmail(appointmentRow.amount_charged);
+    const paidOk = paid != null && paid > 0.005;
+    const chargedOk = charged != null && charged > 0.005;
+    const hadCheckoutLink =
+        appointmentRow.payment_url != null && String(appointmentRow.payment_url).trim().toLowerCase().startsWith('http');
+    const gateway =
+        cap && cap !== 'manual' && cap !== 'manual_balance' && cap !== 'presencial';
+
+    if (kind === 'local') {
+        return 'Pagamento no local (valor a acertar presencialmente no atendimento).';
+    }
+    if (kind === 'full') {
+        if (gateway) {
+            return 'Pagamento online (InfinitePay) — valor integral.';
+        }
+        if (hadCheckoutLink && !paidOk && !chargedOk) {
+            return 'Pagamento online (InfinitePay) — valor integral; pagamento ainda não confirmado no momento do cancelamento.';
+        }
+        if (paidOk || chargedOk) {
+            return 'Pagamento integral registrado no sistema (online ou confirmação manual).';
+        }
+        return 'Pagamento integral (registro no sistema).';
+    }
+    return 'Pagamento parcial (histórico) — com saldo previsto para o dia do atendimento.';
+}
+
+/**
+ * Aviso ao cliente quando o agendamento é cancelado (admin, cliente ou fluxo que use o mesmo PATCH).
+ * Inclui dados principais do agendamento; não altera outros templates nem fluxos.
+ */
+async function sendClientAppointmentCancelledEmail(appointmentRow, serviceData, clientEmailTo) {
+    const to = String(clientEmailTo || '').trim().toLowerCase();
+
+    if (!process.env.RESEND_API_KEY) {
+        console.error('[EmailService] RESEND_API_KEY ausente; não enviando e-mail de cancelamento ao cliente.');
+        return;
+    }
+
+    if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+        console.error('[EmailService] E-mail da cliente inválido; não enviando aviso de cancelamento.');
+        return;
+    }
+
+    const resend = new Resend(process.env.RESEND_API_KEY);
+
+    const clientName =
+        appointmentRow.client_name || appointmentRow.clientName || 'Cliente';
+
+    const firstName = (String(clientName).trim().split(/\s+/)[0] || 'Cliente').trim();
+
+    const serviceName =
+        serviceData?.name ||
+        appointmentRow.service_name ||
+        appointmentRow.service_id ||
+        'Serviço';
+
+    const appointmentDate = appointmentRow.date
+        ? new Date(`${appointmentRow.date}T12:00:00`).toLocaleDateString('pt-BR')
+        : '—';
+
+    const appointmentTime = appointmentRow.time || '—';
+
+    const paymentLine = describePaymentForCancelEmail(appointmentRow);
+
+    const subject = 'Agendamento cancelado';
+
+    const text = `
+Olá, ${firstName}!
+
+Seu agendamento foi cancelado.
+
+Detalhes do agendamento cancelado
+---------------------------------
+Cliente: ${clientName}
+Procedimento(s): ${serviceName}
+Data: ${appointmentDate}
+Horário: ${appointmentTime}
+Forma de pagamento: ${paymentLine}
+
+Se precisar reagendar, estaremos à disposição.
+
+Ateliê da Pele
+WhatsApp: (41) 8485-0169
+    `.trim();
+
+    try {
+        const { data, error } = await resend.emails.send({
+            from: process.env.FROM_EMAIL || 'Ateliê da Pele <onboarding@resend.dev>',
+            to,
+            subject,
+            text
+        });
+
+        if (error) {
+            console.error('[EmailService] Falha Resend (cancelamento cliente):', error.message || error);
+            throw new Error(error.message || 'Falha no envio ao cliente');
+        }
+
+        console.log(`[EmailService] E-mail de cancelamento à cliente enviado. Resend ID: ${data?.id || 'N/A'}`);
+        return data;
+    } catch (error) {
+        console.error('[EmailService] Falha geral e-mail cancelamento cliente:', error.message || error);
+        throw error;
+    }
+}
+
 module.exports = {
     sendConfirmationEmail,
-    sendClientConfirmationEmail
+    sendClientConfirmationEmail,
+    sendClientAppointmentCancelledEmail
 };

@@ -51,6 +51,18 @@
         .atelie-wa-float:hover { background: #1e293b; color: #fff; }
         .atelie-wa-float .fab { font-size: 22px; color: #25D366; flex-shrink: 0; }
         .atelie-wa-float__label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        /* Desktop/tablet: alinhar ao bloco central (~mesma largura máx. do .container--wide), sem colar na borda da janela */
+        @media (min-width: 900px) {
+            .atelie-wa-float {
+                right: calc(max(0px, (100vw - min(1220px, calc(100vw - 24px))) / 2) + 14px);
+                bottom: max(20px, env(safe-area-inset-bottom, 0px));
+            }
+        }
+        @media (min-width: 600px) and (max-width: 899px) {
+            .atelie-wa-float {
+                right: max(20px, env(safe-area-inset-right, 0px));
+            }
+        }
         @media (max-width: 480px) {
             .atelie-wa-float { padding: 12px; }
             .atelie-wa-float__label { display: none; }
@@ -1321,7 +1333,7 @@ const ClientArea = ({
                 <div className="booking-section step-container">
                     <h2 className="section-title">O que deseja agendar?</h2>
                     <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '-8px 0 12px', lineHeight: 1.45 }}>
-                        Selecione <strong>um ou mais</strong> procedimentos. Toque novamente no card para <strong>desmarcar</strong>.
+                        Escolha os procedimentos desejados.
                     </p>
                     <div className="service-category-chips" role="tablist" aria-label="Filtrar por categoria ou campanha">
                         {serviceCategoryChips.map((label) => (
@@ -3397,6 +3409,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
     const [selfEditError, setSelfEditError] = useState('');
     const [selfEditSaving, setSelfEditSaving] = useState(false);
     const [selfEditBanner, setSelfEditBanner] = useState('');
+    const [cancelBanner, setCancelBanner] = useState('');
     const [profileFromServer, setProfileFromServer] = useState(null);
 
     const cleanPhone = (p) => String(p || '').replace(/\D/g, '');
@@ -3492,6 +3505,43 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
         const t = setTimeout(() => setSelfEditBanner(''), 5000);
         return () => clearTimeout(t);
     }, [selfEditBanner]);
+
+    useEffect(() => {
+        if (!cancelBanner) return undefined;
+        const t = setTimeout(() => setCancelBanner(''), 10000);
+        return () => clearTimeout(t);
+    }, [cancelBanner]);
+
+    const canClientCancelAppointment = (app) => {
+        const st = String(app?.status || '').trim();
+        if (st === 'cancelled' || st === 'completed') return false;
+        return st === 'pending_payment' || st === 'confirmed';
+    };
+
+    const handleCancelMyAppointment = async (app) => {
+        if (!app?.id) return;
+        if (!window.confirm('Deseja realmente cancelar este agendamento?')) return;
+        try {
+            const res = await fetch(`${API_BASE_URL}/appointments/${encodeURIComponent(app.id)}/cancel`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    cancelledBy: 'client',
+                    cancelReason: 'Cancelado pelo cliente em Meus agendamentos'
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.error || 'Não foi possível cancelar o agendamento.');
+            }
+            setCancelBanner(
+                'Agendamento cancelado com sucesso.\n\nSe precisar, você pode realizar um novo agendamento a qualquer momento.'
+            );
+            await refreshData();
+        } catch (e) {
+            alert(e.message || 'Erro ao cancelar o agendamento.');
+        }
+    };
 
     const openSelfEdit = () => {
         if (!matchedClient || !myPhone) return;
@@ -3616,6 +3666,26 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                 </div>
             )}
 
+            {cancelBanner && (
+                <div
+                    className="alert"
+                    role="status"
+                    style={{
+                        background: '#ecfdf5',
+                        border: '1px solid #a7f3d0',
+                        color: '#065f46',
+                        maxWidth: '520px',
+                        margin: '0 auto 12px',
+                        fontSize: '14px',
+                        lineHeight: 1.55,
+                        whiteSpace: 'pre-line',
+                        textAlign: 'left'
+                    }}
+                >
+                    {cancelBanner}
+                </div>
+            )}
+
             {!myPhone && (
                 <div className="alert" style={{background: '#f8fafc', border: '1px solid #e2e8f0', color: '#334155'}}>
                     Informe seu telefone acima para carregar seus agendamentos.
@@ -3718,6 +3788,19 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                             {cancelReason && (
                                 <div style={{fontSize: '13px', marginTop: '10px', color: '#b91c1c'}}>
                                     <strong>Motivo do cancelamento:</strong><br />{cancelReason}
+                                </div>
+                            )}
+
+                            {canClientCancelAppointment(app) && (
+                                <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #e5e7eb' }}>
+                                    <button
+                                        type="button"
+                                        className="btn-cancel"
+                                        onClick={() => handleCancelMyAppointment(app)}
+                                        style={{ padding: '8px 14px', fontSize: '13px', borderColor: 'rgba(180, 83, 9, 0.45)', color: '#b45309' }}
+                                    >
+                                        Cancelar este agendamento
+                                    </button>
                                 </div>
                             )}
                         </div>
@@ -3952,7 +4035,7 @@ const App = () => {
     };
 
     return (
-        <div className={`container${view === 'admin' ? ' container--admin' : ''}`}>
+        <div className={`container${view === 'admin' || view === 'client' || view === 'my_apps' ? ' container--wide' : ''}`}>
             <Header view={view} setView={navigateTo} />
             {showPassword && <PasswordModal onSuccess={handleAdminLoginSuccess} onCancel={() => setShowPassword(false)} />}
             <main>

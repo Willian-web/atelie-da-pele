@@ -91,8 +91,8 @@ a { text-decoration: none; color: inherit; }
     box-sizing: border-box;
 }
 
-/* Painel profissional / relatório: mais leitura no desktop sem perder centralização nem mobile fluido */
-.container.container--admin {
+/* Cliente, Meus agendamentos e painel admin: mesma largura máxima no desktop (fluido no mobile) */
+.container.container--wide {
     max-width: min(1220px, calc(100vw - 24px));
 }
 
