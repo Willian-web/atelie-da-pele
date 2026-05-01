@@ -145,6 +145,170 @@ function buildEmailTemplate(type, audience, data) {
     return parts.join('\n');
 }
 
+function escapeHtml(text) {
+    if (text == null) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+/**
+ * Monta linhas de detalhe para o card HTML (cliente/admin — confirmação e cancelamento com mesmo bloco).
+ * Se `stripPaymentLinkLine` e `ctaHref` forem verdadeiros, remove a linha bruta do link (evita duplicar com o botão).
+ */
+function buildStandardBookingDetailRows({
+    clientName,
+    serviceName,
+    dateStr,
+    timeStr,
+    paymentBulletLines,
+    clientInformedAddress,
+    stripPaymentLinkLine,
+    ctaHref
+}) {
+    const rows = [
+        { label: 'Cliente', value: clientName },
+        { label: 'Serviço(s)', value: serviceName },
+        { label: 'Data', value: dateStr },
+        { label: 'Horário', value: timeStr }
+    ];
+    const payLines = Array.isArray(paymentBulletLines) ? paymentBulletLines.filter((s) => String(s || '').trim()) : [];
+    for (const line of payLines) {
+        const t = String(line).trim();
+        if (stripPaymentLinkLine && ctaHref && /^link\s+para\s+pagamento\s*:/i.test(t)) continue;
+        const idx = t.indexOf(':');
+        if (idx === -1) {
+            rows.push({ label: 'Pagamento', value: t });
+        } else {
+            rows.push({ label: t.slice(0, idx).trim(), value: t.slice(idx + 1).trim() });
+        }
+    }
+    rows.push({ label: 'Local do atendimento', value: ATELIE_SALON_LOCATION_LINE });
+    if (clientInformedAddress && String(clientInformedAddress).trim()) {
+        rows.push({ label: 'Endereço informado', value: String(clientInformedAddress).trim() });
+    }
+    return rows;
+}
+
+/**
+ * Layout HTML único (inline CSS, sem JS, sem assets externos) — spa / estética.
+ * @param {object} opts
+ * @param {string} [opts.greeting]
+ * @param {string} opts.title
+ * @param {string} opts.subtitle
+ * @param {{ label: string, value: string }[]} opts.details
+ * @param {string} [opts.noteAfterCard] — parágrafo opcional abaixo do card
+ * @param {{ href: string, label: string } | null} [opts.actionButton]
+ */
+function buildEmailHtmlTemplate(opts) {
+    const greeting = opts.greeting && String(opts.greeting).trim() ? escapeHtml(String(opts.greeting).trim()) : '';
+    const title = escapeHtml(opts.title || '');
+    const subtitle = escapeHtml(opts.subtitle || '');
+    const note = opts.noteAfterCard && String(opts.noteAfterCard).trim()
+        ? `<p style="margin:20px 0 0;font-size:14px;line-height:1.55;color:#5c5268;">${escapeHtml(String(opts.noteAfterCard).trim()).replace(/\n/g, '<br/>')}</p>`
+        : '';
+
+    const detailRowsHtml = (Array.isArray(opts.details) ? opts.details : [])
+        .map((row) => {
+            const lb = escapeHtml(row.label || '');
+            const vl = escapeHtml(row.value || '').replace(/\n/g, '<br/>');
+            return `
+<tr>
+<td style="padding:10px 0;border-bottom:1px solid #ebe4f2;font-size:13px;color:#7a6f8c;width:36%;vertical-align:top;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${lb}</td>
+<td style="padding:10px 0;border-bottom:1px solid #ebe4f2;font-size:14px;color:#3d3554;font-weight:500;vertical-align:top;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${vl}</td>
+</tr>`;
+        })
+        .join('');
+
+    const btn = opts.actionButton && opts.actionButton.href && opts.actionButton.label
+        ? `<table role="presentation" cellspacing="0" cellpadding="0" style="margin:24px auto 0;"><tr><td align="center">
+<a href="${escapeHtml(opts.actionButton.href)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:14px 28px;background:#8b6bb5;color:#ffffff;text-decoration:none;border-radius:999px;font-size:15px;font-weight:600;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${escapeHtml(opts.actionButton.label)}</a>
+</td></tr></table>`
+        : '';
+
+    return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>${title}</title>
+</head>
+<body style="margin:0;padding:0;background:#f4eef8;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4eef8;">
+<tr>
+<td align="center" style="padding:24px 12px;font-family:Georgia,'Times New Roman',serif;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e5dcef;box-shadow:0 4px 24px rgba(90,69,120,0.08);">
+<tr>
+<td style="padding:28px 24px 20px;text-align:center;background:linear-gradient(165deg,#f5e8f2 0%,#ebe4f8 45%,#e8dff5 100%);border-bottom:1px solid #e5dcef;">
+<div style="font-size:21px;color:#5a4578;font-weight:600;letter-spacing:0.02em;">Ateliê da Pele</div>
+<div style="font-size:13px;color:#8b7aa3;margin-top:6px;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">Estética &amp; Bem-estar</div>
+</td>
+</tr>
+<tr>
+<td style="padding:24px 22px 8px;">
+${greeting ? `<p style="margin:0 0 16px;font-size:15px;color:#5c5268;line-height:1.5;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${greeting}</p>` : ''}
+<h1 style="margin:0 0 10px;font-size:22px;line-height:1.25;color:#4a3d63;font-weight:600;font-family:Georgia,'Times New Roman',serif;">${title}</h1>
+<p style="margin:0;font-size:15px;line-height:1.55;color:#6b6080;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${subtitle}</p>
+</td>
+</tr>
+<tr>
+<td style="padding:8px 22px 24px;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fdfbff;border-radius:12px;border:1px solid #ebe4f2;">
+<tr><td style="padding:16px 18px;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0">${detailRowsHtml}</table>
+</td></tr>
+</table>
+${btn}
+${note}
+</td>
+</tr>
+<tr>
+<td style="padding:20px 22px 28px;border-top:1px solid #ebe4f2;background:#faf7fc;">
+<p style="margin:0;font-size:13px;line-height:1.6;color:#7a6f8c;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;text-align:center;">Ateliê da Pele<br/>WhatsApp: (41) 8485-0169</p>
+<p style="margin:12px 0 0;font-size:12px;line-height:1.5;color:#9a90ac;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;text-align:center;">Este é um e-mail automático.</p>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</body>
+</html>`;
+}
+
+/** HTML da cópia administrativa de cancelamento (estrutura alinhada ao texto já enviado). */
+function buildAdminCancelEmailHtml({
+    clientName,
+    serviceName,
+    appointmentDate,
+    appointmentTime,
+    paymentLine,
+    cancelledByLabel,
+    cancelReason
+}) {
+    const details = [
+        { label: 'Cliente', value: clientName },
+        { label: 'Serviço(s)', value: serviceName },
+        { label: 'Data e horário', value: `${appointmentDate} às ${appointmentTime}` },
+        { label: 'Forma de pagamento', value: paymentLine },
+        { label: 'Cancelado por', value: cancelledByLabel },
+        { label: 'Status', value: 'Cancelado' }
+    ];
+    if (cancelReason) {
+        details.push({ label: 'Motivo registrado', value: cancelReason });
+    }
+    return buildEmailHtmlTemplate({
+        title: 'Agendamento cancelado',
+        subtitle: 'Um agendamento foi cancelado.',
+        details,
+        noteAfterCard: '',
+        actionButton: null
+    });
+}
+
 /** Linha única de “forma de pagamento” para o e-mail de cancelamento (somente leitura do registro). */
 function describePaymentForCancelEmail(appointmentRow) {
     const kind = normalizePaymentKindForEmail(appointmentRow.payment_type);
@@ -367,11 +531,36 @@ async function sendConfirmationEmail(appointmentData, serviceData) {
             clientInformedAddress
         });
 
+        const pendingLink =
+            statusNorm === 'pending_payment' && paymentType === 'full' && appointmentData.payment_url
+                ? String(appointmentData.payment_url).trim()
+                : '';
+        const html = buildEmailHtmlTemplate({
+            title,
+            subtitle,
+            details: buildStandardBookingDetailRows({
+                clientName,
+                serviceName,
+                dateStr: appointmentDate,
+                timeStr: appointmentTime,
+                paymentBulletLines,
+                clientInformedAddress,
+                stripPaymentLinkLine: Boolean(pendingLink),
+                ctaHref: pendingLink
+            }),
+            noteAfterCard: complement,
+            actionButton:
+                pendingLink && /^https?:\/\//i.test(pendingLink)
+                    ? { href: pendingLink, label: 'Pagar agora' }
+                    : null
+        });
+
         const emailData = {
             from: process.env.FROM_EMAIL || 'Ateliê da Pele <onboarding@resend.dev>',
             to: process.env.NOTIFICATION_EMAIL,
             subject,
-            text
+            text,
+            html
         };
 
         console.log('[EmailService] Efetuando requisição POST para a API do Resend...');
@@ -545,12 +734,37 @@ async function sendClientConfirmationEmail(appointmentRow, serviceData, clientEm
         clientInformedAddress
     });
 
+    const showPayCta =
+        statusNorm === 'pending_payment' &&
+        paymentKind === 'full' &&
+        paymentUrl &&
+        /^https?:\/\//i.test(paymentUrl);
+
+    const html = buildEmailHtmlTemplate({
+        greeting: `Olá, ${firstName}!`,
+        title,
+        subtitle,
+        details: buildStandardBookingDetailRows({
+            clientName,
+            serviceName,
+            dateStr: appointmentDate,
+            timeStr: appointmentTime,
+            paymentBulletLines,
+            clientInformedAddress,
+            stripPaymentLinkLine: showPayCta,
+            ctaHref: showPayCta ? paymentUrl : ''
+        }),
+        noteAfterCard: complement,
+        actionButton: showPayCta ? { href: paymentUrl, label: 'Pagar agora' } : null
+    });
+
     try {
         const { data, error } = await resend.emails.send({
             from: process.env.FROM_EMAIL || 'Ateliê da Pele <onboarding@resend.dev>',
             to,
             subject,
-            text
+            text,
+            html
         });
 
         if (error) {
@@ -611,6 +825,8 @@ async function sendClientAppointmentCancelledEmail(appointmentRow, serviceData, 
     const complementParts = [whoNote, 'Se precisar reagendar, estaremos à disposição.'].filter(Boolean);
     const complement = complementParts.join('\n\n');
 
+    const cancelPayBullets = [`Forma de pagamento: ${paymentLine}`];
+
     const text = buildEmailTemplate('cancellation', 'client', {
         greeting: `Olá, ${firstName}!`,
         title: 'Agendamento cancelado',
@@ -619,9 +835,27 @@ async function sendClientAppointmentCancelledEmail(appointmentRow, serviceData, 
         serviceName,
         dateStr: appointmentDate,
         timeStr: appointmentTime,
-        paymentBulletLines: [`Forma de pagamento: ${paymentLine}`],
+        paymentBulletLines: cancelPayBullets,
         complement,
         clientInformedAddress
+    });
+
+    const html = buildEmailHtmlTemplate({
+        greeting: `Olá, ${firstName}!`,
+        title: 'Agendamento cancelado',
+        subtitle: 'Seu agendamento foi cancelado.',
+        details: buildStandardBookingDetailRows({
+            clientName,
+            serviceName,
+            dateStr: appointmentDate,
+            timeStr: appointmentTime,
+            paymentBulletLines: cancelPayBullets,
+            clientInformedAddress,
+            stripPaymentLinkLine: false,
+            ctaHref: ''
+        }),
+        noteAfterCard: complement,
+        actionButton: null
     });
 
     try {
@@ -629,7 +863,8 @@ async function sendClientAppointmentCancelledEmail(appointmentRow, serviceData, 
             from: process.env.FROM_EMAIL || 'Ateliê da Pele <onboarding@resend.dev>',
             to,
             subject,
-            text
+            text,
+            html
         });
 
         if (error) {
@@ -721,12 +956,23 @@ async function sendAdminAppointmentCancelledEmail(appointmentRow, serviceData) {
 
     const text = parts.join('\n');
 
+    const html = buildAdminCancelEmailHtml({
+        clientName,
+        serviceName,
+        appointmentDate,
+        appointmentTime,
+        paymentLine,
+        cancelledByLabel,
+        cancelReason
+    });
+
     try {
         const { data, error } = await resend.emails.send({
             from: process.env.FROM_EMAIL || 'Ateliê da Pele <onboarding@resend.dev>',
             to: adminTo,
             subject,
-            text
+            text,
+            html
         });
 
         if (error) {
@@ -748,6 +994,8 @@ module.exports = {
     sendClientAppointmentCancelledEmail,
     sendAdminAppointmentCancelledEmail,
     buildEmailTemplate,
+    buildEmailHtmlTemplate,
+    buildStandardBookingDetailRows,
     ATELIE_SALON_LOCATION_LINE,
     ATELIE_EMAIL_STANDARD_FOOTER
 };
