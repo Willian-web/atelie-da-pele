@@ -2,6 +2,10 @@ const { Resend } = require('resend');
 
 const FIXED_SIGNAL_AMOUNT = 30;
 
+/** Rodapé de contato opcional em todos os e-mails ao cliente (número oficial). */
+const ATELIE_CLIENT_WHATSAPP_FOOTER =
+    'Se tiver alguma dúvida, fale com o Ateliê pelo WhatsApp: (41) 8485-0169.';
+
 function formatCurrencyBRL(value) {
     return Number(value || 0).toLocaleString('pt-BR', {
         style: 'currency',
@@ -398,7 +402,7 @@ Sobre o pagamento
 -----------------
 ${paymentSummaryLines}
 
-Qualquer dúvida, fale com a gente pelo WhatsApp do Ateliê.
+${ATELIE_CLIENT_WHATSAPP_FOOTER}
 
 Um abraço,
 Equipe Ateliê da Pele

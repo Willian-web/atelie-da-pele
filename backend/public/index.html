@@ -26,7 +26,54 @@
         .pay-btn:hover { background: #00875F; }
         .past-slot { opacity: 0.4; text-decoration: line-through; pointer-events: none; background: #f3f4f6; border-color: #e5e7eb; }
         .step-container { animation: fadeIn 0.4s ease; }
-        .status-badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 8px; text-transform: uppercase; }
+        .status-badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; margin-left: 8px; text-transform: none; letter-spacing: 0.01em; }
+        /* Contato WhatsApp oficial — opcional, fora do fluxo de confirmação */
+        .atelie-wa-float {
+            position: fixed;
+            z-index: 50;
+            bottom: max(16px, env(safe-area-inset-bottom, 0px));
+            right: max(16px, env(safe-area-inset-right, 0px));
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: #334155;
+            color: #f8fafc;
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            box-shadow: 0 6px 22px rgba(15, 23, 42, 0.2);
+            max-width: min(calc(100vw - 28px), 280px);
+            box-sizing: border-box;
+            border: 1px solid rgba(148, 163, 184, 0.45);
+        }
+        .atelie-wa-float:hover { background: #1e293b; color: #fff; }
+        .atelie-wa-float .fab { font-size: 22px; color: #25D366; flex-shrink: 0; }
+        .atelie-wa-float__label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        @media (max-width: 480px) {
+            .atelie-wa-float { padding: 12px; }
+            .atelie-wa-float__label { display: none; }
+        }
+        .atelie-wa-discrete {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #64748b;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+        }
+        .atelie-wa-discrete:hover { color: #475569; }
+        .atelie-wa-discrete .fab { font-size: 16px; color: #25D366; }
+        .report-table-wrap { width: 100%; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 10px; border: 1px solid var(--border-color); background: var(--card-bg); }
+        .admin-report-table { min-width: 720px; }
+        .admin-report-table th, .admin-report-table td { vertical-align: middle; }
+        .report-col-nowrap { white-space: nowrap; }
+        .report-col-service { min-width: 140px; max-width: 280px; white-space: normal; word-break: break-word; }
+        .report-col-client { min-width: 120px; max-width: 220px; word-break: break-word; }
+        .report-kpi-value { white-space: nowrap; }
         .st-pending { background: #fff3cd; color: #856404; }
         .st-confirmed { background: #d4edda; color: #155724; }
         .st-cancelled { background: #f8d7da; color: #721c24; }
@@ -52,6 +99,48 @@ const API_BASE_URL = window.location.hostname === 'localhost' || window.location
 const ADMIN_TOKEN_STORAGE_KEY = 'atelie_admin_token';
 /** Dígitos do telefone usados em “Meus agendamentos” (sessão) para mesclar detalhes sem listar tudo. */
 const MY_APPOINTMENTS_PHONE_STORAGE_KEY = 'atelie_my_appointments_phone_digits';
+
+/** Fallback se `GET /config/public` → `adminWhatsApp` vier vazio (mesmo número já usado no projeto). */
+const ATELIE_WHATSAPP_FALLBACK_DIGITS = '554184850169';
+const ATELIE_WHATSAPP_DEFAULT_MESSAGE = 'Olá! Gostaria de falar com o Ateliê da Pele.';
+
+/** Somente dígitos para wa.me; se inválido ou curto demais, usa fallback (Railway: ADMIN_WHATSAPP). */
+const sanitizePublicWhatsAppDigits = (raw) => {
+    const d = String(raw ?? '').replace(/\D/g, '');
+    return d.length >= 10 ? d : ATELIE_WHATSAPP_FALLBACK_DIGITS;
+};
+
+const buildAtelieWhatsAppHref = (adminWhatsAppFromApi, message = ATELIE_WHATSAPP_DEFAULT_MESSAGE) => {
+    const waId = sanitizePublicWhatsAppDigits(adminWhatsAppFromApi);
+    return `https://wa.me/${waId}?text=${encodeURIComponent(message)}`;
+};
+
+const AtelieWhatsAppFloatingButton = ({ adminWhatsApp }) => (
+    <a
+        href={buildAtelieWhatsAppHref(adminWhatsApp)}
+        className="atelie-wa-float"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Fale conosco pelo WhatsApp"
+        aria-label="Fale conosco pelo WhatsApp"
+    >
+        <i className="fab fa-whatsapp" aria-hidden />
+        <span className="atelie-wa-float__label">Fale conosco</span>
+    </a>
+);
+
+const AtelieWhatsAppDiscreteLink = ({ adminWhatsApp }) => (
+    <a
+        href={buildAtelieWhatsAppHref(adminWhatsApp)}
+        className="atelie-wa-discrete"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Fale conosco pelo WhatsApp (opcional)"
+    >
+        <i className="fab fa-whatsapp" aria-hidden />
+        Fale conosco pelo WhatsApp
+    </a>
+);
 
 /**
  * Catálogo ativo (etapa 1). Manter ids e preços alinhados a `SERVICES_CATALOG` em backend/server.js.
@@ -328,7 +417,7 @@ const formatAgendaServiceSummary = (app) => {
     return { label, total: Math.round(total * 100) / 100, scheduleHint };
 };
 
-/** Título discreto no fluxo cliente (card, resumo, WhatsApp). `name` permanece o nome completo do catálogo (admin / “Ver detalhes”). */
+/** Título discreto no fluxo cliente (card, resumo). `name` permanece o nome completo do catálogo (admin / “Ver detalhes”). */
 const getClientServiceCardTitle = (service) => {
     if (!service) return 'Serviço';
     const t = String(service.cardTitle || service.name || '').trim();
@@ -598,7 +687,7 @@ const PasswordModal = ({ onSuccess, onCancel }) => {
     );
 };
 
-const StatusBadge = ({ status, paymentType, paymentMethod, remainingAmount }) => {
+const StatusBadge = ({ status, paymentType, paymentMethod, remainingAmount, paidAmount: paidProp, captureMethod }) => {
     const pt = String(paymentType || '').toLowerCase();
     const pm = String(paymentMethod || '').toLowerCase();
     const isLocalKind = pt === 'local' || pm === 'local';
@@ -606,13 +695,18 @@ const StatusBadge = ({ status, paymentType, paymentMethod, remainingAmount }) =>
         remainingAmount !== undefined && remainingAmount !== null && remainingAmount !== '';
     const rem = hadRemainingProp ? Number(remainingAmount) : null;
     const remPending = hadRemainingProp && rem != null && Number.isFinite(rem) && rem > 0.005;
+    const paidNum =
+        paidProp !== undefined && paidProp !== null && paidProp !== '' ? Number(paidProp) : NaN;
+    const paidRecorded = Number.isFinite(paidNum) && paidNum > 0.005;
+    const localPending =
+        isLocalKind && (remPending || (!hadRemainingProp && !paidRecorded));
 
     switch (status) {
         case 'pending_payment':
             if (pt === 'full') {
                 return (
                     <span className="status-badge st-pending">
-                        <i className="fas fa-clock"></i> Pagamento online pendente
+                        <i className="fas fa-clock"></i> Aguardando pagamento online
                     </span>
                 );
             }
@@ -622,17 +716,10 @@ const StatusBadge = ({ status, paymentType, paymentMethod, remainingAmount }) =>
                 </span>
             );
         case 'confirmed':
-            if (isLocalKind && !hadRemainingProp) {
-                return (
-                    <span className="status-badge st-confirmed">
-                        <i className="fas fa-check"></i> Confirmado — pagamento no local
-                    </span>
-                );
-            }
-            if (isLocalKind && remPending) {
+            if (isLocalKind && localPending) {
                 return (
                     <span className="status-badge st-pending">
-                        <i className="fas fa-store"></i> Pagamento no local — pendente
+                        <i className="fas fa-store"></i> Pendente pagamento local
                     </span>
                 );
             }
@@ -644,6 +731,14 @@ const StatusBadge = ({ status, paymentType, paymentMethod, remainingAmount }) =>
                 );
             }
             if (pt === 'full') {
+                const cap = String(captureMethod || '').toLowerCase();
+                if (cap && cap !== 'manual' && cap !== 'manual_balance' && cap !== 'presencial') {
+                    return (
+                        <span className="status-badge st-confirmed">
+                            <i className="fas fa-receipt"></i> Pago via InfinitePay
+                        </span>
+                    );
+                }
                 return (
                     <span className="status-badge st-confirmed">
                         <i className="fas fa-check"></i> Pagamento confirmado
@@ -676,17 +771,25 @@ const StatusBadge = ({ status, paymentType, paymentMethod, remainingAmount }) =>
                 </span>
             );
         case 'completed':
-            if (isLocalKind && hadRemainingProp && remPending) {
+            if (isLocalKind && localPending) {
                 return (
                     <span className="status-badge st-pending">
-                        <i className="fas fa-store"></i> Pagamento no local — pendente
+                        <i className="fas fa-store"></i> Pendente pagamento local
                     </span>
                 );
             }
             if (isLocalKind || pt === 'full') {
+                const cap = String(captureMethod || '').toLowerCase();
+                if (pt === 'full' && cap && cap !== 'manual' && cap !== 'manual_balance' && cap !== 'presencial') {
+                    return (
+                        <span className="status-badge st-completed">
+                            <i className="fas fa-receipt"></i> Pago via InfinitePay
+                        </span>
+                    );
+                }
                 return (
                     <span className="status-badge st-completed">
-                        <i className="fas fa-flag-checkered"></i> Concluído — pagamento confirmado
+                        <i className="fas fa-flag-checkered"></i> Pagamento confirmado
                     </span>
                 );
             }
@@ -1212,6 +1315,7 @@ const ClientArea = ({
         paymentMethod === 'online' ? 'Pagar agora via InfinitePay' : 'Pagamento no local';
 
     return (
+        <>
         <div>
             {step === 1 && (
                 <div className="booking-section step-container">
@@ -1800,13 +1904,6 @@ const ClientArea = ({
                     return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                 };
 
-                const safeFirstName = (fullName) => {
-                    const name = (fullName || '').trim();
-                    if (!name) return 'Cliente';
-                    return name.split(/\s+/)[0] || 'Cliente';
-                };
-
-                const clientName = completedAppInfo?.client?.name || 'Cliente';
                 const { scheduleHint: step4ScheduleHint } = formatAgendaServiceSummary(liveApp);
                 const lineItemsStep4 =
                     Array.isArray(liveApp?.serviceLineItems) && liveApp.serviceLineItems.length > 0
@@ -1816,12 +1913,6 @@ const ClientArea = ({
                     liveApp?.paymentSummary?.totalServicePrice != null
                         ? Number(liveApp.paymentSummary.totalServicePrice)
                         : lineItemsStep4.reduce((s, li) => s + Number(li.price || 0), 0);
-                const serviceName =
-                    lineItemsStep4.length > 1
-                        ? lineItemsStep4.map((li) => li.name || li.id).join(' + ')
-                        : getClientServiceCardTitle(completedAppInfo?.service) ||
-                          lineItemsStep4[0]?.name ||
-                          'Serviço';
                 const servicePriceBRL = formatBRL(
                     Number.isFinite(svcTotalFromApi) && svcTotalFromApi > 0
                         ? svcTotalFromApi
@@ -1832,8 +1923,6 @@ const ClientArea = ({
                 const paymentTypeLc = String(paymentType || '').toLowerCase();
                 const apiPm = String(liveApp?.paymentMethod || '').toLowerCase();
                 const amountChargedBRL = formatBRL(liveApp?.amountCharged);
-                const remainingAmountBRL = formatBRL(liveApp?.remainingAmount);
-                const captureMethod = liveApp?.captureMethod || null;
 
                 const svcPriceNum = Number(
                     liveApp?.paymentSummary?.totalServicePrice != null
@@ -1845,69 +1934,6 @@ const ClientArea = ({
                     !isLocalBookingUi &&
                     (apiPm === 'online' || paymentTypeLc === 'full' || isProcedurePriceAtOrBelowSignal(svcPriceNum));
                 const dueNowDisplayBRL = amountChargedBRL || servicePriceBRL;
-
-                const scheduleLineForWa = step4ScheduleHint
-                    ? `Horários: ${step4ScheduleHint}`
-                    : `Data: ${dateStr}\nHorário: ${liveApp.time}`;
-
-                const baseLines = [
-                    `Olá! Sou ${safeFirstName(clientName)} e fiz um agendamento no Ateliê da Pele. Gostaria de confirmar.`,
-                    ``,
-                    `Cliente: ${clientName}`,
-                    `Serviço: ${serviceName}`,
-                    scheduleLineForWa
-                ];
-
-                const paymentLines = (() => {
-                    if (isLocalBookingUi) {
-                        return [
-                            ``,
-                            `Forma de pagamento: pagamento no local (no dia do atendimento).`,
-                            servicePriceBRL ? `Valor total dos procedimentos: ${servicePriceBRL}` : null,
-                            remainingAmountBRL ? `Saldo a acertar presencialmente: ${remainingAmountBRL}` : null
-                        ].filter(Boolean);
-                    }
-                    if (apiPm === 'online' || (isPending && checkoutIntegral && paymentTypeLc !== 'partial')) {
-                        return [
-                            ``,
-                            `Pagamento: online — valor total dos procedimentos`,
-                            amountChargedBRL ? `Valor cobrado/pago: ${amountChargedBRL}` : null,
-                            captureMethod ? `Registro: ${captureMethod}` : null
-                        ].filter(Boolean);
-                    }
-
-                    if (paymentTypeLc === 'partial') {
-                        return [
-                            ``,
-                            `Pagamento: histórico parcial (legado)`,
-                            amountChargedBRL ? `Valor pago na reserva: ${amountChargedBRL}` : null,
-                            remainingAmountBRL ? `Valor restante (para o dia do atendimento): ${remainingAmountBRL}` : null,
-                            captureMethod ? `Forma de pagamento: ${captureMethod}` : null,
-                            `O valor restante será acertado no atendimento, presencialmente.`
-                        ].filter(Boolean);
-                    }
-
-                    if (paymentTypeLc === 'full' || (!isPending && checkoutIntegral && paymentTypeLc !== 'partial')) {
-                        return [
-                            ``,
-                            `Pagamento: total`,
-                            `Procedimento totalmente pago.`,
-                            amountChargedBRL ? `Valor pago: ${amountChargedBRL}` : null,
-                            captureMethod ? `Forma de pagamento: ${captureMethod}` : null
-                        ].filter(Boolean);
-                    }
-
-                    return [
-                        ``,
-                        servicePriceBRL ? `Valor: ${servicePriceBRL}` : null
-                    ].filter(Boolean);
-                })();
-
-                const whatsappMsg = [...baseLines, ...paymentLines].join('\n');
-                const adminWaDigits = String(adminWhatsApp || '').replace(/\D/g, '');
-                const zapLink = adminWaDigits
-                    ? `https://wa.me/${adminWaDigits}?text=${encodeURIComponent(whatsappMsg)}`
-                    : null;
 
                 return (
                 <div className="booking-section step-container" style={{textAlign: 'center'}}>
@@ -1999,6 +2025,10 @@ const ClientArea = ({
                         </div>
                     </div>
 
+                    <div style={{ textAlign: 'center', marginBottom: '18px' }}>
+                        <AtelieWhatsAppDiscreteLink adminWhatsApp={adminWhatsApp} />
+                    </div>
+
                     {isPending && (
                         <div style={{marginBottom: '30px', background: '#e0f2fe', padding: '20px', borderRadius: '8px', maxWidth: '350px', margin: '0 auto 30px', width: '100%', boxSizing: 'border-box'}}>
                             <p style={{fontWeight: 'bold', fontSize: '18px', color: '#0369a1', marginBottom: '15px'}}>
@@ -2037,19 +2067,6 @@ const ClientArea = ({
                         </div>
                     )}
 
-                    {isConfirmed && adminWaDigits && zapLink && (
-                         <div style={{marginBottom: '30px', display: 'flex', justifyContent: 'center'}}>
-                            <a href={zapLink} target="_blank" rel="noreferrer" className="btn-submit" style={{background: '#25D366', color: 'white', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '15px 30px', borderRadius: '30px', fontWeight: 'bold'}}>
-                                <i className="fab fa-whatsapp" style={{fontSize: '24px'}}></i> Enviar mensagem no WhatsApp
-                            </a>
-                        </div>
-                    )}
-                    {isConfirmed && !adminWaDigits && (
-                        <div style={{marginBottom: '30px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '14px', maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.5}}>
-                            O link automático do WhatsApp não está disponível. Defina a variável <strong>ADMIN_WHATSAPP</strong> no servidor (somente números, com DDI) e atualize a página.
-                        </div>
-                    )}
-
                     <div style={{display: 'flex', flexDirection: 'column', gap: '15px', alignItems: 'center'}}>
                         <button className="btn-admin" style={{margin: '0 auto'}} onClick={() => {
                             setStep(1);
@@ -2067,6 +2084,8 @@ const ClientArea = ({
                 );
             })()}
         </div>
+        {step !== 4 && <AtelieWhatsAppFloatingButton adminWhatsApp={adminWhatsApp} />}
+        </>
     );
 };
 
@@ -2364,7 +2383,7 @@ const AdminArea = ({
     };
 
     const submitConfirmLocalPayment = async () => {
-        if (!confirmLocalPayModal || !confirmLocalPayModal.id) return;
+        if (!confirmLocalPayModal || !confirmLocalPayModal.id || confirmLocalPayModal.saving) return;
         const lines = [
             'Confirmar recebimento presencial?',
             '',
@@ -2662,6 +2681,8 @@ const AdminArea = ({
                                         paymentType={app.paymentType}
                                         paymentMethod={app.paymentMethod}
                                         remainingAmount={app.remainingAmount ?? app.remaining_amount}
+                                        paidAmount={app.paidAmount ?? app.paid_amount}
+                                        captureMethod={app.captureMethod ?? app.capture_method}
                                     />
                                     <div style={{fontSize: '13px', color: 'var(--text-muted)'}}>
                                         {dateLabel} • {app.time || 'Sem horário'}
@@ -3015,7 +3036,7 @@ const AdminArea = ({
         const Card = ({ title, value, hint }) => (
             <div style={{background: '#fcfcfc', border: '1px solid #ddd', padding: '14px', borderRadius: '10px', textAlign: 'left', minWidth: 0, boxSizing: 'border-box'}}>
                 <div style={{fontSize: '12px', color: 'var(--text-muted)', marginBottom: '6px', lineHeight: 1.35}}>{title}</div>
-                <div style={{fontSize: '18px', fontWeight: '800'}}>{value}</div>
+                <div className="report-kpi-value" style={{fontSize: '18px', fontWeight: '800'}}>{value}</div>
                 {hint && <div style={{fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px', lineHeight: 1.4}}>{hint}</div>}
             </div>
         );
@@ -3054,8 +3075,8 @@ const AdminArea = ({
                 {summary && (
                     <>
                         <div style={{display: 'grid', gap: '12px', marginBottom: '16px', width: '100%', boxSizing: 'border-box', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))'}}>
-                            <Card title="Total recebido" value={formatBRL(summary.totalRevenue)} hint="Soma do que já entrou no caixa (InfinitePay integral, parcial legado ou quitações registradas), em confirmados ou concluídos." />
-                            <Card title="Valor a receber" value={formatBRL(summary.totalRemainingToReceive)} hint="Saldo ainda pendente (pagamento no local, parcial legado ou saldo após pagamento online parcial)." />
+                            <Card title="Total recebido" value={formatBRL(summary.totalRevenue)} hint="Soma do que já entrou no caixa (InfinitePay integral, parcial legado, quitações ou recebimento no local confirmado no painel), apenas em confirmados ou concluídos." />
+                            <Card title="Valor a receber" value={formatBRL(summary.totalRemainingToReceive)} hint="Inclui saldo pendente em confirmados (pagamento no local a confirmar, parcial legado, etc.) e valores ainda não pagos em agendamentos com pagamento online pendente no período." />
                             <Card title="Agendamentos no período" value={String(summary.totalAppointments || 0)} />
                             <Card title="Clientes únicos" value={String(summary.uniqueClients || 0)} />
                         </div>
@@ -3064,15 +3085,15 @@ const AdminArea = ({
                             <table className="admin-report-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                                 <thead>
                                     <tr style={{background: '#f8fafc'}}>
-                                        <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Cliente</th>
-                                        <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Serviço</th>
-                                        <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Data</th>
-                                        <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Hora</th>
-                                        <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Status</th>
-                                        <th style={{textAlign: 'left', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Tipo pagamento</th>
-                                        <th style={{textAlign: 'right', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Valor total procedimento</th>
-                                        <th style={{textAlign: 'right', padding: '10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Valor pago</th>
-                                        <th style={{textAlign: 'right', padding: '10px 18px 10px 10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Valor restante</th>
+                                        <th className="report-col-client" style={{textAlign: 'left', padding: '12px 10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Cliente</th>
+                                        <th className="report-col-service" style={{textAlign: 'left', padding: '12px 10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px'}}>Serviço</th>
+                                        <th className="report-col-nowrap" style={{textAlign: 'left', padding: '12px 10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px', minWidth: '104px'}}>Data</th>
+                                        <th className="report-col-nowrap" style={{textAlign: 'left', padding: '12px 10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px', minWidth: '56px'}}>Hora</th>
+                                        <th className="report-col-nowrap" style={{textAlign: 'left', padding: '12px 10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px', minWidth: '168px'}}>Status</th>
+                                        <th className="report-col-nowrap" style={{textAlign: 'left', padding: '12px 10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px', minWidth: '132px'}} title="Tipo de pagamento">Tipo pagamento</th>
+                                        <th className="report-col-nowrap" style={{textAlign: 'right', padding: '12px 10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px', minWidth: '118px'}} title="Valor total do procedimento">Total proced.</th>
+                                        <th className="report-col-nowrap" style={{textAlign: 'right', padding: '12px 10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px', minWidth: '96px'}}>Valor pago</th>
+                                        <th className="report-col-nowrap" style={{textAlign: 'right', padding: '12px 14px 12px 10px', borderBottom: '1px solid #e2e8f0', fontSize: '13px', minWidth: '104px'}}>Valor restante</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -3100,22 +3121,24 @@ const AdminArea = ({
 
                                         return (
                                             <tr key={it.id || idx} style={{borderBottom: '1px solid #f1f5f9'}}>
-                                                <td style={{padding: '10px', fontSize: '13px'}}>{it.clientName || '-'}</td>
-                                                <td style={{padding: '10px', fontSize: '13px'}}>{it.serviceName || it.serviceId || '-'}</td>
-                                                <td style={{padding: '10px', fontSize: '13px'}}>{dateLabel}</td>
-                                                <td style={{padding: '10px', fontSize: '13px'}}>{it.time || '-'}</td>
-                                                <td style={{padding: '10px', fontSize: '13px'}}>
+                                                <td className="report-col-client" style={{padding: '12px 10px', fontSize: '13px'}}>{it.clientName || '-'}</td>
+                                                <td className="report-col-service" style={{padding: '12px 10px', fontSize: '13px'}}>{it.serviceName || it.serviceId || '-'}</td>
+                                                <td className="report-col-nowrap" style={{padding: '12px 10px', fontSize: '13px'}}>{dateLabel}</td>
+                                                <td className="report-col-nowrap" style={{padding: '12px 10px', fontSize: '13px'}}>{it.time || '-'}</td>
+                                                <td className="report-col-nowrap" style={{padding: '12px 10px', fontSize: '13px'}}>
                                                     <StatusBadge
                                                         status={it.status}
                                                         paymentType={it.paymentType}
                                                         paymentMethod={it.paymentMethod}
                                                         remainingAmount={it.remainingAmount ?? it.remaining_amount}
+                                                        paidAmount={it.paidAmount}
+                                                        captureMethod={it.captureMethod}
                                                     />
                                                 </td>
-                                                <td style={{padding: '10px', fontSize: '13px'}}>{paymentType}</td>
-                                                <td style={{padding: '10px', fontSize: '13px', textAlign: 'right'}}>{procTotal != null && Number.isFinite(procTotal) ? formatBRL(procTotal) : '—'}</td>
-                                                <td style={{padding: '10px', fontSize: '13px', textAlign: 'right'}}>{effPaid != null && Number.isFinite(effPaid) && effPaid > 0 ? formatBRL(effPaid) : '—'}</td>
-                                                <td style={{padding: '10px 18px 10px 10px', fontSize: '13px', textAlign: 'right'}}>{remainingAmount != null ? formatBRL(remainingAmount) : '-'}</td>
+                                                <td className="report-col-nowrap" style={{padding: '12px 10px', fontSize: '13px'}}>{paymentType}</td>
+                                                <td className="report-col-nowrap" style={{padding: '12px 10px', fontSize: '13px', textAlign: 'right'}}>{procTotal != null && Number.isFinite(procTotal) ? formatBRL(procTotal) : '—'}</td>
+                                                <td className="report-col-nowrap" style={{padding: '12px 10px', fontSize: '13px', textAlign: 'right'}}>{effPaid != null && Number.isFinite(effPaid) && effPaid > 0 ? formatBRL(effPaid) : '—'}</td>
+                                                <td className="report-col-nowrap" style={{padding: '12px 14px 12px 10px', fontSize: '13px', textAlign: 'right'}}>{remainingAmount != null ? formatBRL(remainingAmount) : '-'}</td>
                                             </tr>
                                         );
                                     })}
@@ -3670,6 +3693,8 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
                                     paymentType={app.paymentType}
                                     paymentMethod={app.paymentMethod}
                                     remainingAmount={app.remainingAmount ?? app.remaining_amount}
+                                    paidAmount={app.paidAmount ?? app.paid_amount}
+                                    captureMethod={app.captureMethod ?? app.capture_method}
                                 />
                             </div>
 
@@ -3927,7 +3952,7 @@ const App = () => {
     };
 
     return (
-        <div className="container">
+        <div className={`container${view === 'admin' ? ' container--admin' : ''}`}>
             <Header view={view} setView={navigateTo} />
             {showPassword && <PasswordModal onSuccess={handleAdminLoginSuccess} onCancel={() => setShowPassword(false)} />}
             <main>

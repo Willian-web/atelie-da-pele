@@ -950,11 +950,14 @@ function reportEffectiveReceivedPaid(row) {
     let cents = 0;
 
     if (fin.paymentType === 'local') {
+        const remDb = toMoneyNumber(row.remaining_amount);
+        const settled = remDb != null && Number.isFinite(remDb) && remDb <= 0.005;
         if (paidPos) {
             cents = moneyToCents(rawPaid);
-        } else if (chargedPos) {
+        } else if (settled && chargedPos) {
+            // Legado raro: quitado sem paid_amount — não usar amount_charged enquanto houver pendência no registro
             cents = moneyToCents(rawCharged);
-        } else if (fin.paidAmount != null && fin.paidAmount > 0) {
+        } else if (settled && fin.paidAmount != null && fin.paidAmount > 0) {
             cents = moneyToCents(fin.paidAmount);
         }
         return centsToReais(cents);
@@ -1017,6 +1020,27 @@ function reportEffectiveRemainingPartial(row, fin) {
     return Math.max(0, roundMoney2(rem));
 }
 
+/**
+ * Valor ainda a receber em agendamentos **não** confirmados/concluídos (ex.: checkout InfinitePay pendente).
+ * Não inclui cancelados. Alinhado ao KPI "Valor a receber" do relatório.
+ */
+function reportPendingPaymentToReceiveKpi(row, fin) {
+    const st = String(row.status || '').trim().toLowerCase();
+    if (st !== 'pending_payment') return 0;
+    const ptRaw = String(row.payment_type || '').trim().toLowerCase();
+    if (ptRaw === 'full' || fin.paymentType === 'full') {
+        const total = roundMoney2(Number(fin.totalServicePrice || 0));
+        if (!Number.isFinite(total) || total <= 0) return 0;
+        const paid = toMoneyNumber(row.paid_amount);
+        const paidAdj = paid != null && Number.isFinite(paid) && paid > 0 ? paid : 0;
+        return Math.max(0, roundMoney2(total - paidAdj));
+    }
+    if (ptRaw === 'partial' || fin.paymentType === 'partial') {
+        return reportEffectiveRemainingPartial(row, fin);
+    }
+    return 0;
+}
+
 function buildPaymentSummary(row) {
     const fin = normalizeAppointmentFinancials(row);
     const status = row.status;
@@ -1033,13 +1057,13 @@ function buildPaymentSummary(row) {
 
     let paymentStatusLabel = 'Aguardando pagamento';
     if (status === 'pending_payment') {
-        paymentStatusLabel = isFull ? 'Pagamento online pendente' : 'Aguardando pagamento';
+        paymentStatusLabel = isFull ? 'Aguardando pagamento online' : 'Aguardando pagamento';
     } else if (status === 'confirmed') {
         if (isLocal) {
             const remL = fin.remainingAmount != null ? Number(fin.remainingAmount) : null;
             paymentStatusLabel =
                 remL != null && Number.isFinite(remL) && remL > 0.005
-                    ? 'Pagamento no local — pendente'
+                    ? 'Pendente pagamento local'
                     : 'Pagamento confirmado';
         } else if (isFull) {
             const cap = String(row.capture_method || '').toLowerCase();
@@ -1049,7 +1073,15 @@ function buildPaymentSummary(row) {
             paymentStatusLabel = 'Pagamento confirmado';
         }
     } else if (status === 'completed') {
-        paymentStatusLabel = 'Concluído';
+        if (isLocal) {
+            const remL = fin.remainingAmount != null ? Number(fin.remainingAmount) : null;
+            paymentStatusLabel =
+                remL != null && Number.isFinite(remL) && remL > 0.005
+                    ? 'Pendente pagamento local'
+                    : 'Pagamento confirmado';
+        } else {
+            paymentStatusLabel = 'Concluído';
+        }
     } else if (status === 'cancelled') {
         paymentStatusLabel = 'Cancelado';
     }
@@ -1771,6 +1803,7 @@ app.get('/admin/report', requireAdminAuth, async (req, res) => {
                 time: r.time,
                 status: r.status,
                 paymentType: fin.paymentType,
+                paymentMethod: derivePaymentMethodForApi(r, fin),
                 amountCharged: fin.amountCharged,
                 remainingAmount: fin.remainingAmount,
                 captureMethod: r.capture_method,
@@ -1810,10 +1843,13 @@ app.get('/admin/report', requireAdminAuth, async (req, res) => {
             const clientKey = r.client_id || r.client_phone || null;
             if (clientKey) uniqueClientKeys.add(String(clientKey));
 
-            const isPaidStatus = r.status === 'confirmed' || r.status === 'completed';
-            if (!isPaidStatus) continue;
-
             const fin = normalizeAppointmentFinancials(r);
+            const isPaidStatus = r.status === 'confirmed' || r.status === 'completed';
+            if (!isPaidStatus) {
+                summary.totalRemainingToReceive += reportPendingPaymentToReceiveKpi(r, fin);
+                continue;
+            }
+
             const received = reportEffectiveReceivedPaid(r);
             const kind = reportPaymentKindForAggregation(r, fin, received);
             const receivedCents = moneyToCents(received);
