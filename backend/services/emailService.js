@@ -193,8 +193,11 @@ function buildStandardBookingDetailRows({
     return rows;
 }
 
-/** Largura máxima do card (px) — intervalo 680–720, padrão único para todos os e-mails. */
-const ATELIE_EMAIL_LAYOUT_MAX_PX = 720;
+/** Largura máxima do card central (px) — entre 600 e 680, padrão único para todos os e-mails. */
+const ATELIE_EMAIL_LAYOUT_MAX_PX = 640;
+
+/** Fundo externo neutro (canvas Gmail — evita faixa lilás ampla). */
+const ATELIE_EMAIL_OUTER_BG = '#f5f6fa';
 
 /**
  * Estilos globais: mobile, dark mode (fallback seguro com cores explícitas nos inlines).
@@ -203,52 +206,53 @@ function getEmailGlobalStyles() {
     return `<style type="text/css">
 @media only screen and (max-width: 600px) {
   .atelie-shell { width: 100% !important; max-width: 100% !important; }
-  .atelie-outer-pad { padding: 18px 12px !important; }
-  .atelie-header { padding: 28px 22px 22px !important; }
-  .atelie-main { padding: 26px 22px 12px !important; }
-  .atelie-content { padding: 0 22px 28px !important; }
-  .atelie-footer { padding: 22px 22px 28px !important; }
-  .atelie-card-inner { padding: 18px 16px !important; }
+  .atelie-outer-pad { padding: 14px 10px !important; }
+  .atelie-header { padding: 22px 18px 18px !important; }
+  .atelie-main { padding: 22px 18px 10px !important; }
+  .atelie-content { padding: 0 18px 24px !important; }
+  .atelie-footer { padding: 18px 18px 24px !important; }
+  .atelie-card-inner { padding: 16px 14px !important; }
   .atelie-email-label { display: block !important; width: 100% !important; max-width: 100% !important; padding: 0 0 6px 0 !important; }
   .atelie-email-value { display: block !important; width: 100% !important; max-width: 100% !important; padding: 0 0 14px 0 !important; }
   .atelie-btn-pay { display: block !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box !important; text-align: center !important; }
 }
 @media (prefers-color-scheme: dark) {
-  body.atelie-body { background-color: #141018 !important; color: #e8e4f2 !important; }
-  .atelie-shell { background-color: #1f1a2a !important; border-color: #3d3558 !important; box-shadow: 0 8px 36px rgba(0,0,0,0.45) !important; }
-  .atelie-header { background: linear-gradient(135deg, #2a2235 0%, #322847 45%, #3a2d52 100%) !important; border-bottom-color: #4a3d62 !important; }
-  .atelie-hbrand { color: #f2eafd !important; }
-  .atelie-subbrand { color: #b8a8d4 !important; }
-  .atelie-main .atelie-greet { color: #c9bfdc !important; }
-  .atelie-main h1 { color: #efe8fb !important; }
-  .atelie-main .atelie-lead { color: #b4a8cc !important; }
-  .atelie-card { background-color: #262030 !important; border-color: #42365a !important; }
-  .atelie-label { color: #9a8cb8 !important; border-bottom-color: #3d3558 !important; }
-  .atelie-value { color: #f4f0fc !important; border-bottom-color: #3d3558 !important; }
-  .atelie-note { color: #b8aed0 !important; }
-  .atelie-footer { background-color: #1a1522 !important; border-top-color: #3d3558 !important; }
-  .atelie-footer p { color: #b4a8cc !important; }
-  .atelie-footer .atelie-foot-muted { color: #8a7ca8 !important; }
-  .atelie-btn-pay { background-color: #7d55c4 !important; border-color: #6340a0 !important; box-shadow: 0 4px 16px rgba(0,0,0,0.35) !important; }
+  body.atelie-body { background-color: #121218 !important; color: #e8e4f2 !important; }
+  .atelie-outer-wrap { background-color: #121218 !important; }
+  .atelie-shell { background-color: #1c1c24 !important; border-color: #353542 !important; box-shadow: 0 4px 24px rgba(0,0,0,0.4) !important; }
+  .atelie-header { background: linear-gradient(135deg, #2a2435 0%, #322a42 100%) !important; border-bottom-color: #403a52 !important; }
+  .atelie-hbrand { color: #f0e8fc !important; }
+  .atelie-subbrand { color: #a89bc4 !important; }
+  .atelie-main .atelie-greet { color: #b4aac8 !important; }
+  .atelie-main h1 { color: #ebe4f8 !important; }
+  .atelie-main .atelie-lead { color: #a8a0bc !important; }
+  .atelie-card { background-color: #22222c !important; border-color: #353542 !important; }
+  .atelie-label { color: #8a82a0 !important; border-bottom-color: #353542 !important; }
+  .atelie-value { color: #f2f0f8 !important; border-bottom-color: #353542 !important; }
+  .atelie-note { color: #a8a0bc !important; }
+  .atelie-footer { background-color: #18181f !important; border-top-color: #353542 !important; }
+  .atelie-footer p { color: #a8a0bc !important; }
+  .atelie-footer .atelie-foot-muted { color: #7a7490 !important; }
+  .atelie-btn-pay { background-color: #7d55c4 !important; border-color: #6340a0 !important; box-shadow: 0 2px 12px rgba(0,0,0,0.35) !important; }
 }
 </style>`;
 }
 
-/** Cabeçalho premium (degradê, tipografia, alinhado à esquerda). */
+/** Cabeçalho da marca (lilás só no topo do card, compacto). */
 function buildPremiumHeaderHtml() {
     return `<tr>
-<td class="atelie-header" style="padding:40px 36px 32px;text-align:left;background:linear-gradient(135deg,#fdf8fc 0%,#f3e9f8 32%,#e9ddf5 65%,#e0d2ef 100%);border-radius:20px 20px 0 0;border-bottom:1px solid #dccfed;">
-<div class="atelie-hbrand" style="font-size:27px;line-height:1.2;color:#3d2d55;font-weight:700;letter-spacing:-0.02em;font-family:Georgia,'Times New Roman',serif;">Ateliê da Pele</div>
-<div class="atelie-subbrand" style="font-size:13px;color:#6f5d88;margin-top:10px;letter-spacing:0.06em;font-weight:600;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">Estética &amp; Bem-estar</div>
+<td class="atelie-header" style="padding:26px 28px 22px;text-align:center;background:linear-gradient(180deg,#f7f2fc 0%,#f0e8f8 100%);border-bottom:1px solid #e8dff0;">
+<div class="atelie-hbrand" style="font-size:22px;line-height:1.25;color:#3d2d55;font-weight:700;letter-spacing:-0.02em;font-family:Georgia,'Times New Roman',serif;">Ateliê da Pele</div>
+<div class="atelie-subbrand" style="font-size:12px;color:#6f5d88;margin-top:6px;font-weight:600;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">Estética &amp; Bem-estar</div>
 </td></tr>`;
 }
 
-/** Rodapé institucional (alinhado à esquerda). */
+/** Rodapé institucional (centralizado, discreto). */
 function buildEmailFooterHtml() {
     return `<tr>
-<td class="atelie-footer" style="padding:30px 36px 38px;border-top:1px solid #ebe4f2;background:#faf7fc;text-align:left;">
-<p style="margin:0;font-size:14px;line-height:1.65;color:#4d435f;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;"><strong>Ateliê da Pele</strong><br/>WhatsApp: (41) 8485-0169</p>
-<p class="atelie-foot-muted" style="margin:14px 0 0;font-size:12px;line-height:1.55;color:#8878a0;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">Este é um e-mail automático.</p>
+<td class="atelie-footer" style="padding:22px 28px 28px;border-top:1px solid #eceef2;background:#fafbfc;text-align:center;">
+<p style="margin:0;font-size:13px;line-height:1.6;color:#5a5668;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;"><strong>Ateliê da Pele</strong><br/>WhatsApp: (41) 8485-0169</p>
+<p class="atelie-foot-muted" style="margin:12px 0 0;font-size:11px;line-height:1.5;color:#8b8898;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">Este é um e-mail automático.</p>
 </td></tr>`;
 }
 
@@ -260,32 +264,32 @@ function buildDetailsCardRowsHtml(details) {
             const vl = escapeHtml(row.value || '').replace(/\n/g, '<br/>');
             return `
 <tr>
-<td class="atelie-label atelie-email-label" width="26%" style="padding:16px 14px 16px 0;border-bottom:1px solid #ebe4f2;font-size:12px;color:#8576a0;width:26%;max-width:200px;vertical-align:top;word-wrap:break-word;overflow-wrap:break-word;line-height:1.45;font-weight:600;text-transform:none;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${lb}</td>
-<td class="atelie-value atelie-email-value" width="74%" style="padding:16px 0 16px 14px;border-bottom:1px solid #ebe4f2;font-size:16px;color:#2f243f;font-weight:600;vertical-align:top;word-wrap:break-word;overflow-wrap:break-word;line-height:1.55;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${vl}</td>
+<td class="atelie-label atelie-email-label" width="26%" style="padding:12px 12px 12px 0;border-bottom:1px solid #eceef2;font-size:11px;color:#6b6a78;width:26%;max-width:180px;vertical-align:top;word-wrap:break-word;overflow-wrap:break-word;line-height:1.45;font-weight:600;text-transform:none;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${lb}</td>
+<td class="atelie-value atelie-email-value" width="74%" style="padding:12px 0 12px 12px;border-bottom:1px solid #eceef2;font-size:15px;color:#1f2937;font-weight:600;vertical-align:top;word-wrap:break-word;overflow-wrap:break-word;line-height:1.55;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${vl}</td>
 </tr>`;
         })
         .join('');
 }
 
-/** Card de detalhes com fundo suave, borda e raio. */
+/** Card de detalhes (fundo neutro claro, borda suave). */
 function buildDetailsCardHtml(detailRowsHtml) {
-    return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="atelie-card" style="background:#fbf9ff;border-radius:14px;border:1px solid #e8dff2;">
-<tr><td class="atelie-card-inner" style="padding:26px 30px;">
+    return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" class="atelie-card" style="background:#f9fafb;border-radius:12px;border:1px solid #eceef2;">
+<tr><td class="atelie-card-inner" style="padding:20px 22px;">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0">${detailRowsHtml}</table>
 </td></tr></table>`;
 }
 
-/** Botão de ação (InfinitePay / CTA) — estilo forte, compatível com clientes de e-mail. */
+/** Botão de ação (InfinitePay / CTA) — centralizado no fluxo do conteúdo. */
 function buildActionButtonHtml(href, label) {
     const h = escapeHtml(href);
     const lab = escapeHtml(label);
-    return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:30px 0 0;"><tr><td align="left" style="padding:0;">
-<a href="${h}" class="atelie-btn-pay" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#6f45b6;color:#ffffff;padding:14px 28px;border-radius:12px;text-decoration:none;font-weight:700;font-size:15px;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;letter-spacing:0.02em;border:1px solid #5c3a9e;box-shadow:0 4px 14px rgba(111,69,182,0.38);">${lab}</a>
+    return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:22px 0 0;"><tr><td align="center" style="padding:0;">
+<a href="${h}" class="atelie-btn-pay" target="_blank" rel="noopener noreferrer" style="display:inline-block;background:#6f45b6;color:#ffffff;padding:14px 28px;border-radius:12px;text-decoration:none;font-weight:700;font-size:15px;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;letter-spacing:0.02em;border:1px solid #5c3a9e;box-shadow:0 3px 12px rgba(111,69,182,0.28);">${lab}</a>
 </td></tr></table>`;
 }
 
 /**
- * Documento HTML completo: meta color-scheme, tabelas, alinhamento à esquerda, largura fluida até max.
+ * Documento HTML: fundo externo neutro, card branco centralizado (padrão SaaS).
  */
 function buildEmailLayoutHtml(titleEscaped, shellInnerRowsHtml) {
     return `<!DOCTYPE html>
@@ -298,11 +302,11 @@ function buildEmailLayoutHtml(titleEscaped, shellInnerRowsHtml) {
 <title>${titleEscaped}</title>
 ${getEmailGlobalStyles()}
 </head>
-<body class="atelie-body" style="margin:0;padding:0;background:#f0e8f5;color:#2f243f;-webkit-text-size-adjust:100%;">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f0e8f5;">
+<body class="atelie-body" style="margin:0;padding:0;background:${ATELIE_EMAIL_OUTER_BG};color:#2f243f;-webkit-text-size-adjust:100%;">
+<table role="presentation" class="atelie-outer-wrap" width="100%" cellspacing="0" cellpadding="0" style="background:${ATELIE_EMAIL_OUTER_BG};">
 <tr>
-<td class="atelie-outer-pad" align="left" style="padding:36px 28px;font-family:Georgia,'Times New Roman',serif;">
-<table role="presentation" class="atelie-shell" width="100%" cellspacing="0" cellpadding="0" style="width:100%;max-width:${ATELIE_EMAIL_LAYOUT_MAX_PX}px;margin:0;background:#ffffff;border-radius:20px;overflow:hidden;border:1px solid #e0d4ee;box-shadow:0 10px 40px rgba(74,53,101,0.12);">
+<td class="atelie-outer-pad" align="center" style="padding:28px 16px;font-family:Georgia,'Times New Roman',serif;">
+<table role="presentation" class="atelie-shell" width="100%" cellspacing="0" cellpadding="0" align="center" style="width:100%;max-width:${ATELIE_EMAIL_LAYOUT_MAX_PX}px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e2e5eb;box-shadow:0 2px 12px rgba(15,23,42,0.06);">
 ${shellInnerRowsHtml}
 </table>
 </td>
@@ -313,7 +317,7 @@ ${shellInnerRowsHtml}
 }
 
 /**
- * Layout HTML único (inline + classes para dark/mobile) — spa / SaaS premium.
+ * Layout HTML único (inline + classes para dark/mobile) — cartão central, fundo neutro.
  * @param {object} opts
  * @param {string} [opts.greeting]
  * @param {string} opts.title
@@ -327,7 +331,7 @@ function buildEmailHtmlTemplate(opts) {
     const title = escapeHtml(opts.title || '');
     const subtitle = escapeHtml(opts.subtitle || '');
     const note = opts.noteAfterCard && String(opts.noteAfterCard).trim()
-        ? `<p class="atelie-note" style="margin:26px 0 0;font-size:15px;line-height:1.65;color:#5c5268;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${escapeHtml(String(opts.noteAfterCard).trim()).replace(/\n/g, '<br/>')}</p>`
+        ? `<p class="atelie-note" style="margin:20px 0 0;font-size:14px;line-height:1.6;color:#4b5563;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${escapeHtml(String(opts.noteAfterCard).trim()).replace(/\n/g, '<br/>')}</p>`
         : '';
 
     const detailRowsHtml = buildDetailsCardRowsHtml(opts.details);
@@ -340,13 +344,13 @@ function buildEmailHtmlTemplate(opts) {
             : '';
 
     const mainBlock = `<tr>
-<td class="atelie-main" style="padding:38px 36px 14px;text-align:left;">
-${greeting ? `<p class="atelie-greet" style="margin:0 0 20px;font-size:16px;color:#5a4f6e;line-height:1.55;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${greeting}</p>` : ''}
-<h1 style="margin:0 0 14px;font-size:26px;line-height:1.28;color:#3d2d55;font-weight:700;font-family:Georgia,'Times New Roman',serif;">${title}</h1>
-<p class="atelie-lead" style="margin:0;font-size:16px;line-height:1.65;color:#5c5268;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${subtitle}</p>
+<td class="atelie-main" style="padding:28px 28px 12px;text-align:left;background:#ffffff;">
+${greeting ? `<p class="atelie-greet" style="margin:0 0 16px;font-size:15px;color:#4b5563;line-height:1.55;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${greeting}</p>` : ''}
+<h1 style="margin:0 0 10px;font-size:22px;line-height:1.3;color:#1f1630;font-weight:700;font-family:Georgia,'Times New Roman',serif;">${title}</h1>
+<p class="atelie-lead" style="margin:0;font-size:15px;line-height:1.6;color:#5b6472;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">${subtitle}</p>
 </td></tr>
 <tr>
-<td class="atelie-content" style="padding:0 36px 40px;text-align:left;">
+<td class="atelie-content" style="padding:0 28px 32px;text-align:left;background:#ffffff;">
 ${detailsCard}
 ${btn}
 ${note}
@@ -1079,6 +1083,7 @@ module.exports = {
     buildDetailsCard: buildDetailsCardHtml,
     buildActionButton: buildActionButtonHtml,
     ATELIE_EMAIL_LAYOUT_MAX_PX,
+    ATELIE_EMAIL_OUTER_BG,
     ATELIE_SALON_LOCATION_LINE,
     ATELIE_EMAIL_STANDARD_FOOTER
 };
