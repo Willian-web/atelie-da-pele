@@ -167,7 +167,7 @@
         .st-confirmed { background: #d4edda; color: #155724; }
         .st-cancelled { background: #f8d7da; color: #721c24; }
         .st-completed { background: #e2e3e5; color: #383d41; }
-        /* Meus Agendamentos — card compacto, badge e link Maps sem overflow horizontal */
+        /* Meus Agendamentos — card compacto, badge sem overflow horizontal */
         .my-app-card { overflow-wrap: anywhere; }
         .my-app-card__status .status-badge {
             margin-left: 0;
@@ -177,7 +177,17 @@
             line-height: 1.35;
             box-sizing: border-box;
         }
-        .my-app-card__maps-link {
+        /* Local do ateliê + Google Maps — Agenda Geral (admin) e Meus Agendamentos */
+        .appointment-location {
+            font-size: 13px;
+            max-width: 100%;
+            box-sizing: border-box;
+            overflow-wrap: anywhere;
+        }
+        .appointment-location__address {
+            display: block;
+        }
+        .appointment-map-link {
             display: flex;
             align-items: center;
             gap: 6px;
@@ -191,7 +201,9 @@
             flex-wrap: wrap;
             row-gap: 4px;
         }
-        .my-app-card__maps-link i { flex-shrink: 0; }
+        .appointment-map-link i {
+            flex-shrink: 0;
+        }
         .my-app-card__cancel {
             width: 100%;
             max-width: 100%;
@@ -1079,30 +1091,16 @@ const AgendaAppointmentCard = ({ className = '', style, headerMain, headerAside,
     </div>
 );
 
-const AgendaCardStudioAtelierBlock = ({ mapsLinkClassName, stackMapsLink }) => (
-    <div style={{ fontSize: '13px' }}>
+const AgendaCardStudioAtelierBlock = () => (
+    <div className="appointment-location">
         <strong>Local do atendimento:</strong>
         <br />
-        <span style={stackMapsLink ? { display: 'block' } : undefined}>{ATELIE_STUDIO_ADDRESS_TEXT}</span>
+        <span className="appointment-location__address">{ATELIE_STUDIO_ADDRESS_TEXT}</span>
         <a
-            className={mapsLinkClassName || undefined}
+            className="appointment-map-link"
             href={ATELIE_STUDIO_GOOGLE_MAPS_URL}
             target="_blank"
             rel="noopener noreferrer"
-            style={{
-                display: stackMapsLink ? 'flex' : 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                marginTop: stackMapsLink ? '6px' : '6px',
-                fontSize: '13px',
-                color: '#0ea5e9',
-                textDecoration: 'none',
-                maxWidth: '100%',
-                boxSizing: 'border-box',
-                flexWrap: 'wrap',
-                rowGap: '4px',
-                width: stackMapsLink ? '100%' : undefined
-            }}
         >
             <i className="fas fa-map-marked-alt" aria-hidden="true" />
             Abrir no Google Maps
@@ -4291,7 +4289,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView, admin
                                     </div>
                                 )}
 
-                                <AgendaCardStudioAtelierBlock mapsLinkClassName="my-app-card__maps-link" stackMapsLink />
+                                <AgendaCardStudioAtelierBlock />
 
                                 {notes && (
                                     <div style={{ fontSize: '13px' }}>
