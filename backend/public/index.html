@@ -181,11 +181,12 @@
             display: flex;
             align-items: center;
             gap: 6px;
-            margin-top: 8px;
+            margin-top: 6px;
             font-size: 13px;
             color: #0ea5e9;
             text-decoration: none;
             max-width: 100%;
+            width: 100%;
             box-sizing: border-box;
             flex-wrap: wrap;
             row-gap: 4px;
@@ -231,6 +232,8 @@ const ATELIE_STUDIO_GOOGLE_MAPS_URL =
 /** Fallback se `GET /config/public` → `adminWhatsApp` vier vazio (mesmo número já usado no projeto). */
 const ATELIE_WHATSAPP_FALLBACK_DIGITS = '554184850169';
 const ATELIE_WHATSAPP_DEFAULT_MESSAGE = 'Olá! Gostaria de falar com o Ateliê da Pele.';
+/** Pré-preenchimento ao cliente abrir o WhatsApp do ateliê a partir de “Meus Agendamentos”. */
+const MY_APPOINTMENTS_ATELIE_WA_MESSAGE = 'Olá! Gostaria de falar sobre meu agendamento no Ateliê da Pele.';
 
 /** Somente dígitos para wa.me; se inválido ou curto demais, usa fallback (Railway: ADMIN_WHATSAPP). */
 const sanitizePublicWhatsAppDigits = (raw) => {
@@ -616,6 +619,93 @@ const formatBRLFromNumber = (n) => {
     return Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
+/**
+ * Bloco “Pagamento” só para o corpo do card em Meus Agendamentos (texto/layout).
+ * Usa os mesmos números que `resolveAppointmentPaidForDisplay` e a mesma leitura de pendência local que `StatusBadge`.
+ */
+const buildMyAppointmentsPaymentBlock = (app, serviceTotal) => {
+    const status = String(app?.status || '').trim();
+    if (status === 'cancelled') return null;
+
+    const { paid, remaining, showRemaining } = resolveAppointmentPaidForDisplay(app);
+    const paidLabel =
+        paid != null && Number.isFinite(Number(paid)) && Number(paid) > 0.005 ? formatBRLFromNumber(paid) : null;
+    const remLabel = showRemaining && remaining != null ? formatBRLFromNumber(remaining) : null;
+
+    const pt = String(app?.paymentType || app?.payment_type || '').toLowerCase();
+    const pm = String(app?.paymentMethod || app?.payment_method || '').toLowerCase();
+    const isLocalKind = pt === 'local' || pm === 'local';
+
+    const remRaw = app?.remainingAmount ?? app?.remaining_amount ?? (app?.paymentSummary && app.paymentSummary.remainingAmount);
+    const hadRemainingProp = remRaw !== undefined && remRaw !== null && remRaw !== '';
+    const remNum = hadRemainingProp ? Number(remRaw) : null;
+    const remPending = hadRemainingProp && remNum != null && Number.isFinite(remNum) && remNum > 0.005;
+
+    const paidRaw = app?.paidAmount ?? app?.paid_amount ?? (app?.paymentSummary && app.paymentSummary.paidAmount);
+    const paidNum = paidRaw !== undefined && paidRaw !== null && paidRaw !== '' ? Number(paidRaw) : NaN;
+    const paidRecorded = Number.isFinite(paidNum) && paidNum > 0.005;
+    const localPending = isLocalKind && (remPending || (!hadRemainingProp && !paidRecorded));
+
+    const procedureTotalLabel =
+        typeof serviceTotal === 'number' && Number.isFinite(serviceTotal) ? formatPrice(serviceTotal) : null;
+    const valueDash = '—';
+
+    const rowsFrom = (pairs) => pairs.filter((p) => p && p.value && p.value !== valueDash);
+
+    if (pt === 'partial') {
+        const rows = [];
+        if (paidLabel) rows.push({ label: 'Valor pago', value: paidLabel });
+        if (remLabel) rows.push({ label: 'Valor restante', value: remLabel });
+        return { summaryLine: 'Parcial — histórico', rows };
+    }
+
+    if (status === 'pending_payment') {
+        if (pt === 'full') {
+            return {
+                summaryLine: 'Online — aguardando pagamento',
+                rows: [{ label: 'Valor', value: procedureTotalLabel || remLabel || paidLabel || valueDash }]
+            };
+        }
+        return {
+            summaryLine: isLocalKind ? 'No local — pendente' : 'Pagamento — pendente',
+            rows: [{ label: 'Valor a pagar', value: remLabel || procedureTotalLabel || paidLabel || valueDash }]
+        };
+    }
+
+    if (isLocalKind) {
+        if ((status === 'confirmed' || status === 'completed') && localPending) {
+            return {
+                summaryLine: 'No local — pendente',
+                rows: [{ label: 'Valor a pagar', value: remLabel || procedureTotalLabel || paidLabel || valueDash }]
+            };
+        }
+        return {
+            summaryLine: 'No local — confirmado',
+            rows: rowsFrom([{ label: 'Valor pago', value: paidLabel || procedureTotalLabel || null }])
+        };
+    }
+
+    if (pt === 'full' && (status === 'confirmed' || status === 'completed')) {
+        return {
+            summaryLine: 'Online — confirmado',
+            rows: rowsFrom([{ label: 'Valor pago', value: paidLabel || procedureTotalLabel || null }])
+        };
+    }
+
+    const mode = getMyAppointmentsPaymentModeLabel(app);
+    if (!mode) return null;
+    const rows = [];
+    if (paidLabel) rows.push({ label: 'Valor pago', value: paidLabel });
+    if (remLabel) rows.push({ label: 'Valor restante', value: remLabel });
+    const short =
+        mode.indexOf('local') !== -1
+            ? 'No local'
+            : mode.indexOf('online') !== -1
+              ? 'Online'
+              : mode.replace(/^Parcial.*/, 'Parcial — histórico');
+    return { summaryLine: short, rows };
+};
+
 const getLocalTodayStr = () => {
     const now = new Date();
     const offset = now.getTimezoneOffset() * 60000;
@@ -949,6 +1039,76 @@ const StatusBadge = ({ status, paymentType, paymentMethod, remainingAmount, paid
             return null;
     }
 };
+
+/** Shell compartilhado: cabeçalho em duas colunas + corpo em grade + rodapé opcional (Agenda Geral / Meus Agendamentos). */
+const AgendaAppointmentCard = ({ className = '', style, headerMain, headerAside, children, footer }) => (
+    <div
+        className={className || undefined}
+        style={{
+            background: '#fcfcfc',
+            border: '1px solid #ddd',
+            padding: '16px',
+            borderRadius: '10px',
+            textAlign: 'left',
+            maxWidth: '100%',
+            boxSizing: 'border-box',
+            wordBreak: 'break-word',
+            overflowWrap: 'anywhere',
+            ...(style || {})
+        }}
+    >
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 200px', minWidth: 0 }}>{headerMain}</div>
+            <div
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    flexWrap: 'wrap',
+                    maxWidth: '100%',
+                    justifyContent: 'flex-end'
+                }}
+            >
+                {headerAside}
+            </div>
+        </div>
+        {children != null && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px', marginTop: '12px' }}>{children}</div>
+        )}
+        {footer}
+    </div>
+);
+
+const AgendaCardStudioAtelierBlock = ({ mapsLinkClassName, stackMapsLink }) => (
+    <div style={{ fontSize: '13px' }}>
+        <strong>Local do atendimento:</strong>
+        <br />
+        <span style={stackMapsLink ? { display: 'block' } : undefined}>{ATELIE_STUDIO_ADDRESS_TEXT}</span>
+        <a
+            className={mapsLinkClassName || undefined}
+            href={ATELIE_STUDIO_GOOGLE_MAPS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+                display: stackMapsLink ? 'flex' : 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginTop: stackMapsLink ? '6px' : '6px',
+                fontSize: '13px',
+                color: '#0ea5e9',
+                textDecoration: 'none',
+                maxWidth: '100%',
+                boxSizing: 'border-box',
+                flexWrap: 'wrap',
+                rowGap: '4px',
+                width: stackMapsLink ? '100%' : undefined
+            }}
+        >
+            <i className="fas fa-map-marked-alt" aria-hidden="true" />
+            Abrir no Google Maps
+        </a>
+    </div>
+);
 
 // Até aqui igual...
 
@@ -2813,23 +2973,33 @@ const AdminArea = ({
                         ? new Date(app.date + 'T12:00:00').toLocaleDateString('pt-BR')
                         : 'Sem data';
 
-                    const mapsLink = 'https://www.google.com/maps/search/?api=1&query=Ateliê+da+Pele+Rua+Rio+Jaguaribe+274';
-
                     return (
-                        <div key={app.id} style={{background: '#fcfcfc', border: '1px solid #ddd', padding: '16px', borderRadius: '10px', textAlign: 'left'}}>
-                            <div style={{display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start', flexWrap: 'wrap'}}>
-                                <div>
-                                    <div style={{fontWeight: '700', marginBottom: '6px'}}>{clientName}</div>
-                                    <div style={{fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.45}}>
-                                        {serviceName}{servicePriceStr ? ` — ${servicePriceStr}` : ''}
+                        <AgendaAppointmentCard
+                            key={app.id}
+                            headerMain={
+                                <>
+                                    <div style={{ fontWeight: '700', marginBottom: '6px' }}>{clientName}</div>
+                                    <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.45 }}>
+                                        {serviceName}
+                                        {servicePriceStr ? ` — ${servicePriceStr}` : ''}
                                     </div>
                                     {scheduleHint ? (
-                                        <div style={{ fontSize: '13px', color: 'var(--text-dark)', marginTop: '4px', fontWeight: 600, lineHeight: 1.45 }}>
+                                        <div
+                                            style={{
+                                                fontSize: '13px',
+                                                color: 'var(--text-dark)',
+                                                marginTop: '4px',
+                                                fontWeight: 600,
+                                                lineHeight: 1.45
+                                            }}
+                                        >
                                             Horários: {scheduleHint}
                                         </div>
                                     ) : null}
-                                </div>
-                                <div style={{display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap'}}>
+                                </>
+                            }
+                            headerAside={
+                                <>
                                     <StatusBadge
                                         status={app.status}
                                         paymentType={app.paymentType}
@@ -2838,23 +3008,82 @@ const AdminArea = ({
                                         paidAmount={app.paidAmount ?? app.paid_amount}
                                         captureMethod={app.captureMethod ?? app.capture_method}
                                     />
-                                    <div style={{fontSize: '13px', color: 'var(--text-muted)'}}>
+                                    <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
                                         {dateLabel} • {app.time || 'Sem horário'}
                                     </div>
+                                </>
+                            }
+                            footer={
+                                <div className="admin-agenda-actions">
+                                    <button className="btn-cancel" onClick={() => handleCancelByAdmin(app.id)} style={{ padding: '10px 14px', fontSize: '13px' }}>
+                                        Cancelar
+                                    </button>
+                                    {app.status === 'pending_payment' && (
+                                        <button
+                                            className="btn-cancel"
+                                            onClick={() => openManualPayment(app, serviceName, serviceTotal)}
+                                            style={{
+                                                padding: '10px 14px',
+                                                fontSize: '13px',
+                                                borderColor: 'rgba(111, 76, 165, 0.35)',
+                                                color: 'var(--primary-color)'
+                                            }}
+                                        >
+                                            <i className="fas fa-hand-holding-usd"></i> Confirmar pagamento
+                                        </button>
+                                    )}
+                                    {canConfirmLocalPaymentReceived(app) && (
+                                        <button
+                                            type="button"
+                                            className="btn-cancel"
+                                            onClick={() => openConfirmLocalPayment(app, serviceName, serviceTotal)}
+                                            style={{
+                                                padding: '10px 14px',
+                                                fontSize: '13px',
+                                                borderColor: 'rgba(14, 165, 233, 0.45)',
+                                                color: '#0284c7'
+                                            }}
+                                        >
+                                            <i className="fas fa-store"></i> Confirmar pagamento no local
+                                        </button>
+                                    )}
+                                    {canSettleRemainingBalance(app) && (
+                                        <button
+                                            type="button"
+                                            className="btn-cancel"
+                                            onClick={() => openSettleBalance(app, serviceName, serviceTotal)}
+                                            style={{
+                                                padding: '10px 14px',
+                                                fontSize: '13px',
+                                                borderColor: 'rgba(61, 143, 101, 0.45)',
+                                                color: 'var(--success, #3d8f65)'
+                                            }}
+                                        >
+                                            <i className="fas fa-clipboard-check"></i> Registrar pagamento
+                                        </button>
+                                    )}
+                                    <button
+                                        className="btn-cancel"
+                                        onClick={() => handleDelete(app.id)}
+                                        style={{ padding: '10px 14px', fontSize: '13px', borderColor: '#ef4444', color: '#ef4444' }}
+                                    >
+                                        Apagar
+                                    </button>
                                 </div>
-                            </div>
-
-                            <div style={{display: 'grid', gridTemplateColumns: '1fr', gap: '10px', marginTop: '12px'}}>
-                                <div style={{fontSize: '13px'}}>
+                            }
+                        >
+                            <>
+                                <div style={{ fontSize: '13px' }}>
                                     <strong>Telefone:</strong> {phone || 'N/A'}
                                     {phone && (
                                         <>
-                                            {' '}•{' '}
+                                            {' '}
+                                            •{' '}
                                             <a
                                                 href={`https://wa.me/55${String(phone).replace(/\D/g, '')}`}
                                                 target="_blank"
-                                                rel="noreferrer"
-                                                style={{color: '#0ea5e9', textDecoration: 'none'}}
+                                                rel="noopener noreferrer"
+                                                style={{ color: '#0ea5e9', textDecoration: 'none' }}
                                             >
                                                 Conversar
                                             </a>
@@ -2863,70 +3092,32 @@ const AdminArea = ({
                                 </div>
 
                                 {location && (
-                                    <div style={{fontSize: '13px'}}>
-                                        <strong>Endereço Cliente:</strong><br />{location}
+                                    <div style={{ fontSize: '13px' }}>
+                                        <strong>Endereço Cliente:</strong>
+                                        <br />
+                                        {location}
                                     </div>
                                 )}
 
-                                <div style={{fontSize: '13px'}}>
-                                    <strong>Local do atendimento:</strong><br />
-                                    Ateliê da Pele — Rua Rio Jaguaribe, nº 274<br />
-                                    <a href={mapsLink} target="_blank" rel="noreferrer" style={{display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '6px', fontSize: '13px', color: '#0ea5e9', textDecoration: 'none'}}>
-                                        <i className="fas fa-map-marked-alt"></i> Abrir no Google Maps
-                                    </a>
-                                </div>
+                                <AgendaCardStudioAtelierBlock />
 
                                 {notes && (
-                                    <div style={{fontSize: '13px'}}>
-                                        <strong>Observações:</strong><br />{notes}
+                                    <div style={{ fontSize: '13px' }}>
+                                        <strong>Observações:</strong>
+                                        <br />
+                                        {notes}
                                     </div>
                                 )}
 
                                 {cancelReason && (
-                                    <div style={{fontSize: '13px', color: '#b91c1c'}}>
-                                        <strong>Motivo do cancelamento:</strong><br />{cancelReason}
+                                    <div style={{ fontSize: '13px', color: '#b91c1c' }}>
+                                        <strong>Motivo do cancelamento:</strong>
+                                        <br />
+                                        {cancelReason}
                                     </div>
                                 )}
-                            </div>
-
-                            <div className="admin-agenda-actions">
-                                <button className="btn-cancel" onClick={() => handleCancelByAdmin(app.id)} style={{padding: '10px 14px', fontSize: '13px'}}>
-                                    Cancelar
-                                </button>
-                                {app.status === 'pending_payment' && (
-                                    <button
-                                        className="btn-cancel"
-                                        onClick={() => openManualPayment(app, serviceName, serviceTotal)}
-                                        style={{padding: '10px 14px', fontSize: '13px', borderColor: 'rgba(111, 76, 165, 0.35)', color: 'var(--primary-color)'}}
-                                    >
-                                        <i className="fas fa-hand-holding-usd"></i> Confirmar pagamento
-                                    </button>
-                                )}
-                                {canConfirmLocalPaymentReceived(app) && (
-                                    <button
-                                        type="button"
-                                        className="btn-cancel"
-                                        onClick={() => openConfirmLocalPayment(app, serviceName, serviceTotal)}
-                                        style={{padding: '10px 14px', fontSize: '13px', borderColor: 'rgba(14, 165, 233, 0.45)', color: '#0284c7'}}
-                                    >
-                                        <i className="fas fa-store"></i> Confirmar pagamento no local
-                                    </button>
-                                )}
-                                {canSettleRemainingBalance(app) && (
-                                    <button
-                                        type="button"
-                                        className="btn-cancel"
-                                        onClick={() => openSettleBalance(app, serviceName, serviceTotal)}
-                                        style={{padding: '10px 14px', fontSize: '13px', borderColor: 'rgba(61, 143, 101, 0.45)', color: 'var(--success, #3d8f65)'}}
-                                    >
-                                        <i className="fas fa-clipboard-check"></i> Registrar pagamento
-                                    </button>
-                                )}
-                                <button className="btn-cancel" onClick={() => handleDelete(app.id)} style={{padding: '10px 14px', fontSize: '13px', borderColor: '#ef4444', color: '#ef4444'}}>
-                                    Apagar
-                                </button>
-                            </div>
-                        </div>
+                            </>
+                        </AgendaAppointmentCard>
                     );
                 })}
             </div>
@@ -3572,7 +3763,7 @@ const AdminArea = ({
     );
 };
 
-const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => {
+const MyAppointmentsArea = ({ appointments, refreshData, clients, setView, adminWhatsApp }) => {
     const readStoredMyAppointmentsDigits = () => {
         try {
             const d = String(sessionStorage.getItem(MY_APPOINTMENTS_PHONE_STORAGE_KEY) || '').replace(/\D/g, '');
@@ -3947,154 +4138,178 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView }) => 
             <div style={{display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px', width: '100%', maxWidth: '100%', boxSizing: 'border-box'}}>
                 {myApps.map(app => {
                     const clientName = app.clientName || app.client_name || 'Cliente';
-                    const { label: serviceName, scheduleHint } = formatAgendaServiceSummary(app);
-                    const dateLabel = app.date ? new Date(app.date + 'T12:00:00').toLocaleDateString('pt-BR') : '-';
-                    const timeLabel = app.time || '-';
+                    const phone = app.clientPhone || app.client_phone || '';
+                    const { label: serviceName, total: serviceTotal, scheduleHint } = formatAgendaServiceSummary(app);
+                    const servicePriceStr =
+                        typeof serviceTotal === 'number' && Number.isFinite(serviceTotal) ? formatPrice(serviceTotal) : null;
+                    const dateLabel = app.date
+                        ? new Date(app.date + 'T12:00:00').toLocaleDateString('pt-BR')
+                        : 'Sem data';
+                    const timeLabel = app.time || 'Sem horário';
                     const location = app.location || '';
                     const notes = app.notes || '';
                     const cancelReason = app.cancelReason || app.cancel_reason || '';
-                    const { paid, remaining, showRemaining } = resolveAppointmentPaidForDisplay(app);
-                    const paidLabel =
-                        paid != null && Number.isFinite(Number(paid)) && Number(paid) > 0.005
-                            ? formatBRLFromNumber(paid)
-                            : null;
-                    const remLabel = showRemaining && remaining != null ? formatBRLFromNumber(remaining) : null;
-                    const paymentModeLabel = getMyAppointmentsPaymentModeLabel(app);
+                    const paymentBlock = buildMyAppointmentsPaymentBlock(app, serviceTotal);
 
                     return (
-                        <div
+                        <AgendaAppointmentCard
                             key={app.id}
                             className="my-app-card"
-                            style={{
-                                background: '#fcfcfc',
-                                border: '1px solid #ddd',
-                                padding: '16px',
-                                borderRadius: '10px',
-                                textAlign: 'left',
-                                maxWidth: '100%',
-                                boxSizing: 'border-box',
-                                wordBreak: 'break-word'
-                            }}
-                        >
-                            <div style={{ minWidth: 0 }}>
-                                <div style={{ fontWeight: '700', marginBottom: '8px', fontSize: '16px', lineHeight: 1.35, color: 'var(--text-dark)' }}>
-                                    {serviceName}
-                                </div>
-                                {scheduleHint ? (
-                                    <div style={{ fontSize: '13px', color: 'var(--text-dark)', marginBottom: '4px', fontWeight: 600, lineHeight: 1.45 }}>
-                                        <strong>Horários:</strong> {scheduleHint}
-                                    </div>
-                                ) : (
-                                    <div style={{ fontSize: '14px', color: 'var(--text-dark)', marginBottom: '2px', fontWeight: 600 }}>
-                                        {dateLabel} <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>às</span> {timeLabel}
-                                    </div>
-                                )}
-                                {scheduleHint ? (
-                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.4 }}>
-                                        Referência no sistema: {dateLabel} • {timeLabel}
-                                    </div>
-                                ) : null}
-
-                                <div className="my-app-card__status" style={{ marginTop: scheduleHint ? '4px' : '8px' }}>
-                                    <StatusBadge
-                                        status={app.status}
-                                        paymentType={app.paymentType}
-                                        paymentMethod={app.paymentMethod}
-                                        remainingAmount={app.remainingAmount ?? app.remaining_amount}
-                                        paidAmount={app.paidAmount ?? app.paid_amount}
-                                        captureMethod={app.captureMethod ?? app.capture_method}
-                                    />
-                                </div>
-
-                                {paymentModeLabel && (
-                                    <div style={{ fontSize: '13px', marginTop: '10px', color: 'var(--text-dark)', lineHeight: 1.45 }}>
-                                        <strong>Forma de pagamento:</strong> {paymentModeLabel}
-                                    </div>
-                                )}
-
-                                {(paidLabel || remLabel) && (
-                                    <div style={{ fontSize: '13px', marginTop: '8px', color: 'var(--text-dark)', lineHeight: 1.45 }}>
-                                        {paidLabel && (
-                                            <span>
-                                                <strong>Valor pago:</strong> {paidLabel}
-                                            </span>
-                                        )}
-                                        {remLabel && (
-                                            <span style={{ display: paidLabel ? 'block' : 'inline', marginTop: paidLabel ? '4px' : 0 }}>
-                                                <strong>Saldo restante:</strong> {remLabel}
-                                            </span>
-                                        )}
-                                    </div>
-                                )}
-
-                                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '10px', lineHeight: 1.4 }}>
-                                    <strong>Cliente:</strong> {clientName}
-                                </div>
-                            </div>
-
-                            {location && (
-                                <div style={{ fontSize: '13px', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #e5e7eb', lineHeight: 1.45 }}>
-                                    <strong>Endereço informado:</strong>
-                                    <br />
-                                    {location}
-                                </div>
-                            )}
-
-                            <div
-                                style={
-                                    location
-                                        ? { fontSize: '13px', marginTop: '10px', lineHeight: 1.45 }
-                                        : { fontSize: '13px', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #e5e7eb', lineHeight: 1.45 }
-                                }
-                            >
-                                <strong>Local do atendimento:</strong>
-                                <br />
-                                {ATELIE_STUDIO_ADDRESS_TEXT}
-                                <a
-                                    className="my-app-card__maps-link"
-                                    href={ATELIE_STUDIO_GOOGLE_MAPS_URL}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                >
-                                    <i className="fas fa-map-marked-alt" aria-hidden="true" />
-                                    Abrir no Google Maps
-                                </a>
-                            </div>
-
-                            {notes && (
-                                <div style={{ fontSize: '13px', marginTop: '10px', lineHeight: 1.45 }}>
-                                    <strong>Observações:</strong>
-                                    <br />
-                                    {notes}
-                                </div>
-                            )}
-
-                            {cancelReason && (
-                                <div style={{ fontSize: '13px', marginTop: '10px', color: '#b91c1c', lineHeight: 1.45 }}>
-                                    <strong>Motivo do cancelamento:</strong>
-                                    <br />
-                                    {cancelReason}
-                                </div>
-                            )}
-
-                            {canClientCancelAppointment(app) && (
-                                <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #e5e7eb' }}>
-                                    <button
-                                        type="button"
-                                        className="btn-cancel my-app-card__cancel"
-                                        onClick={() => handleCancelMyAppointment(app)}
+                            headerMain={
+                                <>
+                                    <div
                                         style={{
-                                            padding: '8px 14px',
-                                            fontSize: '13px',
-                                            borderColor: 'rgba(180, 83, 9, 0.45)',
-                                            color: '#b45309'
+                                            fontWeight: '700',
+                                            marginBottom: '6px',
+                                            fontSize: '16px',
+                                            lineHeight: 1.35,
+                                            color: 'var(--text-dark)'
                                         }}
                                     >
-                                        Cancelar este agendamento
-                                    </button>
+                                        {serviceName}
+                                    </div>
+                                    {servicePriceStr ? (
+                                        <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.45 }}>
+                                            Total do procedimento:{' '}
+                                            <strong style={{ color: 'var(--text-dark)', fontWeight: 600 }}>{servicePriceStr}</strong>
+                                        </div>
+                                    ) : null}
+                                    {scheduleHint ? (
+                                        <div
+                                            style={{
+                                                fontSize: '13px',
+                                                color: 'var(--text-dark)',
+                                                marginTop: '4px',
+                                                fontWeight: 600,
+                                                lineHeight: 1.45
+                                            }}
+                                        >
+                                            Horários: {scheduleHint}
+                                        </div>
+                                    ) : null}
+                                </>
+                            }
+                            headerAside={
+                                <>
+                                    <div className="my-app-card__status">
+                                        <StatusBadge
+                                            status={app.status}
+                                            paymentType={app.paymentType}
+                                            paymentMethod={app.paymentMethod}
+                                            remainingAmount={app.remainingAmount ?? app.remaining_amount}
+                                            paidAmount={app.paidAmount ?? app.paid_amount}
+                                            captureMethod={app.captureMethod ?? app.capture_method}
+                                        />
+                                    </div>
+                                    <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                                        {dateLabel} • {timeLabel}
+                                    </div>
+                                </>
+                            }
+                            footer={
+                                canClientCancelAppointment(app) ? (
+                                    <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #e5e7eb' }}>
+                                        <button
+                                            type="button"
+                                            className="btn-cancel my-app-card__cancel"
+                                            onClick={() => handleCancelMyAppointment(app)}
+                                            style={{
+                                                padding: '8px 14px',
+                                                fontSize: '13px',
+                                                borderColor: 'rgba(180, 83, 9, 0.45)',
+                                                color: '#b45309'
+                                            }}
+                                        >
+                                            Cancelar este agendamento
+                                        </button>
+                                    </div>
+                                ) : null
+                            }
+                        >
+                            <>
+                                {paymentBlock && (
+                                    <div
+                                        style={{
+                                            fontSize: '13px',
+                                            lineHeight: 1.55,
+                                            color: 'var(--text-dark)',
+                                            maxWidth: '100%',
+                                            boxSizing: 'border-box',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '4px'
+                                        }}
+                                    >
+                                        <div>
+                                            <strong>Pagamento:</strong> {paymentBlock.summaryLine}
+                                        </div>
+                                        {paymentBlock.rows.map((row, idx) => (
+                                            <div key={`${row.label}-${idx}`}>
+                                                <strong>{row.label}:</strong> {row.value}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <div style={{ fontSize: '13px', lineHeight: 1.45 }}>
+                                    <strong>Cliente:</strong> {clientName}
                                 </div>
-                            )}
-                        </div>
+
+                                <div
+                                    style={{
+                                        fontSize: '13px',
+                                        lineHeight: 1.45,
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '4px',
+                                        maxWidth: '100%',
+                                        boxSizing: 'border-box',
+                                        overflowWrap: 'anywhere'
+                                    }}
+                                >
+                                    <div>
+                                        <strong>Telefone do cliente:</strong> {phone || 'N/A'}
+                                    </div>
+                                    <div>
+                                        <strong>Fale com o Ateliê:</strong>{' '}
+                                        <a
+                                            href={buildAtelieWhatsAppHref(adminWhatsApp, MY_APPOINTMENTS_ATELIE_WA_MESSAGE)}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            style={{ color: '#0ea5e9', textDecoration: 'none' }}
+                                        >
+                                            Conversar pelo WhatsApp
+                                        </a>
+                                    </div>
+                                </div>
+
+                                {location && (
+                                    <div style={{ fontSize: '13px' }}>
+                                        <strong>Endereço Cliente:</strong>
+                                        <br />
+                                        {location}
+                                    </div>
+                                )}
+
+                                <AgendaCardStudioAtelierBlock mapsLinkClassName="my-app-card__maps-link" stackMapsLink />
+
+                                {notes && (
+                                    <div style={{ fontSize: '13px' }}>
+                                        <strong>Observações:</strong>
+                                        <br />
+                                        {notes}
+                                    </div>
+                                )}
+
+                                {cancelReason && (
+                                    <div style={{ fontSize: '13px', color: '#b91c1c' }}>
+                                        <strong>Motivo do cancelamento:</strong>
+                                        <br />
+                                        {cancelReason}
+                                    </div>
+                                )}
+                            </>
+                        </AgendaAppointmentCard>
                     );
                 })}
             </div>
@@ -4344,7 +4559,15 @@ const App = () => {
                         mergeAppointmentRow={mergeAppointmentRow}
                     />
                 )}
-                {view === 'my_apps' && <MyAppointmentsArea appointments={appointments} refreshData={refreshData} clients={clients} setView={setView} />}
+                {view === 'my_apps' && (
+                    <MyAppointmentsArea
+                        appointments={appointments}
+                        refreshData={refreshData}
+                        clients={clients}
+                        setView={setView}
+                        adminWhatsApp={adminWhatsApp}
+                    />
+                )}
                 {view === 'admin' && (
                     <AdminArea
                         appointments={appointments}
