@@ -2202,7 +2202,14 @@ const ClientArea = ({
 
             {/* Restante igual */}
             {step === 4 && completedAppInfo && (() => {
-                const liveApp = appointments.find(a => a.id === completedAppInfo.app.id) || completedAppInfo.app;
+                const refreshedApp = appointments.find((a) => a.id === completedAppInfo.app.id);
+                const liveApp = refreshedApp
+                    ? {
+                          ...completedAppInfo.app,
+                          ...refreshedApp,
+                          paymentUrl: refreshedApp.paymentUrl || completedAppInfo.app.paymentUrl
+                      }
+                    : completedAppInfo.app;
                 const isConfirmed = liveApp.status === 'confirmed';
                 const isCancelled = liveApp.status === 'cancelled';
                 const isPending = liveApp.status === 'pending_payment';
