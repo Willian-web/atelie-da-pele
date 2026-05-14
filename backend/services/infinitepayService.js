@@ -51,7 +51,7 @@ async function createCheckoutLink(appointment) {
     console.log(`[InfinitePayService] Criando checkout para order_nsu=${payload.order_nsu}`);
     console.log(`[InfinitePayService] Valor enviado (centavos)=${amountInCents}`);
 
-    const response = await fetch('https://api.infinitepay.io/invoices/public/checkout/links', {
+    const response = await fetch('https://api.checkout.infinitepay.io/links', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -92,7 +92,7 @@ async function checkPaymentStatus({ orderNsu, transactionNsu, slug }) {
 
     console.log(`[InfinitePayService] Consultando status de pagamento para order_nsu=${payload.order_nsu}`);
 
-    const response = await fetch('https://api.infinitepay.io/invoices/public/checkout/payment_check', {
+    const response = await fetch('https://api.checkout.infinitepay.io/payment_check', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
