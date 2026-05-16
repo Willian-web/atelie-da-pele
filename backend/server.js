@@ -23,6 +23,8 @@ const cors = require('cors');
  * ==============================================================
  */
 const path = require('path');
+const fs = require('fs');
+const http = require('http');
 const crypto = require('crypto');
 const { Pool } = require('pg');
 require('dotenv').config();
@@ -213,9 +215,14 @@ const pool = new Pool({
         : { rejectUnauthorized: false }
 });
 
+pool.on('error', (err) => {
+    console.error('[pg pool] Erro inesperado em cliente ocioso:', err && err.message ? err.message : err);
+});
+
 /**
- * Catálogo ativo (novos agendamentos). Espelhar em `backend/public/index.html` (SERVICES + PROMO_MAES_SERVICES).
- * Vales-presente `promo_*` só podem ser agendados com `promotional_packages_enabled = true` em `app_settings`.
+ * Catálogo bootstrap (sem Postgres). Espelhar em `backend/public/index.html` (SERVICES + PROMO_MAES_SERVICES).
+ * Com Postgres, pacotes promocionais vêm de `catalog_services` + `promotional_campaigns` e da flag global
+ * `promotional_packages_enabled` em `app_settings` (interrupção geral da vitrine).
  */
 const SERVICES_CATALOG = [
     { id: 'limpeza_pele_profunda', name: 'Limpeza de pele profunda', price: 119, duration: 60 },
@@ -263,6 +270,15 @@ const DEFAULT_APPOINTMENT_DURATION_MIN = 60;
 /** Intervalo mínimo entre inícios de agendamentos (minutos); grade em intervalos de 1 hora. */
 const MIN_START_GAP_MINUTES = 60;
 
+/** Catálogo carregado do PostgreSQL (`catalog_services`); fallback para constantes se vazio. */
+let servicesCatalogAll = null;
+
+/** Flag global (app_settings) espelhada em memória para filtrar pacotes promocionais sem I/O em cada request. */
+let promoPackagesEnabledCache = false;
+
+/** Linhas de `promotional_campaigns` para validade e ativo por campanha. */
+let promotionalCampaignsAll = [];
+
 // ======================= BANCO =======================
 
 async function initDB() {
@@ -271,7 +287,13 @@ async function initDB() {
         return;
     }
 
-    const client = await pool.connect();
+    let client;
+    try {
+        client = await pool.connect();
+    } catch (err) {
+        console.error('❌ Erro ao conectar ao PostgreSQL para migrações:', err);
+        return;
+    }
 
     try {
         // Tabela clients
@@ -408,6 +430,131 @@ async function initDB() {
         `);
 
         await client.query(`
+            CREATE TABLE IF NOT EXISTS catalog_services (
+                id VARCHAR(80) PRIMARY KEY,
+                name TEXT NOT NULL,
+                category VARCHAR(140) NOT NULL DEFAULT 'Geral',
+                price NUMERIC(10,2) NOT NULL,
+                duration INT NOT NULL DEFAULT 60,
+                summary TEXT,
+                description TEXT,
+                card_title TEXT,
+                active BOOLEAN NOT NULL DEFAULT TRUE,
+                is_promotional_package BOOLEAN NOT NULL DEFAULT FALSE,
+                promotional_campaign VARCHAR(64),
+                sort_order INT NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_catalog_services_active
+            ON catalog_services (active);
+        `);
+
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS promotional_campaigns (
+                id VARCHAR(80) PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                active BOOLEAN NOT NULL DEFAULT TRUE,
+                valid_from TIMESTAMPTZ NULL,
+                valid_to TIMESTAMPTZ NULL,
+                category VARCHAR(140) NOT NULL DEFAULT 'Campanhas',
+                sort_order INT NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_promotional_campaigns_active
+            ON promotional_campaigns (active);
+        `);
+
+        const cntRes = await client.query(`SELECT COUNT(*)::int AS c FROM catalog_services`);
+        if (cntRes.rows[0].c === 0) {
+            const seedPath = path.join(__dirname, 'catalog_seed.json');
+            const raw = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+            if (!Array.isArray(raw) || raw.length === 0) {
+                console.warn('[catalog_services] catalog_seed.json vazio ou inválido.');
+            } else {
+                for (const row of raw) {
+                    await client.query(
+                        `
+                        INSERT INTO catalog_services (
+                            id, name, category, price, duration, summary, description, card_title,
+                            active, is_promotional_package, promotional_campaign, sort_order
+                        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+                    `,
+                        [
+                            row.id,
+                            row.name,
+                            row.category || 'Geral',
+                            row.price,
+                            row.duration != null ? Math.round(Number(row.duration)) : 60,
+                            row.summary != null ? String(row.summary) : null,
+                            row.description != null ? String(row.description) : null,
+                            row.card_title != null ? String(row.card_title) : null,
+                            row.active !== false,
+                            !!row.is_promotional_package,
+                            row.promotional_campaign || null,
+                            row.sort_order != null ? Math.round(Number(row.sort_order)) : 0
+                        ]
+                    );
+                }
+                console.log(`[catalog_services] Seed inicial: ${raw.length} serviços.`);
+            }
+        }
+
+        const campCnt = await client.query(`SELECT COUNT(*)::int AS c FROM promotional_campaigns`);
+        if (campCnt.rows[0].c === 0) {
+            const settingsPromo = await client.query(
+                `SELECT value FROM app_settings WHERE key = 'promotional_packages_enabled' LIMIT 1`
+            );
+            const val = settingsPromo.rows[0]?.value;
+            const enabled =
+                val === true ||
+                String(val ?? '')
+                    .trim()
+                    .toLowerCase() === 'true' ||
+                String(val ?? '')
+                    .trim()
+                    .toLowerCase() === '1';
+            await client.query(
+                `
+                INSERT INTO promotional_campaigns (id, name, description, active, category, sort_order)
+                VALUES (
+                    'dia_maes',
+                    'Campanha sazonal (legado)',
+                    'Importada automaticamente. Edite o nome e os pacotes na aba Campanhas.',
+                    $1,
+                    'Campanhas',
+                    0
+                )
+            `,
+                [enabled]
+            );
+        }
+
+        await client.query(`
+            INSERT INTO promotional_campaigns (id, name, description, active, category, sort_order)
+            SELECT DISTINCT TRIM(s.promotional_campaign),
+                   CASE
+                       WHEN TRIM(s.promotional_campaign) = 'dia_maes' THEN 'Campanha sazonal (legado)'
+                       ELSE INITCAP(REPLACE(REPLACE(TRIM(s.promotional_campaign), '_', ' '), '-', ' '))
+                   END,
+                   '',
+                   TRUE,
+                   'Campanhas',
+                   0
+            FROM catalog_services s
+            WHERE s.promotional_campaign IS NOT NULL
+              AND TRIM(s.promotional_campaign) <> ''
+              AND NOT EXISTS (SELECT 1 FROM promotional_campaigns c WHERE c.id = TRIM(s.promotional_campaign))
+        `);
+
+        await client.query(`
             ALTER TABLE clients
             ADD COLUMN IF NOT EXISTS email VARCHAR(255)
         `);
@@ -432,15 +579,47 @@ async function initDB() {
             ADD COLUMN IF NOT EXISTS schedule_mode VARCHAR(32)
         `);
 
+        await client.query(`
+            ALTER TABLE catalog_services
+            ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ NULL
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_catalog_services_archived
+            ON catalog_services (archived_at)
+        `);
+        await client.query(`
+            ALTER TABLE promotional_campaigns
+            ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ NULL
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_promotional_campaigns_archived
+            ON promotional_campaigns (archived_at)
+        `);
+        /* Legado Dia das Mães: só preenche campanha quando ainda não vinculado (não sobrescreve campanhas novas). */
+        await client.query(`
+            UPDATE catalog_services
+            SET is_promotional_package = TRUE,
+                promotional_campaign = 'dia_maes'
+            WHERE id IN ('promo_dia_maes_reflexologia', 'promo_dia_maes_facial')
+              AND (promotional_campaign IS NULL OR TRIM(promotional_campaign) = '')
+        `);
+
         console.log('✅ Banco de dados sincronizado / migrado');
+        await backfillAppointmentSlotItemStatus();
+        await refreshServicesCatalogCache();
+        await refreshPromotionalSettingsCache();
     } catch (err) {
         console.error('❌ Erro ao iniciar banco:', err);
     } finally {
-        client.release();
+        if (client) {
+            try {
+                client.release();
+            } catch (relErr) {
+                console.error('❌ Erro ao liberar conexão do initDB:', relErr);
+            }
+        }
     }
 }
-
-initDB();
 
 // ======================= AUXILIARES =======================
 
@@ -518,18 +697,49 @@ function timeStrFromMinutes(totalMins) {
     return normalizeSlotTimeHHMM(`${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
 }
 
+const APPOINTMENT_SLOT_STATUS_ACTIVE = 'active';
+const APPOINTMENT_SLOT_STATUS_CANCELLED = 'cancelled';
+
+function normalizeSlotStatus(st) {
+    const s = String(st || APPOINTMENT_SLOT_STATUS_ACTIVE).trim().toLowerCase();
+    return s === APPOINTMENT_SLOT_STATUS_CANCELLED ? APPOINTMENT_SLOT_STATUS_CANCELLED : APPOINTMENT_SLOT_STATUS_ACTIVE;
+}
+
+function isSlotCancelled(slot) {
+    return normalizeSlotStatus(slot && slot.status) === APPOINTMENT_SLOT_STATUS_CANCELLED;
+}
+
+function enrichAppointmentSlotRecord(x, slotIndex) {
+    const sid = String(x.serviceId || x.service_id || '').trim();
+    const d = String(x.date || '').trim();
+    const t = normalizeSlotTimeHHMM(x.time);
+    if (!sid || !isValidReportDateYmd(d) || !t) return null;
+    const svc = findServiceById(sid);
+    return {
+        slotIndex,
+        serviceId: sid,
+        date: d,
+        time: t,
+        status: normalizeSlotStatus(x.status),
+        cancelledAt: x.cancelledAt || x.cancelled_at || null,
+        cancelReason: x.cancelReason != null ? String(x.cancelReason) : x.cancel_reason != null ? String(x.cancel_reason) : null,
+        rescheduledAt: x.rescheduledAt || x.rescheduled_at || null,
+        serviceName: svc.name || sid,
+        price: roundMoney2(Number(svc.price) || 0),
+        duration: getServiceDurationMinForSchedule(sid)
+    };
+}
+
 function parseServiceSlotsJson(raw) {
     if (raw == null || raw === '') return null;
     try {
         const p = JSON.parse(raw);
         if (!Array.isArray(p) || p.length === 0) return null;
         const out = [];
-        for (const x of p) {
-            const sid = String(x.serviceId || x.service_id || '').trim();
-            const d = String(x.date || '').trim();
-            const t = normalizeSlotTimeHHMM(x.time);
-            if (!sid || !isValidReportDateYmd(d) || !t) return null;
-            out.push({ serviceId: sid, date: d, time: t });
+        for (let i = 0; i < p.length; i++) {
+            const rec = enrichAppointmentSlotRecord(p[i], i);
+            if (!rec) return null;
+            out.push(rec);
         }
         return out.length ? out : null;
     } catch (_) {
@@ -546,17 +756,144 @@ function getServiceSlotsFromRow(row) {
     const d = row.date != null ? String(row.date).trim() : '';
     const t0 = row.time != null ? normalizeSlotTimeHHMM(row.time) : null;
     if (!isValidReportDateYmd(d) || !t0 || ids.length === 0) return [];
-    if (ids.length === 1) return [{ serviceId: ids[0], date: d, time: t0 }];
+    if (ids.length === 1) {
+        const rec = enrichAppointmentSlotRecord({ serviceId: ids[0], date: d, time: t0, status: APPOINTMENT_SLOT_STATUS_ACTIVE }, 0);
+        return rec ? [rec] : [];
+    }
     let cur = timeStrToMinutes(t0);
     if (cur == null) return [];
     const out = [];
-    for (const id of ids) {
+    for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
         const ts = timeStrFromMinutes(cur);
         if (!ts) return [];
-        out.push({ serviceId: id, date: d, time: ts });
+        const rec = enrichAppointmentSlotRecord(
+            { serviceId: id, date: d, time: ts, status: APPOINTMENT_SLOT_STATUS_ACTIVE },
+            i
+        );
+        if (!rec) return [];
+        out.push(rec);
         cur += getServiceDurationMinForSchedule(id);
     }
     return out;
+}
+
+function getActiveServiceSlotsFromRow(row) {
+    return getServiceSlotsFromRow(row).filter((sl) => !isSlotCancelled(sl));
+}
+
+function getActiveAppointmentServiceIdsFromRow(row) {
+    const active = getActiveServiceSlotsFromRow(row);
+    if (active.length) {
+        const out = [];
+        const seen = new Set();
+        for (const sl of active) {
+            if (!sl.serviceId || seen.has(sl.serviceId)) continue;
+            seen.add(sl.serviceId);
+            out.push(sl.serviceId);
+        }
+        if (out.length) return out;
+    }
+    return getAppointmentServiceIdsFromRow(row);
+}
+
+function countActiveSlotsFromRow(row) {
+    return getActiveServiceSlotsFromRow(row).length;
+}
+
+function serializeAppointmentSlots(slots) {
+    return JSON.stringify(
+        (slots || []).map((sl, i) => ({
+            serviceId: sl.serviceId,
+            date: sl.date,
+            time: sl.time,
+            status: normalizeSlotStatus(sl.status),
+            ...(sl.cancelledAt ? { cancelledAt: sl.cancelledAt } : {}),
+            ...(sl.cancelReason ? { cancelReason: sl.cancelReason } : {}),
+            ...(sl.rescheduledAt ? { rescheduledAt: sl.rescheduledAt } : {})
+        }))
+    );
+}
+
+function syncAppointmentPrimaryFromActiveSlots(slots) {
+    const active = sortSlotsChronologically((slots || []).filter((sl) => !isSlotCancelled(sl)));
+    if (!active.length) return { primaryDate: null, primaryTime: null, primaryServiceId: null };
+    return {
+        primaryDate: active[0].date,
+        primaryTime: active[0].time,
+        primaryServiceId: active[0].serviceId
+    };
+}
+
+function sumActiveProcedurePricesFromRow(row) {
+    return roundMoney2(
+        getActiveServiceSlotsFromRow(row).reduce((sum, sl) => sum + roundMoney2(Number(sl.price) || 0), 0)
+    );
+}
+
+/** Recalcula valores pendentes após cancelar item; não altera valores já recebidos (online/local confirmado). */
+function financialPatchAfterActiveItemsChange(row) {
+    const st = String(row.status || '').trim().toLowerCase();
+    if (st === 'cancelled' || st === 'completed') return {};
+    const totalActive = sumActiveProcedurePricesFromRow(row);
+    if (!Number.isFinite(totalActive) || totalActive < 0) return {};
+
+    const pt = String(row.payment_type || '').trim().toLowerCase();
+    const paid = toMoneyNumber(row.paid_amount);
+    const hasPaid = paid != null && paid > 0.005;
+
+    if (pt === 'local') {
+        if (hasPaid) {
+            return { remaining_amount: Math.max(0, roundMoney2(totalActive - paid)) };
+        }
+        return { remaining_amount: Math.max(0, totalActive), payment_amount: 0 };
+    }
+
+    if (st === 'pending_payment' && !hasPaid) {
+        return {
+            amount_charged: totalActive,
+            remaining_amount: 0,
+            payment_amount: totalActive
+        };
+    }
+
+    if (hasPaid && totalActive + 0.005 < paid) {
+        return { remaining_amount: 0 };
+    }
+    if (hasPaid) {
+        return { remaining_amount: Math.max(0, roundMoney2(totalActive - paid)) };
+    }
+
+    return {};
+}
+
+async function backfillAppointmentSlotItemStatus() {
+    if (!isPostgresSetup) return;
+    try {
+        const res = await pool.query(`
+            SELECT id, service_slots_json
+            FROM appointments
+            WHERE service_slots_json IS NOT NULL AND TRIM(service_slots_json) <> ''
+        `);
+        for (const row of res.rows) {
+            const slots = parseServiceSlotsJson(row.service_slots_json);
+            if (!slots || !slots.length) continue;
+            let changed = false;
+            const next = slots.map((sl, i) => {
+                if (sl.status && sl.slotIndex === i) return sl;
+                changed = true;
+                return { ...sl, status: normalizeSlotStatus(sl.status), slotIndex: i };
+            });
+            if (changed) {
+                await pool.query(`UPDATE appointments SET service_slots_json = $1 WHERE id = $2`, [
+                    serializeAppointmentSlots(next),
+                    row.id
+                ]);
+            }
+        }
+    } catch (e) {
+        console.warn('[Migration] backfillAppointmentSlotItemStatus:', e.message);
+    }
 }
 
 function appointmentDurationMinutesFromRow(row) {
@@ -579,7 +916,7 @@ function getIntervalsFromSlots(slots) {
 }
 
 function intervalsFromAppointmentRow(row) {
-    return getIntervalsFromSlots(getServiceSlotsFromRow(row));
+    return getIntervalsFromSlots(getActiveServiceSlotsFromRow(row));
 }
 
 function resolveSlotsFromRequest(body, serviceIdsNorm) {
@@ -650,8 +987,12 @@ function resolveSlotsFromRequest(body, serviceIdsNorm) {
     return { err: null, scheduleMode: 'per_service', slots };
 }
 
-function validateNewBookingSlots(newSlots, existingRows, blockedFullSet, blockedSlotsByDate) {
+function validateNewBookingSlots(newSlots, existingRows, blockedFullSet, blockedSlotsByDate, excludeAppointmentId) {
     const newMap = getIntervalsFromSlots(newSlots);
+    const excludeId = excludeAppointmentId != null ? String(excludeAppointmentId).trim() : '';
+    const peerRows = excludeId
+        ? (existingRows || []).filter((r) => String(r.id) !== excludeId)
+        : existingRows || [];
     for (const sl of newSlots) {
         if (blockedFullSet.has(sl.date)) return 'Dia indisponível (bloqueado).';
         const bs = blockedSlotsByDate.get(sl.date);
@@ -673,7 +1014,7 @@ function validateNewBookingSlots(newSlots, existingRows, blockedFullSet, blocked
         }
     }
     for (const [date, newInts] of newMap) {
-        for (const row of existingRows) {
+        for (const row of peerRows) {
             const exMap = intervalsFromAppointmentRow(row);
             const exInts = exMap.get(date) || [];
             for (const ni of newInts) {
@@ -743,6 +1084,147 @@ function centsToReais(cents) {
     return roundMoney2(c / 100);
 }
 
+function mapDbRowToCatalogService(row) {
+    if (!row) return null;
+    const price = roundMoney2(Number(row.price));
+    const duration = Math.round(Number(row.duration));
+    return {
+        id: row.id,
+        name: row.name,
+        category: row.category != null ? String(row.category) : 'Geral',
+        price: Number.isFinite(price) ? price : 0,
+        duration: Number.isFinite(duration) && duration > 0 ? duration : DEFAULT_APPOINTMENT_DURATION_MIN,
+        summary: row.summary != null ? String(row.summary) : '',
+        detail: row.description != null ? String(row.description) : '',
+        card_title: row.card_title != null ? String(row.card_title) : null,
+        active: row.active !== false,
+        is_promotional_package: !!row.is_promotional_package,
+        promotional_campaign: row.promotional_campaign != null ? String(row.promotional_campaign) : null,
+        sort_order: Math.round(Number(row.sort_order)) || 0,
+        archived_at: row.archived_at != null ? row.archived_at : null
+    };
+}
+
+async function refreshServicesCatalogCache() {
+    if (!isPostgresSetup) return;
+    try {
+        const { rows } = await pool.query(
+            `SELECT id, name, category, price, duration, summary, description, card_title, active,
+                    is_promotional_package, promotional_campaign, sort_order, archived_at
+             FROM catalog_services
+             ORDER BY sort_order ASC, name ASC`
+        );
+        servicesCatalogAll = rows.map(mapDbRowToCatalogService);
+        console.log(`[catalog_services] Cache: ${servicesCatalogAll.length} itens.`);
+    } catch (e) {
+        console.error('[catalog_services] Falha ao recarregar cache:', e);
+    }
+}
+
+async function refreshPromotionalSettingsCache() {
+    if (!isPostgresSetup) {
+        promotionalCampaignsAll = [];
+        promoPackagesEnabledCache = false;
+        return;
+    }
+    try {
+        promoPackagesEnabledCache = await readPromotionalPackagesEnabledFromDb();
+        const { rows } = await pool.query(
+            `SELECT id, name, description, active, valid_from, valid_to, category, sort_order, created_at, updated_at, archived_at
+             FROM promotional_campaigns
+             WHERE archived_at IS NULL
+             ORDER BY sort_order ASC, name ASC`
+        );
+        promotionalCampaignsAll = rows;
+    } catch (e) {
+        console.error('[promotional_campaigns] Falha ao recarregar cache:', e);
+        promotionalCampaignsAll = [];
+    }
+}
+
+function isCampaignActiveFlag(cRow) {
+    if (!cRow) return false;
+    const raw = cRow.active;
+    if (raw === true || raw === 1) return true;
+    if (raw === false || raw === 0 || raw == null) return false;
+    const s = String(raw).trim().toLowerCase();
+    if (s === 'true' || s === '1' || s === 't') return true;
+    if (s === 'false' || s === '0' || s === 'f' || s === '') return false;
+    return Boolean(raw);
+}
+
+function getCampaignDisplayName(campaignId) {
+    const row = getCampaignRowById(campaignId);
+    if (!row || row.name == null) return undefined;
+    const name = String(row.name).trim();
+    return name || undefined;
+}
+
+function isCampaignLiveForNow(cRow) {
+    if (!cRow) return false;
+    if (cRow.archived_at != null && String(cRow.archived_at).trim() !== '') return false;
+    if (!isCampaignActiveFlag(cRow)) return false;
+    const nowMs = Date.now();
+    if (cRow.valid_from != null) {
+        const t = new Date(cRow.valid_from).getTime();
+        if (Number.isFinite(t) && t > nowMs) return false;
+    }
+    if (cRow.valid_to != null) {
+        const t = new Date(cRow.valid_to).getTime();
+        if (Number.isFinite(t) && t < nowMs) return false;
+    }
+    return true;
+}
+
+function getCampaignRowById(campaignId) {
+    const cid = String(campaignId || '').trim();
+    if (!cid || !Array.isArray(promotionalCampaignsAll)) return null;
+    return promotionalCampaignsAll.find((r) => String(r.id) === cid) || null;
+}
+
+/** Catálogo visível para novos agendamentos: pacotes exigem campanha ativa e dentro da validade (sem interruptor global). */
+function isServiceVisibleForBooking(s) {
+    if (!s || s.active === false) return false;
+    if (s.archived_at != null && String(s.archived_at).trim() !== '') return false;
+    if (!s.is_promotional_package) return true;
+    const cid = s.promotional_campaign != null ? String(s.promotional_campaign).trim() : '';
+    if (!cid) return false;
+    return isCampaignLiveForNow(getCampaignRowById(cid));
+}
+
+function getActiveServicesCatalogForBooking() {
+    if (Array.isArray(servicesCatalogAll) && servicesCatalogAll.length > 0) {
+        return servicesCatalogAll.filter((s) => isServiceVisibleForBooking(s));
+    }
+    return SERVICES_CATALOG.filter((s) => {
+        if (!PROMO_PACKAGE_IDS.has(s.id)) return true;
+        return promoPackagesEnabledCache;
+    });
+}
+
+function isPromotionalPackageServiceId(serviceId) {
+    const sid = String(serviceId || '');
+    if (PROMO_PACKAGE_IDS.has(sid)) return true;
+    const s = Array.isArray(servicesCatalogAll) && servicesCatalogAll.find((x) => x.id === sid);
+    return !!(s && s.is_promotional_package);
+}
+
+function toPublicServiceJson(s) {
+    return {
+        id: s.id,
+        name: s.name,
+        price: s.price,
+        category: s.category || 'Geral',
+        duration: s.duration,
+        summary: s.summary || '',
+        detail: s.detail || '',
+        cardTitle: s.card_title || undefined,
+        promotionalCampaign: s.promotional_campaign || undefined,
+        promotionalCampaignName: getCampaignDisplayName(s.promotional_campaign) || undefined,
+        isPromotionalPackage: !!s.is_promotional_package
+    };
+}
+
 /** Sinal na reserva parcial: no máximo o fixo do produto, e nunca acima do valor total do procedimento. */
 function effectivePartialDownPayment(totalServicePrice) {
     const t = roundMoney2(Number(totalServicePrice) || 0);
@@ -751,14 +1233,59 @@ function effectivePartialDownPayment(totalServicePrice) {
 }
 
 function findServiceById(serviceId) {
-    return SERVICES_CATALOG.find((s) => s.id === serviceId)
-        || SERVICES_LEGACY.find((s) => s.id === serviceId)
-        || {
-            id: serviceId,
-            name: serviceId || 'Serviço',
-            price: 0,
-            duration: DEFAULT_APPOINTMENT_DURATION_MIN
+    const id = String(serviceId || '');
+    if (Array.isArray(servicesCatalogAll) && servicesCatalogAll.length > 0) {
+        const hit = servicesCatalogAll.find((s) => s.id === id);
+        if (hit) return hit;
+    }
+    const leg = SERVICES_LEGACY.find((s) => s.id === id);
+    if (leg) {
+        return {
+            id: leg.id,
+            name: leg.name,
+            price: roundMoney2(Number(leg.price) || 0),
+            duration: leg.duration || DEFAULT_APPOINTMENT_DURATION_MIN,
+            category: 'Legado',
+            summary: '',
+            detail: '',
+            card_title: null,
+            active: true,
+            is_promotional_package: false,
+            promotional_campaign: null,
+            sort_order: 0
         };
+    }
+    const boot = SERVICES_CATALOG.find((s) => s.id === id);
+    if (boot) {
+        return {
+            id: boot.id,
+            name: boot.name,
+            price: roundMoney2(Number(boot.price) || 0),
+            duration: boot.duration || DEFAULT_APPOINTMENT_DURATION_MIN,
+            category: 'Geral',
+            summary: '',
+            detail: '',
+            card_title: null,
+            active: true,
+            is_promotional_package: PROMO_PACKAGE_IDS.has(boot.id),
+            promotional_campaign: PROMO_PACKAGE_IDS.has(boot.id) ? 'dia_maes' : null,
+            sort_order: 0
+        };
+    }
+    return {
+        id,
+        name: id || 'Serviço',
+        price: 0,
+        duration: DEFAULT_APPOINTMENT_DURATION_MIN,
+        category: 'Geral',
+        summary: '',
+        detail: '',
+        card_title: null,
+        active: false,
+        is_promotional_package: false,
+        promotional_campaign: null,
+        sort_order: 0
+    };
 }
 
 /** IDs do agendamento: JSON em `service_ids_json` ou legado só `service_id`. */
@@ -820,13 +1347,18 @@ function normalizeIncomingServiceIds(body) {
 }
 
 function normalizeAppointmentFinancials(row) {
-    const ids = getAppointmentServiceIdsFromRow(row);
+    const activeSlots = getActiveServiceSlotsFromRow(row);
     let totalServicePrice = 0;
-    for (const id of ids) {
-        const s = findServiceById(id);
-        totalServicePrice += roundMoney2(Number(s.price) || 0);
+    if (activeSlots.length) {
+        totalServicePrice = roundMoney2(activeSlots.reduce((sum, sl) => sum + roundMoney2(Number(sl.price) || 0), 0));
+    } else {
+        const ids = getAppointmentServiceIdsFromRow(row);
+        for (const id of ids) {
+            const s = findServiceById(id);
+            totalServicePrice += roundMoney2(Number(s.price) || 0);
+        }
+        totalServicePrice = roundMoney2(totalServicePrice);
     }
-    totalServicePrice = roundMoney2(totalServicePrice);
     if (!Number.isFinite(totalServicePrice) || totalServicePrice <= 0) {
         const fallback = findServiceById(row.service_id);
         totalServicePrice = roundMoney2(Number(fallback.price) || 0);
@@ -1133,21 +1665,48 @@ function derivePaymentMethodForApi(row, fin) {
 function mapAppointmentRow(row) {
     const fin = normalizeAppointmentFinancials(row);
     const paymentSummary = buildPaymentSummary(row);
+    const allSlots = getServiceSlotsFromRow(row);
+    const activeSlots = allSlots.filter((sl) => !isSlotCancelled(sl));
     const serviceIds = getAppointmentServiceIdsFromRow(row);
-    const serviceLineItems = serviceIds.map((id) => {
-        const s = findServiceById(id);
-        return {
-            id,
-            name: s.name || id,
-            price: roundMoney2(Number(s.price) || 0)
-        };
-    });
+    const activeServiceIds = getActiveAppointmentServiceIdsFromRow(row);
+    const serviceLineItems = allSlots.length
+        ? allSlots.map((sl) => ({
+              id: sl.serviceId,
+              slotIndex: sl.slotIndex,
+              name: sl.serviceName || sl.serviceId,
+              price: roundMoney2(Number(sl.price) || 0),
+              date: sl.date,
+              time: sl.time,
+              status: sl.status,
+              cancelledAt: sl.cancelledAt || null,
+              cancelReason: sl.cancelReason || null,
+              rescheduledAt: sl.rescheduledAt || null
+          }))
+        : serviceIds.map((id) => {
+              const s = findServiceById(id);
+              return {
+                  id,
+                  slotIndex: 0,
+                  name: s.name || id,
+                  price: roundMoney2(Number(s.price) || 0),
+                  date: row.date,
+                  time: row.time,
+                  status: APPOINTMENT_SLOT_STATUS_ACTIVE,
+                  cancelledAt: null,
+                  cancelReason: null,
+                  rescheduledAt: null
+              };
+          });
 
     return {
         id: row.id,
         serviceId: row.service_id,
         serviceIds,
+        activeServiceIds,
         serviceLineItems,
+        hasItemLevelControl: allSlots.length > 0,
+        activeItemCount: activeSlots.length,
+        cancelledItemCount: allSlots.filter((sl) => isSlotCancelled(sl)).length,
         clientId: row.client_id,
         clientName: row.client_name,
         clientPhone: row.client_phone,
@@ -1174,7 +1733,18 @@ function mapAppointmentRow(row) {
         paymentSummary,
         paymentMethod: derivePaymentMethodForApi(row, fin),
         scheduleMode: row.schedule_mode || null,
-        serviceSlots: getServiceSlotsFromRow(row)
+        serviceSlots: allSlots.map((sl) => ({
+            serviceId: sl.serviceId,
+            date: sl.date,
+            time: sl.time,
+            status: sl.status,
+            slotIndex: sl.slotIndex,
+            cancelledAt: sl.cancelledAt || null,
+            cancelReason: sl.cancelReason || null,
+            rescheduledAt: sl.rescheduledAt || null,
+            serviceName: sl.serviceName,
+            price: sl.price
+        }))
     };
 }
 
@@ -1792,7 +2362,7 @@ app.get('/admin/report', requireAdminAuth, async (req, res) => {
         `, [startStr, endStr]);
 
         const items = rows.map(r => {
-            const ids = getAppointmentServiceIdsFromRow(r);
+            const ids = getActiveAppointmentServiceIdsFromRow(r);
             const agg = buildServiceEmailAggregate(ids);
             const fin = normalizeAppointmentFinancials(r);
             const isPaidRow = r.status === 'confirmed' || r.status === 'completed';
@@ -2247,10 +2817,785 @@ app.patch('/admin/promotional-packages', requireAdminAuth, async (req, res) => {
         `,
             [valueStr]
         );
+        await refreshPromotionalSettingsCache();
         return res.json({ ok: true, promotionalPackagesEnabled: Boolean(enabled) });
     } catch (error) {
         console.error('[PATCH /admin/promotional-packages] Erro:', error);
-        return res.status(500).json({ error: 'Erro ao salvar campanha promocional.' });
+        return res.status(500).json({ error: 'Erro ao salvar interrupção geral de campanhas.' });
+    }
+});
+
+function mapCampaignRowToAdminApi(row) {
+    if (!row) return null;
+    const rawAct = row.active;
+    const activeNorm =
+        rawAct === true ||
+        rawAct === 1 ||
+        String(rawAct || '')
+            .trim()
+            .toLowerCase() === 'true' ||
+        String(rawAct || '')
+            .trim()
+            .toLowerCase() === 't' ||
+        String(rawAct || '')
+            .trim()
+            .toLowerCase() === '1';
+    return {
+        id: row.id,
+        name: row.name,
+        description: row.description != null ? String(row.description) : '',
+        active: activeNorm,
+        validFrom: row.valid_from ? new Date(row.valid_from).toISOString() : null,
+        validTo: row.valid_to ? new Date(row.valid_to).toISOString() : null,
+        category: row.category != null ? String(row.category) : 'Campanhas',
+        sortOrder: Math.round(Number(row.sort_order)) || 0,
+        linkedCount: row.linked_count != null ? Number(row.linked_count) : undefined,
+        createdAt: row.created_at || null,
+        updatedAt: row.updated_at || null
+    };
+}
+
+/** `undefined` = inválido; `null` = ausente. */
+function parseOptionalIsoTimestamp(v) {
+    if (v == null || v === '') return null;
+    const d = new Date(v);
+    if (!Number.isFinite(d.getTime())) return undefined;
+    return d;
+}
+
+async function generateUniqueCampaignId(dbClient, baseName) {
+    let base = slugifyCatalogIdBase(baseName);
+    if (!base) base = `campanha_${Date.now()}`;
+    base = base.slice(0, 72);
+    const r0 = await dbClient.query('SELECT 1 FROM promotional_campaigns WHERE id = $1', [base]);
+    if (r0.rowCount === 0) return base;
+    let n = 2;
+    while (n < 10000) {
+        const candidate = `${base}_${n}`.slice(0, 80);
+        const r = await dbClient.query('SELECT 1 FROM promotional_campaigns WHERE id = $1', [candidate]);
+        if (r.rowCount === 0) return candidate;
+        n += 1;
+    }
+    return `campanha_${Date.now()}`.slice(0, 80);
+}
+
+/**
+ * Desvincula pacotes desta campanha e vincula os ids informados como pacotes promocionais.
+ * @param {import('pg').PoolClient} dbClient
+ * @throws {Error} `code === 'BAD_SERVICE_IDS'` se algum serviço não existir ou estiver arquivado.
+ */
+async function applyCampaignLinkedServiceIds(dbClient, campaignId, rawIds) {
+    const cid = String(campaignId || '').trim();
+    if (!cid) {
+        const err = new Error('INVALID_CAMPAIGN');
+        err.code = 'BAD_SERVICE_IDS';
+        throw err;
+    }
+    const ids = [...new Set((rawIds || []).map((x) => String(x || '').trim()).filter(Boolean))];
+    await dbClient.query(
+        `
+        UPDATE catalog_services
+        SET promotional_campaign = NULL,
+            is_promotional_package = FALSE,
+            updated_at = NOW()
+        WHERE promotional_campaign = $1
+    `,
+        [cid]
+    );
+    if (ids.length === 0) {
+        return { linkedCount: 0 };
+    }
+    const chk = await dbClient.query(
+        `SELECT id FROM catalog_services WHERE id = ANY($1::varchar[]) AND archived_at IS NULL`,
+        [ids]
+    );
+    if (chk.rows.length !== ids.length) {
+        const err = new Error('INVALID_SERVICE_IDS');
+        err.code = 'BAD_SERVICE_IDS';
+        throw err;
+    }
+    await dbClient.query(
+        `
+        UPDATE catalog_services
+        SET promotional_campaign = $1,
+            is_promotional_package = TRUE,
+            updated_at = NOW()
+        WHERE id = ANY($2::varchar[])
+    `,
+        [cid, ids]
+    );
+    return { linkedCount: ids.length };
+}
+
+app.get('/admin/campaigns', requireAdminAuth, async (_req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+    try {
+        const { rows } = await pool.query(
+            `
+            SELECT c.*,
+                   (SELECT COUNT(*)::int FROM catalog_services s WHERE s.promotional_campaign = c.id AND s.archived_at IS NULL) AS linked_count
+            FROM promotional_campaigns c
+            WHERE c.archived_at IS NULL
+            ORDER BY c.sort_order ASC, c.name ASC
+        `
+        );
+        return res.json(rows.map((r) => mapCampaignRowToAdminApi(r)));
+    } catch (error) {
+        console.error('[GET /admin/campaigns] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao listar campanhas.' });
+    }
+});
+
+app.post('/admin/campaigns', requireAdminAuth, async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+    const b = req.body || {};
+    const name = String(b.name || '').trim();
+    if (!name) {
+        return res.status(400).json({ error: 'Informe o nome da campanha.' });
+    }
+    const description = b.description != null ? String(b.description) : '';
+    const category = String(b.category || 'Campanhas').trim() || 'Campanhas';
+    const active = !(b.active === false || String(b.active).toLowerCase() === 'false');
+    const vf = parseOptionalIsoTimestamp(b.validFrom != null ? b.validFrom : b.valid_from);
+    const vt = parseOptionalIsoTimestamp(b.validTo != null ? b.validTo : b.valid_to);
+    if (vf === undefined || vt === undefined) {
+        return res.status(400).json({ error: 'Datas de validade inválidas (use ISO 8601 ou deixe vazio).' });
+    }
+    if (vf && vt && vf.getTime() > vt.getTime()) {
+        return res.status(400).json({ error: 'A data inicial deve ser anterior à data final.' });
+    }
+
+    const rawSid = b.serviceIds != null ? b.serviceIds : b.service_ids;
+    if (!Array.isArray(rawSid) || rawSid.length === 0) {
+        return res.status(400).json({ error: 'Selecione pelo menos um procedimento para a campanha.' });
+    }
+    const serviceIdsNorm = [...new Set(rawSid.map((x) => String(x || '').trim()).filter(Boolean))];
+    if (serviceIdsNorm.length === 0) {
+        return res.status(400).json({ error: 'Selecione pelo menos um procedimento para a campanha.' });
+    }
+
+    const dbClient = await pool.connect();
+    try {
+        await dbClient.query('BEGIN');
+        const rawSlug = b.slug != null ? b.slug : b.customSlug;
+        const customSlug = rawSlug != null && String(rawSlug).trim() ? slugifyCatalogIdBase(rawSlug) : '';
+        const id = customSlug
+            ? await (async () => {
+                  const exists = await dbClient.query('SELECT 1 FROM promotional_campaigns WHERE id = $1', [
+                      customSlug.slice(0, 80)
+                  ]);
+                  if (exists.rowCount > 0) {
+                      throw Object.assign(new Error('CONFLICT_ID'), { code: 'CONFLICT_ID' });
+                  }
+                  return customSlug.slice(0, 80);
+              })()
+            : await generateUniqueCampaignId(dbClient, name);
+        const soRow = await dbClient.query(
+            `SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM promotional_campaigns WHERE archived_at IS NULL`
+        );
+        const sortOrder = Number.isFinite(Math.round(Number(soRow.rows[0] && soRow.rows[0].n)))
+            ? Math.round(Number(soRow.rows[0].n))
+            : 0;
+        const ins = await dbClient.query(
+            `
+            INSERT INTO promotional_campaigns (id, name, description, active, valid_from, valid_to, category, sort_order)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id, name, description, active, valid_from, valid_to, category, sort_order, created_at, updated_at
+        `,
+            [id, name, description, active, vf, vt, category, sortOrder]
+        );
+        await applyCampaignLinkedServiceIds(dbClient, id, serviceIdsNorm);
+        await dbClient.query('COMMIT');
+        const row = ins.rows[0];
+        const cnt = await dbClient.query(
+            `SELECT COUNT(*)::int AS c FROM catalog_services WHERE promotional_campaign = $1 AND archived_at IS NULL`,
+            [id]
+        );
+        row.linked_count = cnt.rows[0].c;
+        await refreshPromotionalSettingsCache();
+        await refreshServicesCatalogCache();
+        return res.status(201).json(mapCampaignRowToAdminApi(row));
+    } catch (error) {
+        try {
+            await dbClient.query('ROLLBACK');
+        } catch (_) {
+            /* ignore */
+        }
+        if (error && error.code === 'CONFLICT_ID') {
+            return res.status(409).json({ error: 'Já existe uma campanha com este identificador.' });
+        }
+        if (error && error.code === '23505') {
+            return res.status(409).json({ error: 'Identificador de campanha já em uso.' });
+        }
+        if (error && error.code === 'BAD_SERVICE_IDS') {
+            return res.status(400).json({ error: 'Um ou mais procedimentos informados não existem no catálogo.' });
+        }
+        console.error('[POST /admin/campaigns] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao criar campanha.' });
+    } finally {
+        dbClient.release();
+    }
+});
+
+app.patch('/admin/campaigns/:id', requireAdminAuth, async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+    const id = String(req.params.id || '').trim();
+    if (!id) {
+        return res.status(400).json({ error: 'ID inválido.' });
+    }
+    const b = req.body || {};
+    const archiveRequested =
+        b.archived === true ||
+        String(b.archived || '').toLowerCase() === 'true' ||
+        b.archive === true ||
+        String(b.archive || '').toLowerCase() === 'true';
+
+    if (archiveRequested) {
+        const client = await pool.connect();
+        try {
+            const up = await client.query(
+                `
+                UPDATE promotional_campaigns
+                SET archived_at = NOW(),
+                    active = FALSE,
+                    updated_at = NOW()
+                WHERE id = $1 AND archived_at IS NULL
+                RETURNING id, name, description, active, valid_from, valid_to, category, sort_order, created_at, updated_at
+            `,
+                [id]
+            );
+            if (up.rowCount === 0) {
+                return res.status(404).json({ error: 'Campanha não encontrada ou já removida.' });
+            }
+            const row = up.rows[0];
+            const cnt = await client.query(
+                `SELECT COUNT(*)::int AS c FROM catalog_services WHERE promotional_campaign = $1 AND archived_at IS NULL`,
+                [id]
+            );
+            row.linked_count = cnt.rows[0].c;
+            await refreshPromotionalSettingsCache();
+            await refreshServicesCatalogCache();
+            return res.json(mapCampaignRowToAdminApi(row));
+        } catch (error) {
+            console.error('[PATCH /admin/campaigns/:id] Arquivo:', error);
+            return res.status(500).json({ error: 'Erro ao arquivar campanha.' });
+        } finally {
+            client.release();
+        }
+    }
+
+    const sets = [];
+    const vals = [];
+    let p = 1;
+    const push = (col, val) => {
+        sets.push(`${col} = $${p}`);
+        vals.push(val);
+        p += 1;
+    };
+    if (b.name !== undefined) {
+        const n = String(b.name || '').trim();
+        if (!n) return res.status(400).json({ error: 'Nome inválido.' });
+        push('name', n);
+    }
+    if (b.description !== undefined) {
+        push('description', b.description != null ? String(b.description) : '');
+    }
+    if (b.active !== undefined) {
+        push('active', !(b.active === false || String(b.active).toLowerCase() === 'false'));
+    }
+    if (b.category !== undefined) {
+        push('category', String(b.category || 'Campanhas').trim() || 'Campanhas');
+    }
+    if (b.sortOrder !== undefined || b.sort_order !== undefined) {
+        const so = Math.round(Number(b.sortOrder !== undefined ? b.sortOrder : b.sort_order));
+        if (!Number.isFinite(so)) return res.status(400).json({ error: 'sortOrder inválido.' });
+        push('sort_order', so);
+    }
+    if (b.validFrom !== undefined || b.valid_from !== undefined) {
+        const raw = b.validFrom !== undefined ? b.validFrom : b.valid_from;
+        const d = parseOptionalIsoTimestamp(raw);
+        if (d === undefined) return res.status(400).json({ error: 'validFrom inválido.' });
+        push('valid_from', d);
+    }
+    if (b.validTo !== undefined || b.valid_to !== undefined) {
+        const raw = b.validTo !== undefined ? b.validTo : b.valid_to;
+        const d = parseOptionalIsoTimestamp(raw);
+        if (d === undefined) return res.status(400).json({ error: 'validTo inválido.' });
+        push('valid_to', d);
+    }
+
+    const hasServiceIdsKey = b.serviceIds !== undefined || b.service_ids !== undefined;
+    let serviceIdsForAssign = null;
+    if (hasServiceIdsKey) {
+        const raw = b.serviceIds !== undefined ? b.serviceIds : b.service_ids;
+        if (!Array.isArray(raw)) {
+            return res.status(400).json({ error: 'serviceIds inválido.' });
+        }
+        serviceIdsForAssign = [...new Set(raw.map((x) => String(x || '').trim()).filter(Boolean))];
+        if (serviceIdsForAssign.length === 0) {
+            return res.status(400).json({ error: 'Selecione pelo menos um procedimento para a campanha.' });
+        }
+    }
+
+    if (sets.length === 0 && !hasServiceIdsKey) {
+        return res.status(400).json({ error: 'Nenhum campo para atualizar.' });
+    }
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const exists = await client.query(
+            `SELECT 1 FROM promotional_campaigns WHERE id = $1 AND archived_at IS NULL`,
+            [id]
+        );
+        if (exists.rowCount === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: 'Campanha não encontrada ou já removida.' });
+        }
+        let row;
+        if (sets.length > 0) {
+            sets.push('updated_at = NOW()');
+            vals.push(id);
+            const q = `UPDATE promotional_campaigns SET ${sets.join(', ')} WHERE id = $${p} AND archived_at IS NULL RETURNING *`;
+            const up = await client.query(q, vals);
+            if (up.rowCount === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Campanha não encontrada.' });
+            }
+            row = up.rows[0];
+        } else {
+            const up = await client.query(
+                `UPDATE promotional_campaigns SET updated_at = NOW() WHERE id = $1 AND archived_at IS NULL RETURNING *`,
+                [id]
+            );
+            if (up.rowCount === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Campanha não encontrada.' });
+            }
+            row = up.rows[0];
+        }
+        if (hasServiceIdsKey) {
+            await applyCampaignLinkedServiceIds(client, id, serviceIdsForAssign);
+        }
+        await client.query('COMMIT');
+        const cnt = await client.query(
+            `SELECT COUNT(*)::int AS c FROM catalog_services WHERE promotional_campaign = $1 AND archived_at IS NULL`,
+            [id]
+        );
+        row.linked_count = cnt.rows[0].c;
+        await refreshPromotionalSettingsCache();
+        await refreshServicesCatalogCache();
+        return res.json(mapCampaignRowToAdminApi(row));
+    } catch (error) {
+        try {
+            await client.query('ROLLBACK');
+        } catch (_) {
+            /* ignore */
+        }
+        if (error && error.code === 'BAD_SERVICE_IDS') {
+            return res.status(400).json({ error: 'Um ou mais procedimentos informados não existem no catálogo.' });
+        }
+        console.error('[PATCH /admin/campaigns/:id] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao atualizar campanha.' });
+    } finally {
+        client.release();
+    }
+});
+
+app.patch('/admin/campaigns/:id/assign-services', requireAdminAuth, async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+    const campaignId = String(req.params.id || '').trim();
+    if (!campaignId) {
+        return res.status(400).json({ error: 'ID de campanha inválido.' });
+    }
+    const rawIds = req.body && Array.isArray(req.body.serviceIds) ? req.body.serviceIds : [];
+
+    const c = await pool.connect();
+    try {
+        const ex = await c.query('SELECT 1 FROM promotional_campaigns WHERE id = $1 AND archived_at IS NULL', [campaignId]);
+        if (ex.rowCount === 0) {
+            return res.status(404).json({ error: 'Campanha não encontrada.' });
+        }
+
+        await c.query('BEGIN');
+        let linkedCount = 0;
+        try {
+            const r = await applyCampaignLinkedServiceIds(c, campaignId, rawIds);
+            linkedCount = r.linkedCount;
+            await c.query('COMMIT');
+        } catch (e) {
+            try {
+                await c.query('ROLLBACK');
+            } catch (_) {
+                /* ignore */
+            }
+            throw e;
+        }
+        await refreshServicesCatalogCache();
+        await refreshPromotionalSettingsCache();
+        return res.json({ ok: true, campaignId, linkedCount });
+    } catch (error) {
+        if (error && error.code === 'BAD_SERVICE_IDS') {
+            return res.status(400).json({ error: 'Um ou mais serviços informados não existem no catálogo.' });
+        }
+        console.error('[PATCH /admin/campaigns/:id/assign-services] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao vincular serviços à campanha.' });
+    } finally {
+        c.release();
+    }
+});
+
+app.delete('/admin/campaigns/:id', requireAdminAuth, async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+    const id = String(req.params.id || '').trim();
+    if (!id) {
+        return res.status(400).json({ error: 'ID inválido.' });
+    }
+    const client = await pool.connect();
+    try {
+        const up = await client.query(
+            `
+            UPDATE promotional_campaigns
+            SET archived_at = NOW(),
+                active = FALSE,
+                updated_at = NOW()
+            WHERE id = $1 AND archived_at IS NULL
+            RETURNING id, name, description, active, valid_from, valid_to, category, sort_order, created_at, updated_at
+        `,
+            [id]
+        );
+        if (up.rowCount === 0) {
+            return res.status(404).json({ error: 'Campanha não encontrada ou já removida.' });
+        }
+        await refreshPromotionalSettingsCache();
+        await refreshServicesCatalogCache();
+        return res.json({ ok: true, archived: true, campaign: mapCampaignRowToAdminApi(up.rows[0]) });
+    } catch (error) {
+        console.error('[DELETE /admin/campaigns/:id] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao arquivar campanha.' });
+    } finally {
+        client.release();
+    }
+});
+
+function slugifyCatalogIdBase(raw) {
+    const s = String(raw || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 72);
+    return s || 'servico';
+}
+
+async function generateUniqueCatalogServiceId(dbClient, baseName) {
+    let base = slugifyCatalogIdBase(baseName);
+    if (!base) base = `servico_${Date.now()}`;
+    let candidate = base;
+    let n = 0;
+    while (true) {
+        const r = await dbClient.query('SELECT 1 FROM catalog_services WHERE id = $1', [candidate]);
+        if (r.rowCount === 0) return candidate;
+        n += 1;
+        candidate = `${base}_${n}`;
+    }
+}
+
+function mapCatalogRowToAdminApi(row) {
+    const m = mapDbRowToCatalogService(row);
+    return {
+        id: m.id,
+        name: m.name,
+        category: m.category,
+        price: m.price,
+        duration: m.duration,
+        summary: m.summary,
+        detail: m.detail,
+        cardTitle: m.card_title || null,
+        active: m.active,
+        isPromotionalPackage: m.is_promotional_package,
+        promotionalCampaign: m.promotional_campaign || null,
+        sortOrder: m.sort_order,
+        updatedAt: row.updated_at || null
+    };
+}
+
+app.get('/admin/services', requireAdminAuth, async (_req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+    try {
+        const { rows } = await pool.query(
+            `SELECT id, name, category, price, duration, summary, description, card_title, active,
+                    is_promotional_package, promotional_campaign, sort_order, created_at, updated_at
+             FROM catalog_services
+             WHERE archived_at IS NULL
+             ORDER BY sort_order ASC, name ASC`
+        );
+        return res.json(rows.map(mapCatalogRowToAdminApi));
+    } catch (error) {
+        console.error('[GET /admin/services] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao listar serviços.' });
+    }
+});
+
+app.post('/admin/services', requireAdminAuth, async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+    const b = req.body || {};
+    const name = String(b.name || '').trim();
+    if (!name) {
+        return res.status(400).json({ error: 'Informe o nome do serviço.' });
+    }
+    const category = String(b.category || 'Geral').trim() || 'Geral';
+    const price = roundMoney2(Number(b.price));
+    if (!Number.isFinite(price) || price < 0) {
+        return res.status(400).json({ error: 'Informe um preço válido (≥ 0).' });
+    }
+    const duration = Math.round(Number(b.duration));
+    const dur = Number.isFinite(duration) && duration > 0 ? duration : DEFAULT_APPOINTMENT_DURATION_MIN;
+    const summary = b.summary != null ? String(b.summary) : '';
+    const description = b.detail != null ? String(b.detail) : b.description != null ? String(b.description) : '';
+    const cardTitle =
+        b.cardTitle != null && String(b.cardTitle).trim() !== ''
+            ? String(b.cardTitle).trim()
+            : b.card_title != null && String(b.card_title).trim() !== ''
+              ? String(b.card_title).trim()
+              : null;
+    const active = b.active === false || String(b.active).toLowerCase() === 'false' ? false : true;
+    const isPromotionalPackage =
+        b.isPromotionalPackage === true ||
+        String(b.isPromotionalPackage || '').toLowerCase() === 'true' ||
+        b.is_promotional_package === true;
+    const promotionalCampaign =
+        b.promotionalCampaign != null && String(b.promotionalCampaign).trim() !== ''
+            ? String(b.promotionalCampaign).trim().slice(0, 64)
+            : b.promotional_campaign != null && String(b.promotional_campaign).trim() !== ''
+              ? String(b.promotional_campaign).trim().slice(0, 64)
+              : null;
+    const hasExplicitSort =
+        (b.sortOrder !== undefined && b.sortOrder !== null && String(b.sortOrder).trim() !== '') ||
+        (b.sort_order !== undefined && b.sort_order !== null && String(b.sort_order).trim() !== '');
+    const sortParsed = Math.round(Number(hasExplicitSort ? (b.sortOrder != null ? b.sortOrder : b.sort_order) : NaN));
+
+    const client = await pool.connect();
+    try {
+        const id = await generateUniqueCatalogServiceId(client, name);
+        let so;
+        if (Number.isFinite(sortParsed)) {
+            so = sortParsed;
+        } else {
+            const scopeSql = isPromotionalPackage
+                ? `SELECT COALESCE(MAX(sort_order),0)+1 AS n FROM catalog_services WHERE is_promotional_package = TRUE AND archived_at IS NULL`
+                : `SELECT COALESCE(MAX(sort_order),0)+1 AS n FROM catalog_services WHERE is_promotional_package = FALSE AND archived_at IS NULL`;
+            const rSo = await client.query(scopeSql);
+            so = Math.round(Number(rSo.rows[0].n)) || 0;
+        }
+
+        await client.query(
+            `
+            INSERT INTO catalog_services (
+                id, name, category, price, duration, summary, description, card_title,
+                active, is_promotional_package, promotional_campaign, sort_order, updated_at
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, NOW())
+        `,
+            [
+                id,
+                name,
+                category,
+                price,
+                dur,
+                summary || null,
+                description || null,
+                cardTitle,
+                active,
+                isPromotionalPackage,
+                promotionalCampaign,
+                so
+            ]
+        );
+        await refreshServicesCatalogCache();
+        const ins = await client.query(
+            `SELECT id, name, category, price, duration, summary, description, card_title, active,
+                    is_promotional_package, promotional_campaign, sort_order, created_at, updated_at
+             FROM catalog_services WHERE id = $1`,
+            [id]
+        );
+        return res.status(201).json(mapCatalogRowToAdminApi(ins.rows[0]));
+    } catch (error) {
+        console.error('[POST /admin/services] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao criar serviço.' });
+    } finally {
+        client.release();
+    }
+});
+
+app.patch('/admin/services/:id', requireAdminAuth, async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+    const id = req.params.id != null ? String(req.params.id).trim() : '';
+    if (!id) {
+        return res.status(400).json({ error: 'ID inválido.' });
+    }
+    const b = req.body || {};
+    const sets = [];
+    const vals = [];
+    let p = 1;
+
+    const push = (col, val) => {
+        sets.push(`${col} = $${p}`);
+        vals.push(val);
+        p += 1;
+    };
+
+    if (b.name !== undefined) {
+        const n = String(b.name).trim();
+        if (!n) return res.status(400).json({ error: 'Nome não pode ser vazio.' });
+        push('name', n);
+    }
+    if (b.category !== undefined) {
+        push('category', String(b.category).trim() || 'Geral');
+    }
+    if (b.price !== undefined) {
+        const pr = roundMoney2(Number(b.price));
+        if (!Number.isFinite(pr) || pr < 0) return res.status(400).json({ error: 'Preço inválido.' });
+        push('price', pr);
+    }
+    if (b.duration !== undefined) {
+        const d = Math.round(Number(b.duration));
+        if (!Number.isFinite(d) || d <= 0) return res.status(400).json({ error: 'Duração inválida.' });
+        push('duration', d);
+    }
+    if (b.summary !== undefined) {
+        push('summary', b.summary == null ? null : String(b.summary));
+    }
+    if (b.detail !== undefined || b.description !== undefined) {
+        const t = b.detail !== undefined ? b.detail : b.description;
+        push('description', t == null ? null : String(t));
+    }
+    if (b.cardTitle !== undefined || b.card_title !== undefined) {
+        const ct = b.cardTitle !== undefined ? b.cardTitle : b.card_title;
+        const s = ct == null ? null : String(ct).trim();
+        push('card_title', s || null);
+    }
+    if (b.active !== undefined) {
+        push('active', !(b.active === false || String(b.active).toLowerCase() === 'false'));
+    }
+    if (b.isPromotionalPackage !== undefined || b.is_promotional_package !== undefined) {
+        const v = b.isPromotionalPackage !== undefined ? b.isPromotionalPackage : b.is_promotional_package;
+        push('is_promotional_package', v === true || String(v).toLowerCase() === 'true');
+    }
+    if (b.promotionalCampaign !== undefined || b.promotional_campaign !== undefined) {
+        const pc = b.promotionalCampaign !== undefined ? b.promotionalCampaign : b.promotional_campaign;
+        push('promotional_campaign', pc == null || String(pc).trim() === '' ? null : String(pc).trim().slice(0, 64));
+    }
+    if (b.sortOrder !== undefined || b.sort_order !== undefined) {
+        const so = Math.round(Number(b.sortOrder !== undefined ? b.sortOrder : b.sort_order));
+        if (!Number.isFinite(so)) return res.status(400).json({ error: 'sortOrder inválido.' });
+        push('sort_order', so);
+    }
+
+    if (sets.length === 0) {
+        return res.status(400).json({ error: 'Nenhum campo para atualizar.' });
+    }
+
+    sets.push(`updated_at = NOW()`);
+    vals.push(id);
+
+    const client = await pool.connect();
+    try {
+        const exists = await client.query(
+            `SELECT 1 FROM catalog_services WHERE id = $1 AND archived_at IS NULL`,
+            [id]
+        );
+        if (exists.rowCount === 0) {
+            return res.status(404).json({ error: 'Serviço não encontrado ou já removido do catálogo.' });
+        }
+
+        const q = `UPDATE catalog_services SET ${sets.join(', ')} WHERE id = $${p} AND archived_at IS NULL RETURNING id, name, category, price, duration, summary, description, card_title, active,
+                    is_promotional_package, promotional_campaign, sort_order, created_at, updated_at`;
+        const up = await client.query(q, vals);
+        if (up.rowCount === 0) {
+            return res.status(404).json({ error: 'Serviço não encontrado.' });
+        }
+        await refreshServicesCatalogCache();
+        return res.json(mapCatalogRowToAdminApi(up.rows[0]));
+    } catch (error) {
+        console.error('[PATCH /admin/services/:id] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao atualizar serviço.' });
+    } finally {
+        client.release();
+    }
+});
+
+app.delete('/admin/services/:id', requireAdminAuth, async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+    const id = req.params.id != null ? String(req.params.id).trim() : '';
+    if (!id) {
+        return res.status(400).json({ error: 'ID inválido.' });
+    }
+    const client = await pool.connect();
+    try {
+        const up = await client.query(
+            `
+            UPDATE catalog_services
+            SET archived_at = NOW(),
+                active = FALSE,
+                updated_at = NOW()
+            WHERE id = $1 AND archived_at IS NULL
+            RETURNING id, name, category, price, duration, summary, description, card_title, active,
+                      is_promotional_package, promotional_campaign, sort_order, created_at, updated_at
+        `,
+            [id]
+        );
+        if (up.rowCount === 0) {
+            return res.status(404).json({ error: 'Serviço não encontrado ou já removido do catálogo.' });
+        }
+        await refreshServicesCatalogCache();
+        return res.json({ ok: true, archived: true, service: mapCatalogRowToAdminApi(up.rows[0]) });
+    } catch (error) {
+        console.error('[DELETE /admin/services/:id] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao arquivar serviço.' });
+    } finally {
+        client.release();
+    }
+});
+
+app.get('/public/services', async (_req, res) => {
+    res.set('Cache-Control', 'private, no-store, max-age=0, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    if (!isPostgresSetup) {
+        return res.json([]);
+    }
+    try {
+        await refreshServicesCatalogCache();
+        await refreshPromotionalSettingsCache();
+        const src = Array.isArray(servicesCatalogAll) ? servicesCatalogAll : [];
+        const filtered = src.filter((s) => isServiceVisibleForBooking(s));
+        filtered.sort(
+            (a, b) =>
+                (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0) ||
+                String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR')
+        );
+        return res.json(filtered.map((s) => toPublicServiceJson(s)));
+    } catch (error) {
+        console.error('[GET /public/services] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao carregar serviços.' });
     }
 });
 
@@ -2298,18 +3643,13 @@ app.post('/appointments', async (req, res) => {
             return res.status(400).json({ error: 'Informe um e-mail válido da cliente para contato e confirmação.' });
         }
 
-        const catalogById = new Map(SERVICES_CATALOG.map((s) => [s.id, s]));
+        await refreshServicesCatalogCache();
+        await refreshPromotionalSettingsCache();
+
+        const catalogById = new Map(getActiveServicesCatalogForBooking().map((s) => [s.id, s]));
         for (const id of serviceIdsNorm) {
             if (!catalogById.has(id)) {
                 return res.status(400).json({ error: 'Um ou mais procedimentos não estão disponíveis para novo agendamento.' });
-            }
-        }
-
-        const hasPromo = serviceIdsNorm.some((id) => PROMO_PACKAGE_IDS.has(id));
-        if (hasPromo) {
-            const promoOn = await readPromotionalPackagesEnabledFromDb();
-            if (!promoOn) {
-                return res.status(400).json({ error: 'Este vale-presente não está disponível no momento.' });
             }
         }
 
@@ -2340,7 +3680,9 @@ app.post('/appointments', async (req, res) => {
 
         const primaryServiceId = serviceIdsNorm[0];
         const serviceIdsJson = JSON.stringify(serviceIdsNorm);
-        const serviceSlotsJson = JSON.stringify(resolvedSlots);
+        const serviceSlotsJson = serializeAppointmentSlots(
+            resolvedSlots.map((s) => ({ ...s, status: APPOINTMENT_SLOT_STATUS_ACTIVE }))
+        );
 
         const isLocalBooking = paymentMethod === 'local';
         /** Novos agendamentos online: sempre valor total no checkout; `payment_type` = full (compatível com webhook/relatórios). */
@@ -2515,6 +3857,330 @@ app.post('/appointments', async (req, res) => {
         return res.status(500).json({ error: 'Erro interno ao criar agendamento.' });
     } finally {
         client.release();
+    }
+});
+
+function verifyClientOwnsAppointmentByPhone(ap, body) {
+    const clean = String(body.verifyPhoneDigits || body.clientPhone || '').replace(/\D/g, '');
+    const apPhone = String(ap.client_phone || '').replace(/\D/g, '');
+    return clean.length >= 10 && apPhone.length >= 10 && clean === apPhone;
+}
+
+function clientHoursUntilSlot(slot) {
+    const apDateTimeStr = `${slot.date}T${slot.time}:00-03:00`;
+    const apTime = new Date(apDateTimeStr).getTime();
+    const now = Date.now();
+    return (apTime - now) / (1000 * 60 * 60);
+}
+
+async function applyFullAppointmentCancel(ap, cancelledBy, cancelReason, res) {
+    const id = ap.id;
+    const update = await pool.query(
+        `
+            UPDATE appointments
+            SET status = 'cancelled',
+                cancelled_by = $1,
+                cancel_reason = $2,
+                cancelled_at = CURRENT_TIMESTAMP
+            WHERE id = $3
+              AND status <> 'cancelled'
+            RETURNING *
+        `,
+        [cancelledBy || 'client', cancelReason || 'Cancelado pelo usuário', id]
+    );
+    if (update.rows.length === 0) {
+        const again = await pool.query('SELECT * FROM appointments WHERE id = $1', [id]);
+        if (again.rows.length === 0) {
+            return res.status(404).json({ error: 'Agendamento inexistente.' });
+        }
+        return res.json(mapAppointmentRow(again.rows[0]));
+    }
+    const cancelledRow = update.rows[0];
+    const idsForCancelMail = getActiveAppointmentServiceIdsFromRow(cancelledRow);
+    const serviceObjForCancelMail = buildServiceEmailAggregate(
+        idsForCancelMail.length ? idsForCancelMail : getAppointmentServiceIdsFromRow(cancelledRow)
+    );
+    try {
+        const cid = cancelledRow.client_id;
+        if (cid) {
+            const cr = await pool.query('SELECT email FROM clients WHERE id = $1', [cid]);
+            const em = normalizeEmail(cr.rows[0]?.email);
+            if (isValidEmailBasic(em)) {
+                await sendClientAppointmentCancelledEmail(cancelledRow, serviceObjForCancelMail, em);
+            }
+        }
+    } catch (mailErr) {
+        console.error(`[Cancel] Falha e-mail cliente (${id}):`, mailErr);
+    }
+    try {
+        await sendAdminAppointmentCancelledEmail(cancelledRow, serviceObjForCancelMail);
+    } catch (adminMailErr) {
+        console.error(`[Cancel] Falha e-mail admin (${id}):`, adminMailErr);
+    }
+    return res.json(mapAppointmentRow(cancelledRow));
+}
+
+app.patch('/appointments/:id/slots/:slotIndex/cancel', async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+
+    const { id, slotIndex: slotIndexRaw } = req.params;
+    const slotIndex = Number.parseInt(String(slotIndexRaw), 10);
+    const { cancelledBy, cancelReason } = req.body || {};
+
+    if (!Number.isFinite(slotIndex) || slotIndex < 0) {
+        return res.status(400).json({ error: 'Índice do procedimento inválido.' });
+    }
+
+    const clientPg = await pool.connect();
+    try {
+        await clientPg.query('BEGIN');
+        const check = await clientPg.query('SELECT * FROM appointments WHERE id = $1 FOR UPDATE', [id]);
+        if (check.rows.length === 0) {
+            await clientPg.query('ROLLBACK');
+            return res.status(404).json({ error: 'Agendamento inexistente.' });
+        }
+
+        const ap = check.rows[0];
+        const st = String(ap.status || '').trim().toLowerCase();
+        if (st === 'cancelled' || st === 'completed') {
+            await clientPg.query('ROLLBACK');
+            return res.status(400).json({ error: 'Este agendamento não permite cancelar procedimentos.' });
+        }
+
+        if (String(cancelledBy || '') === 'client') {
+            if (!verifyClientOwnsAppointmentByPhone(ap, req.body || {})) {
+                await clientPg.query('ROLLBACK');
+                return res.status(403).json({ error: 'Telefone não confere com o agendamento.' });
+            }
+        } else if (String(cancelledBy || '') === 'admin') {
+            const tok = extractAdminToken(req);
+            if (!verifyAdminToken(tok)) {
+                await clientPg.query('ROLLBACK');
+                return res.status(401).json({ error: 'Não autorizado.' });
+            }
+        }
+
+        const slots = getServiceSlotsFromRow(ap);
+        if (slotIndex >= slots.length) {
+            await clientPg.query('ROLLBACK');
+            return res.status(404).json({ error: 'Procedimento não encontrado neste agendamento.' });
+        }
+
+        const target = slots[slotIndex];
+        if (isSlotCancelled(target)) {
+            await clientPg.query('ROLLBACK');
+            return res.json(mapAppointmentRow(ap));
+        }
+
+        if (String(cancelledBy || '') === 'client') {
+            const diffHours = clientHoursUntilSlot(target);
+            if (diffHours < 2) {
+                await clientPg.query('ROLLBACK');
+                return res.status(400).json({
+                    error: 'Cancelamento permitido apenas com 2 horas ou mais de antecedência.'
+                });
+            }
+        }
+
+        const nextSlots = slots.map((sl, i) =>
+            i === slotIndex
+                ? {
+                      ...sl,
+                      status: APPOINTMENT_SLOT_STATUS_CANCELLED,
+                      cancelledAt: new Date().toISOString(),
+                      cancelReason: cancelReason || 'Cancelado pelo cliente em Meus agendamentos'
+                  }
+                : sl
+        );
+
+        const activeCount = nextSlots.filter((sl) => !isSlotCancelled(sl)).length;
+        if (activeCount === 0) {
+            await clientPg.query('ROLLBACK');
+            return applyFullAppointmentCancel(ap, cancelledBy || 'client', cancelReason, res);
+        }
+
+        const { primaryDate, primaryTime, primaryServiceId } = syncAppointmentPrimaryFromActiveSlots(nextSlots);
+        const finPatch = financialPatchAfterActiveItemsChange({ ...ap, service_slots_json: serializeAppointmentSlots(nextSlots) });
+        const activeIds = nextSlots.filter((sl) => !isSlotCancelled(sl)).map((sl) => sl.serviceId);
+
+        const sets = [
+            'service_slots_json = $1',
+            'service_ids_json = $2',
+            'date = $3',
+            'time = $4',
+            'service_id = $5'
+        ];
+        const vals = [
+            serializeAppointmentSlots(nextSlots),
+            JSON.stringify(activeIds),
+            primaryDate,
+            primaryTime,
+            primaryServiceId
+        ];
+        let p = 6;
+        for (const [k, v] of Object.entries(finPatch)) {
+            sets.push(`${k} = $${p}`);
+            vals.push(v);
+            p += 1;
+        }
+        vals.push(id);
+
+        const upd = await clientPg.query(
+            `UPDATE appointments SET ${sets.join(', ')} WHERE id = $${p} RETURNING *`,
+            vals
+        );
+        await clientPg.query('COMMIT');
+        return res.json(mapAppointmentRow(upd.rows[0]));
+    } catch (e) {
+        await clientPg.query('ROLLBACK');
+        console.error('[PATCH /appointments/:id/slots/:slotIndex/cancel] Erro:', e);
+        return res.status(500).json({ error: 'Erro ao cancelar procedimento.' });
+    } finally {
+        clientPg.release();
+    }
+});
+
+app.patch('/appointments/:id/slots/:slotIndex/reschedule', async (req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+
+    const { id, slotIndex: slotIndexRaw } = req.params;
+    const slotIndex = Number.parseInt(String(slotIndexRaw), 10);
+    const { date: newDate, time: newTime } = req.body || {};
+
+    if (!Number.isFinite(slotIndex) || slotIndex < 0) {
+        return res.status(400).json({ error: 'Índice do procedimento inválido.' });
+    }
+
+    const dateStr = String(newDate || '').trim();
+    const timeStr = normalizeSlotTimeHHMM(newTime);
+    if (!isValidReportDateYmd(dateStr) || !timeStr) {
+        return res.status(400).json({ error: 'Informe data e horário válidos.' });
+    }
+
+    const clientPg = await pool.connect();
+    try {
+        await clientPg.query('BEGIN');
+        const check = await clientPg.query('SELECT * FROM appointments WHERE id = $1 FOR UPDATE', [id]);
+        if (check.rows.length === 0) {
+            await clientPg.query('ROLLBACK');
+            return res.status(404).json({ error: 'Agendamento inexistente.' });
+        }
+
+        const ap = check.rows[0];
+        const st = String(ap.status || '').trim().toLowerCase();
+        if (st === 'cancelled' || st === 'completed') {
+            await clientPg.query('ROLLBACK');
+            return res.status(400).json({ error: 'Este agendamento não permite reagendar procedimentos.' });
+        }
+
+        if (!verifyClientOwnsAppointmentByPhone(ap, req.body || {})) {
+            await clientPg.query('ROLLBACK');
+            return res.status(403).json({ error: 'Telefone não confere com o agendamento.' });
+        }
+
+        const slots = getServiceSlotsFromRow(ap);
+        if (slotIndex >= slots.length) {
+            await clientPg.query('ROLLBACK');
+            return res.status(404).json({ error: 'Procedimento não encontrado neste agendamento.' });
+        }
+
+        const target = slots[slotIndex];
+        if (isSlotCancelled(target)) {
+            await clientPg.query('ROLLBACK');
+            return res.status(400).json({ error: 'Este procedimento já foi cancelado.' });
+        }
+
+        const diffHours = clientHoursUntilSlot(target);
+        if (diffHours < 2) {
+            await clientPg.query('ROLLBACK');
+            return res.status(400).json({
+                error: 'Reagendamento permitido apenas com 2 horas ou mais de antecedência.'
+            });
+        }
+
+        const nextSlots = slots.map((sl, i) =>
+            i === slotIndex
+                ? {
+                      ...sl,
+                      date: dateStr,
+                      time: timeStr,
+                      rescheduledAt: new Date().toISOString(),
+                      status: APPOINTMENT_SLOT_STATUS_ACTIVE
+                  }
+                : sl
+        );
+
+        const activeForValidation = nextSlots.filter((sl) => !isSlotCancelled(sl));
+        const touchDates = [...new Set(activeForValidation.map((s) => s.date))].sort();
+
+        const blockedFullRes = await clientPg.query(
+            `SELECT date FROM blocked_full_days WHERE date = ANY($1::text[])`,
+            [touchDates]
+        );
+        const blockedFullSet = new Set(blockedFullRes.rows.map((r) => r.date));
+        const blockedSlotsByDate = new Map();
+        for (const d of touchDates) {
+            const br = await clientPg.query('SELECT time FROM blocked_slots WHERE date = $1', [d]);
+            blockedSlotsByDate.set(
+                d,
+                new Set(br.rows.map((r) => normalizeSlotTimeHHMM(r.time)).filter(Boolean))
+            );
+        }
+
+        const lockedRows = await fetchLockedAppointmentRowsForDates(clientPg, touchDates);
+        const scheduleErr = validateNewBookingSlots(
+            activeForValidation,
+            lockedRows,
+            blockedFullSet,
+            blockedSlotsByDate,
+            id
+        );
+        if (scheduleErr) {
+            await clientPg.query('ROLLBACK');
+            return res.status(409).json({ error: scheduleErr });
+        }
+
+        const { primaryDate, primaryTime, primaryServiceId } = syncAppointmentPrimaryFromActiveSlots(nextSlots);
+        const activeIds = activeForValidation.map((sl) => sl.serviceId);
+
+        const upd = await clientPg.query(
+            `
+            UPDATE appointments
+            SET service_slots_json = $1,
+                service_ids_json = $2,
+                date = $3,
+                time = $4,
+                service_id = $5,
+                schedule_mode = CASE
+                    WHEN schedule_mode = 'sequential' AND $6::int > 1 THEN 'per_service'
+                    ELSE schedule_mode
+                END
+            WHERE id = $7
+            RETURNING *
+        `,
+            [
+                serializeAppointmentSlots(nextSlots),
+                JSON.stringify(activeIds),
+                primaryDate,
+                primaryTime,
+                primaryServiceId,
+                activeIds.length,
+                id
+            ]
+        );
+
+        await clientPg.query('COMMIT');
+        return res.json(mapAppointmentRow(upd.rows[0]));
+    } catch (e) {
+        await clientPg.query('ROLLBACK');
+        console.error('[PATCH /appointments/:id/slots/:slotIndex/reschedule] Erro:', e);
+        return res.status(500).json({ error: 'Erro ao reagendar procedimento.' });
+    } finally {
+        clientPg.release();
     }
 });
 
@@ -3219,6 +4885,29 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.listen(PORT, () => {
-    console.log(`🚀 Ateliê Backend DB operando na porta ${PORT}`);
+/**
+ * O `net.Server` emite `error` em falhas como EADDRINUSE; sem listener isso derruba o processo.
+ * `app.listen` delega ao mesmo servidor — usamos `http.createServer` e registramos o handler antes do listen.
+ * Migrações terminam antes de abrir a porta (evita corrida com o primeiro request).
+ */
+async function bootstrap() {
+    await initDB();
+    const server = http.createServer(app);
+    server.on('error', (err) => {
+        console.error('❌ Erro no servidor HTTP:', err && err.message ? err.message : err);
+        if (err && err.code === 'EADDRINUSE') {
+            console.error(
+                `   A porta ${PORT} já está em uso. Encerre o outro processo ou defina a variável de ambiente PORT.`
+            );
+            process.exit(1);
+        }
+    });
+    server.listen(PORT, () => {
+        console.log(`🚀 Ateliê Backend DB operando na porta ${PORT}`);
+    });
+}
+
+bootstrap().catch((err) => {
+    console.error('❌ Falha ao subir o servidor:', err);
+    process.exit(1);
 });

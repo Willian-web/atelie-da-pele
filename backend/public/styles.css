@@ -48,6 +48,13 @@ html {
     text-size-adjust: 100%;
 }
 
+#root {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: clip;
+}
+
 body {
     font-family: var(--font-body);
     color: var(--text-dark);
@@ -534,12 +541,46 @@ main {
     word-break: break-word;
 }
 
+/* Vale Presente (bundle): título abaixo do badge, sem grudar no selo */
+.service-card--campaign-bundle .service-card-header {
+    padding-top: 40px;
+    padding-right: 12px;
+    margin-bottom: 8px;
+}
+
+.service-card--campaign-bundle .service-card__promo-pill {
+    max-width: min(58%, 148px);
+    line-height: 1.25;
+    text-align: center;
+    white-space: normal;
+}
+
+.service-card--campaign-bundle .service-card-header h3 {
+    max-width: 100%;
+    padding-right: 0;
+}
+
 .promo-client-hint {
     overflow-wrap: anywhere;
     hyphens: auto;
     max-width: 100%;
     padding: 0 4px;
     box-sizing: border-box;
+}
+
+@media (max-width: 480px) {
+    .service-card--campaign-bundle .service-card__promo-pill {
+        position: static;
+        display: block;
+        width: fit-content;
+        max-width: 100%;
+        margin: 0 0 10px auto;
+    }
+
+    .service-card--campaign-bundle .service-card-header {
+        padding-top: 0;
+        padding-right: 0;
+    }
 }
 
 @media (max-width: 400px) {
@@ -550,7 +591,7 @@ main {
         top: 8px;
     }
 
-    .service-card--promo .service-card-header {
+    .service-card--promo:not(.service-card--campaign-bundle) .service-card-header {
         padding-right: 64px;
     }
 }
@@ -1086,6 +1127,9 @@ textarea.form-control {
     border-radius: 16px;
     width: 100%;
     max-width: 350px;
+    max-height: min(92dvh, calc(100vh - 24px));
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     text-align: center;
     box-shadow: 0 25px 50px -12px rgba(75, 53, 110, 0.28);
     border: 1px solid rgba(183, 154, 217, 0.35);
@@ -1120,6 +1164,9 @@ textarea.form-control {
 
 .manual-payment-modal {
     max-width: min(520px, calc(100vw - 24px));
+    max-height: min(92dvh, calc(100vh - 24px));
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .btn-cancel {
@@ -1191,10 +1238,13 @@ textarea.form-control {
     flex-wrap: wrap;
     gap: 8px;
     justify-content: center;
+    align-content: flex-start;
     margin: 0 auto 18px;
     max-width: min(640px, 100%);
     width: 100%;
     box-sizing: border-box;
+    min-width: 0;
+    overflow-x: hidden;
 }
 
 @media (max-width: 640px) {
@@ -1210,7 +1260,8 @@ textarea.form-control {
     }
 
     .service-category-chip {
-        flex: 1 1 auto;
+        flex: 0 1 auto;
+        min-width: 0;
     }
 }
 
@@ -1226,8 +1277,11 @@ textarea.form-control {
     font-family: inherit;
     transition: 0.2s;
     max-width: 100%;
+    min-width: 0;
+    flex: 0 1 auto;
     white-space: normal;
     overflow-wrap: anywhere;
+    word-break: break-word;
     text-align: center;
 }
 
@@ -1279,4 +1333,109 @@ textarea.form-control {
 
 .password-field-wrap .form-control.password-input {
     padding-right: 42px;
+}
+
+/* Serviços + Campanhas — coluna Ações: botões com mesma largura/altura (ativo e inativo) */
+.admin-campaigns-table-actions-col {
+    width: 1%;
+    white-space: nowrap;
+}
+
+.admin-campaigns-actions-cell {
+    padding: 10px 12px;
+    vertical-align: top;
+    white-space: nowrap;
+}
+
+.admin-campaigns-actions-row {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.admin-campaigns-action-btn {
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    min-width: 92px;
+    width: 92px;
+    height: 36px;
+    padding: 0 8px;
+    margin: 0;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--font-body);
+    line-height: 1.2;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s, background 0.2s, transform 0.12s;
+}
+
+.admin-campaigns-action-btn:active {
+    transform: scale(0.99);
+}
+
+.admin-campaigns-action-btn--edit {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+}
+
+.admin-campaigns-action-btn--edit:hover {
+    border-color: var(--brand-light);
+    color: var(--brand-primary);
+    background: var(--secondary-color);
+}
+
+.admin-campaigns-action-btn--inativar {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #b91c1c;
+}
+
+.admin-campaigns-action-btn--inativar:hover {
+    background: #fee2e2;
+    border-color: #fca5a5;
+}
+
+.admin-campaigns-action-btn--ativar {
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    color: #047857;
+}
+
+.admin-campaigns-action-btn--ativar:hover {
+    background: #d1fae5;
+    border-color: #6ee7b7;
+}
+
+.admin-campaigns-action-btn--apagar {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+}
+
+.admin-campaigns-action-btn--apagar:hover {
+    border-color: var(--brand-light);
+    color: var(--text-dark);
+    background: var(--secondary-color);
+}
+
+@media (max-width: 640px) {
+    .admin-campaigns-actions-row {
+        flex-direction: column;
+        align-items: stretch;
+        width: 100%;
+        max-width: 120px;
+    }
+
+    .admin-campaigns-action-btn {
+        width: 100%;
+        min-width: 0;
+    }
 }

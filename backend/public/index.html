@@ -177,6 +177,88 @@
             line-height: 1.35;
             box-sizing: border-box;
         }
+        .my-app-procedures-box {
+            margin-bottom: 12px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            background: rgba(248, 246, 252, 0.65);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        .my-app-procedure-row {
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(226, 232, 240, 0.9);
+            background: #fff;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        .my-app-procedure-row--cancelled {
+            opacity: 0.72;
+        }
+        .my-app-procedure-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            margin-top: 4px;
+        }
+        .my-app-procedure-actions .btn-cancel,
+        .my-app-procedure-actions .my-app-btn-secondary {
+            width: auto;
+            max-width: 100%;
+            flex: 0 1 auto;
+            padding: 7px 12px;
+            font-size: 12px;
+        }
+        .my-app-card-footer-actions {
+            margin-top: 14px;
+            padding-top: 12px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: flex-start;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        .my-app-card-footer-actions .btn-cancel,
+        .my-app-card-footer-actions .my-app-btn-secondary {
+            width: auto;
+            max-width: 100%;
+            flex: 0 1 auto;
+            padding: 8px 14px;
+            font-size: 13px;
+        }
+        .my-app-card-footer-actions__hint {
+            margin: 0;
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.45;
+        }
+        .my-app-card-footer-actions__complete {
+            font-size: 12px;
+            padding: 6px 12px;
+            border-color: rgba(180, 83, 9, 0.35);
+            color: #9a3412;
+        }
+        @media (max-width: 520px) {
+            .my-app-procedure-actions,
+            .my-app-card-footer-actions {
+                align-items: stretch;
+            }
+            .my-app-procedure-actions .btn-cancel,
+            .my-app-procedure-actions .my-app-btn-secondary,
+            .my-app-card-footer-actions .btn-cancel,
+            .my-app-card-footer-actions .my-app-btn-secondary {
+                width: 100%;
+                flex: 1 1 100%;
+            }
+        }
         /* Local do ateliê + Google Maps — Agenda Geral (admin) e Meus Agendamentos */
         .appointment-location {
             font-size: 13px;
@@ -220,6 +302,195 @@
         .payment-type-group { margin-bottom: 20px; text-align: left; max-width: 400px; margin-left: auto; margin-right: auto; }
         .payment-type-radio { margin-right: 10px; }
         .payment-type-desc { margin: 8px 0 10px 0; font-size: 14px; color: var(--text-dark);}
+
+        /* Painel profissional — sidebar + área principal (paleta atual) */
+        .admin-panel-root {
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+            text-align: left;
+        }
+        .admin-layout {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 0;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        .admin-sidebar {
+            flex-shrink: 0;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+            border: 1px solid var(--border-color);
+            background: var(--card-bg);
+            border-radius: 12px;
+            margin-bottom: 14px;
+            overflow: hidden;
+        }
+        .admin-sidebar-inner {
+            padding: 12px 14px 14px;
+            box-sizing: border-box;
+        }
+        .admin-sidebar-title-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .admin-sidebar-heading {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--text-dark);
+            font-family: inherit;
+        }
+        .admin-sidebar-toggle {
+            display: none;
+            flex-shrink: 0;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--card-bg);
+            color: var(--text-dark);
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .admin-sidebar-toggle:hover {
+            background: rgba(111, 76, 165, 0.08);
+            border-color: rgba(111, 76, 165, 0.28);
+        }
+        .admin-sidebar-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        .admin-menu-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+            text-align: left;
+            justify-content: flex-start;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.35;
+            min-height: 44px;
+        }
+        .admin-menu-item i.fas,
+        .admin-menu-item i.far {
+            flex-shrink: 0;
+            width: 1.15em;
+            text-align: center;
+        }
+        .admin-menu-item--exit {
+            margin-top: 6px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 12px;
+            background: var(--card-bg);
+            color: var(--text-dark);
+            border-color: var(--border-color);
+        }
+        .admin-menu-item--exit:hover {
+            background: rgba(111, 76, 165, 0.06);
+        }
+        .admin-content {
+            flex: 1;
+            min-width: 0;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        .admin-content-body {
+            margin-top: 16px;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
+        }
+        .admin-placeholder-panel {
+            max-width: 520px;
+            margin: 0 auto;
+            padding: 24px 20px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            background: var(--card-bg);
+            text-align: center;
+            box-sizing: border-box;
+        }
+        .admin-placeholder-panel h3 {
+            margin: 0 0 10px;
+            font-size: 1.1rem;
+            color: var(--text-dark);
+        }
+        .admin-placeholder-panel p {
+            margin: 0;
+            font-size: 14px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+        @media (min-width: 768px) {
+            .admin-layout {
+                flex-direction: row;
+                align-items: flex-start;
+                gap: 16px;
+            }
+            .admin-sidebar {
+                width: 240px;
+                margin-bottom: 0;
+                position: sticky;
+                top: 12px;
+                align-self: flex-start;
+                max-height: calc(100vh - 88px);
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            .admin-sidebar-toggle {
+                display: inline-flex;
+            }
+            .admin-sidebar--collapsed {
+                width: 56px;
+            }
+            .admin-sidebar--collapsed .admin-sidebar-heading {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                white-space: nowrap;
+                border: 0;
+            }
+            .admin-sidebar--collapsed .admin-sidebar-title-row {
+                justify-content: center;
+                margin-bottom: 8px;
+            }
+            .admin-sidebar--collapsed .admin-menu-item-label {
+                display: none;
+            }
+            .admin-sidebar--collapsed .admin-menu-item {
+                justify-content: center;
+                padding-left: 10px;
+                padding-right: 10px;
+            }
+            .admin-sidebar--collapsed .admin-menu-item--exit {
+                padding-top: 10px;
+            }
+            .admin-sidebar--collapsed .admin-sidebar-nav {
+                gap: 6px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -286,8 +557,8 @@ const AtelieWhatsAppDiscreteLink = ({ adminWhatsApp }) => (
 );
 
 /**
- * Catálogo ativo (etapa 1). Manter ids e preços alinhados a `SERVICES_CATALOG` em backend/server.js.
- * Vales-presente Dia das Mães: ver `PROMO_MAES_SERVICES` (ativados pelo admin via API).
+ * Catálogo ativo (etapa 1). Com API, usar `GET /public/services`. Sem rede/DB, fallback local alinhado a `SERVICES_CATALOG` no servidor.
+ * Pacotes promocionais de fallback: `FALLBACK_PROMO_SERVICES` (visíveis só com a flag global em `config/public`).
  * SERVICES_LEGACY: só para exibir agendamentos antigos já gravados no banco.
  */
 const SERVICES = [
@@ -402,8 +673,8 @@ const SERVICES = [
     }
 ];
 
-/** Vales-presente Dia das Mães — espelhar ids/preços em `SERVICES_CATALOG` no servidor; exibição controlada pelo admin. */
-const PROMO_MAES_SERVICES = [
+/** Fallback offline: pacotes promocionais (ids alinhados ao seed do servidor). Preferir catálogo via API. */
+const FALLBACK_PROMO_SERVICES = [
     {
         id: 'promo_dia_maes_reflexologia',
         name: 'Vale-presente Dia das Mães 1 — Reflexologia especial',
@@ -414,7 +685,8 @@ const PROMO_MAES_SERVICES = [
         summary: 'Vale-presente por tempo limitado — presenteie quem você ama.',
         detail:
             'Reflexologia, incluindo escalda-pés, massagem relaxante e hidratação profunda nos pés. Experiência completa de bem-estar em clima de spa.',
-        promotionalCampaign: 'dia_maes'
+        promotionalCampaign: 'dia_maes',
+        promotionalCampaignName: 'Campanha sazonal (legado)'
     },
     {
         id: 'promo_dia_maes_facial',
@@ -426,12 +698,120 @@ const PROMO_MAES_SERVICES = [
         summary: 'Vale-presente por tempo limitado — pele renovada e momento de pausa.',
         detail:
             'Limpeza de pele suave, máscara revigorante e massagem facial. Ideal para devolver luminosidade com toque leve e acolhedor.',
-        promotionalCampaign: 'dia_maes'
+        promotionalCampaign: 'dia_maes',
+        promotionalCampaignName: 'Campanha sazonal (legado)'
     }
 ];
 
-/** Filtro na etapa 1 (cliente): mesma ideia da aba «Campanhas» no admin; só aparece com promo ativa. */
+/** Rótulo do filtro na etapa 1 (cliente): pacotes promocionais retornados pela API. */
 const PROMO_CLIENT_FILTER_LABEL = 'Campanhas';
+
+/** Título principal fixo nos cards de campanha (vitine cliente). */
+const CLIENT_CAMPAIGN_CARD_MAIN_TITLE = 'Vale Presente';
+
+const getClientCampaignPillLabel = (service) => {
+    if (!service) return PROMO_CLIENT_FILTER_LABEL;
+    const n = String(service.promotionalCampaignName || '').trim();
+    if (n) return n;
+    return PROMO_CLIENT_FILTER_LABEL;
+};
+
+/** Agrupa pacotes promocionais em um card por campanha (tela inicial do cliente). */
+const buildClientCampaignBundles = (promoList) => {
+    const list = Array.isArray(promoList) ? promoList : [];
+    const groups = new Map();
+    for (const s of list) {
+        const cid = String(s.promotionalCampaign || '').trim();
+        const groupKey = cid || `__solo__:${s.id}`;
+        if (!groups.has(groupKey)) groups.set(groupKey, []);
+        groups.get(groupKey).push(s);
+    }
+    const bundles = [];
+    for (const [groupKey, members] of groups) {
+        members.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR'));
+        const cid = groupKey.startsWith('__solo__') ? '' : groupKey;
+        const price = Math.round(members.reduce((sum, m) => sum + (Number(m.price) || 0), 0) * 100) / 100;
+        const duration = members.reduce((sum, m) => sum + (Number(m.duration) || DEFAULT_APPOINTMENT_DURATION_MIN), 0);
+        const first = members[0];
+        const campaignName =
+            String(first.promotionalCampaignName || '').trim() ||
+            (cid
+                ? cid.replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase())
+                : getClientServiceCardTitle(first));
+        const cardId = cid ? `campaign:${cid}` : String(first.id);
+        bundles.push({
+            id: cardId,
+            campaignId: cid || first.id,
+            name: campaignName,
+            cardTitle: campaignName,
+            category: PROMO_CLIENT_FILTER_LABEL,
+            price,
+            duration,
+            summary: first.summary || '',
+            detail: first.detail || '',
+            includedServices: members.map((m) => ({
+                id: m.id,
+                label: String(m.cardTitle || m.card_title || m.name || '').trim()
+            })),
+            memberServiceIds: members.map((m) => String(m.id)),
+            isCampaignBundle: true,
+            isPromotionalPackage: true,
+            promotionalCampaign: cid || undefined,
+            promotionalCampaignName: campaignName,
+            sortOrder: Math.max(0, ...members.map((m) => Number(m.sortOrder) || 0))
+        });
+    }
+    bundles.sort((a, b) => {
+        const d = (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0);
+        if (d !== 0) return d;
+        return String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR');
+    });
+    return bundles;
+};
+
+const isClientGridItemSelected = (item, selectedIds) => {
+    if (!item) return false;
+    const sel = Array.isArray(selectedIds) ? selectedIds : [];
+    if (item.isCampaignBundle && Array.isArray(item.memberServiceIds) && item.memberServiceIds.length > 0) {
+        return item.memberServiceIds.every((id) => sel.includes(id));
+    }
+    return sel.includes(item.id);
+};
+
+/** Linhas do resumo (step 3): campanhas agrupadas + serviços avulsos. */
+const buildBookingProcedureSummaryLines = (selectedIds, catalog, campaignBundles) => {
+    const ids = Array.isArray(selectedIds) ? [...selectedIds] : [];
+    const used = new Set();
+    const lines = [];
+    const bundles = Array.isArray(campaignBundles) ? campaignBundles : [];
+    for (const b of bundles) {
+        const mids = b.memberServiceIds || [];
+        if (!mids.length || !mids.every((id) => ids.includes(id))) continue;
+        mids.forEach((id) => used.add(id));
+        const includes = mids.map((id) => {
+            const m = getServiceMeta(id, { clientCatalog: catalog });
+            return m ? getClientServiceCardTitle(m) : id;
+        });
+        lines.push({
+            key: `campaign:${b.campaignId || b.id}`,
+            type: 'campaign',
+            title: b.name || b.cardTitle || 'Campanha',
+            includes,
+            total: b.price
+        });
+    }
+    for (const id of ids) {
+        if (used.has(id)) continue;
+        const m = getServiceMeta(id, { clientCatalog: catalog });
+        lines.push({
+            key: `svc:${id}`,
+            type: 'service',
+            title: m ? getClientServiceCardTitle(m) : id,
+            total: Number(m?.price) || 0
+        });
+    }
+    return lines;
+};
 
 const SERVICES_LEGACY = [
     { id: 'limpeza_pele', name: 'Limpeza de Pele', price: 119.9, category: 'Legado', duration: 60 },
@@ -442,11 +822,16 @@ const SERVICES_LEGACY = [
     { id: 'reflexologia', name: 'Reflexologia Podal', price: 89.9, category: 'Legado', duration: 60 }
 ];
 
-const getServiceMeta = (serviceId) => {
+const getServiceMeta = (serviceId, opts = {}) => {
     const sid = String(serviceId || '');
+    const live = opts && opts.clientCatalog;
+    if (Array.isArray(live) && live.length > 0) {
+        const hit = live.find((s) => s.id === sid);
+        if (hit) return hit;
+    }
     return (
         SERVICES.find((s) => s.id === sid) ||
-        PROMO_MAES_SERVICES.find((s) => s.id === sid) ||
+        FALLBACK_PROMO_SERVICES.find((s) => s.id === sid) ||
         SERVICES_LEGACY.find((s) => s.id === sid) ||
         null
     );
@@ -469,14 +854,23 @@ const getAppointmentServiceIdsFromApp = (app) => {
     return sid ? [String(sid)] : [];
 };
 
-const getServiceSlotsFromApp = (app) => {
+const APPOINTMENT_ITEM_STATUS_CANCELLED = 'cancelled';
+
+const getServiceSlotsFromApp = (app, catalogOpt) => {
     if (!app) return [];
     if (Array.isArray(app.serviceSlots) && app.serviceSlots.length > 0) {
         return app.serviceSlots
-            .map((s) => ({
+            .map((s, idx) => ({
+                slotIndex: s.slotIndex != null ? s.slotIndex : idx,
                 serviceId: String(s.serviceId || s.service_id || '').trim(),
                 date: String(s.date || '').trim(),
-                time: normalizeSlotTimeLabel(s.time) || String(s.time || '').trim()
+                time: normalizeSlotTimeLabel(s.time) || String(s.time || '').trim(),
+                status: String(s.status || 'active').toLowerCase(),
+                cancelledAt: s.cancelledAt || null,
+                cancelReason: s.cancelReason || null,
+                rescheduledAt: s.rescheduledAt || null,
+                name: s.serviceName || s.name || null,
+                price: s.price != null ? Number(s.price) : null
             }))
             .filter((s) => s.serviceId && s.date && s.time);
     }
@@ -489,7 +883,7 @@ const getServiceSlotsFromApp = (app) => {
     if (cur == null) return [];
     const out = [];
     for (const id of ids) {
-        const meta = getServiceMeta(id);
+        const meta = getServiceMeta(id, { clientCatalog: catalogOpt });
         const mm =
             meta && typeof meta.duration === 'number' && Number.isFinite(meta.duration)
                 ? meta.duration
@@ -504,36 +898,68 @@ const getServiceSlotsFromApp = (app) => {
     return out;
 };
 
-const getTotalDurationMinutesForServiceIds = (ids) => {
+const getTotalDurationMinutesForServiceIds = (ids, catalogOpt) => {
     const arr = Array.isArray(ids) ? ids : [];
     if (arr.length === 0) return DEFAULT_APPOINTMENT_DURATION_MIN;
     return arr.reduce((sum, id) => {
-        const m = getServiceMeta(id);
+        const m = getServiceMeta(id, { clientCatalog: catalogOpt });
         const d = m && typeof m.duration === 'number' ? m.duration : DEFAULT_APPOINTMENT_DURATION_MIN;
         return sum + d;
     }, 0);
 };
 
-const buildLineItemsFromAppointmentApp = (app) => {
+const buildLineItemsFromAppointmentApp = (app, catalogOpt) => {
     if (Array.isArray(app?.serviceLineItems) && app.serviceLineItems.length) {
-        return app.serviceLineItems;
+        return app.serviceLineItems.map((it, idx) => ({
+            id: it.id || it.serviceId,
+            slotIndex: it.slotIndex != null ? it.slotIndex : idx,
+            name: it.name,
+            price: it.price != null ? Number(it.price) : 0,
+            date: it.date,
+            time: it.time,
+            status: String(it.status || 'active').toLowerCase(),
+            cancelledAt: it.cancelledAt || null,
+            cancelReason: it.cancelReason || null
+        }));
     }
-    return getAppointmentServiceIdsFromApp(app).map((id) => {
-        const m = getServiceMeta(id);
+    return getServiceSlotsFromApp(app, catalogOpt).map((sl, idx) => {
+        const m = getServiceMeta(sl.serviceId, { clientCatalog: catalogOpt });
         return {
-            id,
-            name: m ? getClientServiceCardTitle(m) : id,
-            price: m && m.price != null ? Number(m.price) : 0
+            id: sl.serviceId,
+            slotIndex: sl.slotIndex != null ? sl.slotIndex : idx,
+            name: sl.name || (m ? getClientServiceCardTitle(m) : sl.serviceId),
+            price: sl.price != null ? Number(sl.price) : m && m.price != null ? Number(m.price) : 0,
+            date: sl.date,
+            time: sl.time,
+            status: String(sl.status || 'active').toLowerCase(),
+            cancelledAt: sl.cancelledAt || null,
+            cancelReason: sl.cancelReason || null
         };
     });
 };
 
-const formatAgendaServiceSummary = (app) => {
-    const lines = buildLineItemsFromAppointmentApp(app);
+const getActiveLineItemsFromAppointmentApp = (app, catalogOpt) =>
+    buildLineItemsFromAppointmentApp(app, catalogOpt).filter(
+        (l) => String(l.status || 'active').toLowerCase() !== APPOINTMENT_ITEM_STATUS_CANCELLED
+    );
+
+/** single = 1 procedimento ativo (ações gerais no rodapé); multi = 2+ ativos (ações por item + cancelar completo) */
+const getMyAppointmentActionMode = (app, catalogOpt) => {
+    const activeCount = getActiveLineItemsFromAppointmentApp(app, catalogOpt).length;
+    if (activeCount <= 1) return 'single';
+    return 'multi';
+};
+
+const formatAgendaServiceSummary = (app, catalogOpt) => {
+    const lines = getActiveLineItemsFromAppointmentApp(app, catalogOpt);
     if (!lines.length) return { label: '—', total: null, scheduleHint: '' };
     const label = lines.map((l) => l.name || l.id).join(' + ');
     const total = lines.reduce((s, l) => s + (Number.isFinite(Number(l.price)) ? Number(l.price) : 0), 0);
-    const slots = getServiceSlotsFromApp(app);
+    const slots = getActiveLineItemsFromAppointmentApp(app, catalogOpt).map((l) => ({
+        serviceId: l.id,
+        date: l.date,
+        time: l.time
+    }));
     const mode = String(app.scheduleMode || app.schedule_mode || '').toLowerCase();
     let scheduleHint = '';
     if (slots.length > 1) {
@@ -545,7 +971,7 @@ const formatAgendaServiceSummary = (app) => {
             const d0 = sorted[0].date;
             const last = sorted[sorted.length - 1];
             const lastStart = parseTimeToMinutes(last.time) || 0;
-            const lastDur = getTotalDurationMinutesForServiceIds([last.serviceId]);
+            const lastDur = getTotalDurationMinutesForServiceIds([last.serviceId], catalogOpt);
             const rangeEnd = formatMinutesAsHHMM(lastStart + lastDur);
             scheduleHint = `${new Date(d0 + 'T12:00:00').toLocaleDateString('pt-BR')} ${sorted[0].time}–${rangeEnd} (sequência)`;
         } else {
@@ -560,19 +986,41 @@ const formatAgendaServiceSummary = (app) => {
     return { label, total: Math.round(total * 100) / 100, scheduleHint };
 };
 
-/** Título discreto no fluxo cliente (card, resumo). `name` permanece o nome completo do catálogo (admin / “Ver detalhes”). */
+/** Título no card do cliente: sempre o nome do procedimento no catálogo. */
 const getClientServiceCardTitle = (service) => {
     if (!service) return 'Serviço';
-    const t = String(service.cardTitle || service.name || '').trim();
-    return t || 'Serviço';
+    const n = String(service.name || '').trim();
+    if (n) return n;
+    return String(service.cardTitle || service.card_title || '').trim() || 'Serviço';
 };
 
-const getClientServiceTitleById = (serviceId) => getClientServiceCardTitle(getServiceMeta(serviceId));
+const getClientServiceTitleById = (serviceId, catalogOpt) =>
+    getClientServiceCardTitle(getServiceMeta(serviceId, { clientCatalog: catalogOpt }));
 
 const FIXED_SIGNAL_AMOUNT = 30.00;
 
-/** Ordem das abas de categoria na etapa 1 (só entram categorias que existem em SERVICES). */
+/** Ordem das abas de categoria na etapa 1 (só entram categorias que existem em serviços não promocionais). «Campanhas» é reservada à aba de pacotes. Chip «Geral» não é exibido — serviços em Geral aparecem em «Todos». */
 const SERVICE_CATEGORY_ORDER = ['Estética facial', 'Depilação', 'Combo depilação', 'Bem-estar', 'Legado'];
+
+/**
+ * Categoria inferida pelo nome (cadastro novo de serviço comum no painel).
+ * Ordem: campanha/vale → combo → estética facial → depilação → bem-estar → Geral.
+ */
+function inferServiceCategoryFromName(nameRaw) {
+    const raw = String(nameRaw || '').trim();
+    if (!raw) return 'Geral';
+    const n = raw
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+
+    if (/vale[\s_-]*presente|valepresente|\bcampanha\b/.test(n)) return 'Campanhas';
+    if (/\bcombo\b/.test(n)) return 'Combo depilação';
+    if (/\blimpeza\b|\bfacial\b|\bpele\b|mascara/.test(n)) return 'Estética facial';
+    if (/depil|axil|buco|perna|coxa|anus|nariz/.test(n)) return 'Depilação';
+    if (/reflexologia|massagem|relaxante|\bpes\b|bem[\s-]*estar|bemestar/.test(n)) return 'Bem-estar';
+    return 'Geral';
+}
 
 const isProcedurePriceAtOrBelowSignal = (price) => {
     const n = Number(price);
@@ -761,7 +1209,8 @@ const generateTimeSlots = (
     existingAppointments,
     blockedSlotsList = [],
     blockedFullDaysList = [],
-    selectedServiceIdsForPreview = []
+    selectedServiceIdsForPreview = [],
+    catalogForMeta = null
 ) => {
     if (!dateString) return [];
 
@@ -796,26 +1245,27 @@ const generateTimeSlots = (
 
     const activeApps = existingAppointments.filter((app) => {
         if (!['pending_payment', 'confirmed', 'completed'].includes(app.status)) return false;
-        const slots = getServiceSlotsFromApp(app);
+        const slots = getServiceSlotsFromApp(app, catalogForMeta);
         if (slots.length) return slots.some((s) => s.date === dateString);
         return app.date === dateString;
     });
 
     const bookedIntervals = activeApps.flatMap((app) => {
-        const slots = getServiceSlotsFromApp(app);
+        const slots = getServiceSlotsFromApp(app, catalogForMeta);
         const out = [];
         for (const sl of slots) {
+            if (String(sl.status || 'active').toLowerCase() === APPOINTMENT_ITEM_STATUS_CANCELLED) continue;
             if (sl.date !== dateString) continue;
             const startMins = parseTimeToMinutes(sl.time);
             if (startMins == null) continue;
-            const dur = getTotalDurationMinutesForServiceIds([sl.serviceId]);
+            const dur = getTotalDurationMinutesForServiceIds([sl.serviceId], catalogForMeta);
             out.push({ start: startMins, end: startMins + dur });
         }
         return out;
     });
 
     const previewIds = Array.isArray(selectedServiceIdsForPreview) ? selectedServiceIdsForPreview : [];
-    const previewDuration = getTotalDurationMinutesForServiceIds(previewIds);
+    const previewDuration = getTotalDurationMinutesForServiceIds(previewIds, catalogForMeta);
 
     return slots.map((time) => {
         const slotStartMins = parseTimeToMinutes(time);
@@ -839,7 +1289,7 @@ const generateTimeSlots = (
         );
 
         const tooCloseToStart = activeApps.some((app) => {
-            const slotList = getServiceSlotsFromApp(app);
+            const slotList = getServiceSlotsFromApp(app, catalogForMeta);
             for (const sl of slotList) {
                 if (sl.date !== dateString) continue;
                 const S = parseTimeToMinutes(sl.time);
@@ -859,7 +1309,9 @@ const generateTimeSlots = (
             isBooked,
             isBlockedManual,
             hasAppointmentAtTime: activeApps.some((a) =>
-                getServiceSlotsFromApp(a).some((sl) => sl.date === dateString && normalizeSlotTimeLabel(sl.time) === time)
+                getServiceSlotsFromApp(a, catalogForMeta).some(
+                    (sl) => sl.date === dateString && normalizeSlotTimeLabel(sl.time) === time
+                )
             ),
             isFullDayBlocked: fullDayBlocked
         };
@@ -1122,7 +1574,8 @@ const ClientArea = ({
     promoPackagesEnabled,
     bookingRestoreOrderNsu,
     onBookingRestoreConsumed,
-    mergeAppointmentRow
+    mergeAppointmentRow,
+    catalogServicesClient
 }) => {
     const [step, setStep] = useState(1);
     
@@ -1154,58 +1607,144 @@ const ClientArea = ({
     const [apiError, setApiError] = useState('');
     const lastBookingRestoreAppliedId = useRef('');
 
+    const effectiveClientCatalog = useMemo(() => {
+        if (Array.isArray(catalogServicesClient) && catalogServicesClient.length > 0) {
+            return catalogServicesClient;
+        }
+        return null;
+    }, [catalogServicesClient]);
+
+    const { nonPromoServiceList, promoServiceList } = useMemo(() => {
+        if (effectiveClientCatalog) {
+            return {
+                nonPromoServiceList: effectiveClientCatalog.filter((s) => !s.isPromotionalPackage),
+                promoServiceList: effectiveClientCatalog.filter((s) => !!s.isPromotionalPackage)
+            };
+        }
+        return { nonPromoServiceList: SERVICES, promoServiceList: FALLBACK_PROMO_SERVICES };
+    }, [effectiveClientCatalog]);
+
+    const clientCampaignBundles = useMemo(() => buildClientCampaignBundles(promoServiceList), [promoServiceList]);
+
+    const clientCampaignBundleByCardId = useMemo(() => {
+        const m = new Map();
+        for (const b of clientCampaignBundles) m.set(b.id, b);
+        return m;
+    }, [clientCampaignBundles]);
+
+    const promosVisibleOnClient = useMemo(() => {
+        if (effectiveClientCatalog) {
+            return clientCampaignBundles.length > 0;
+        }
+        return !!promoPackagesEnabled;
+    }, [effectiveClientCatalog, clientCampaignBundles.length, promoPackagesEnabled]);
+
+    const catalogMetaLookupList = useMemo(
+        () => effectiveClientCatalog || [...SERVICES, ...FALLBACK_PROMO_SERVICES],
+        [effectiveClientCatalog]
+    );
+
     const [serviceCatFilter, setServiceCatFilter] = useState('Todos');
     const serviceCategoryChips = useMemo(() => {
         const ordered = [];
         const seen = new Set();
         for (const c of SERVICE_CATEGORY_ORDER) {
-            if (SERVICES.some((s) => s.category === c) && !seen.has(c)) {
+            if (c === 'Geral') continue;
+            if (nonPromoServiceList.some((s) => s.category === c) && !seen.has(c)) {
                 seen.add(c);
                 ordered.push(c);
             }
         }
-        for (const s of SERVICES) {
+        for (const s of nonPromoServiceList) {
             const c = s.category;
-            if (c && !seen.has(c)) {
-                seen.add(c);
-                ordered.push(c);
-            }
+            if (!c || c === 'Geral' || seen.has(c)) continue;
+            /* Evita chip duplicado com a aba «Campanhas» dos pacotes promocionais. */
+            if (c === PROMO_CLIENT_FILTER_LABEL) continue;
+            seen.add(c);
+            ordered.push(c);
         }
         const chips = ['Todos', ...ordered];
-        if (promoPackagesEnabled) {
+        if (promosVisibleOnClient) {
             chips.push(PROMO_CLIENT_FILTER_LABEL);
         }
-        return chips;
-    }, [promoPackagesEnabled]);
+        const deduped = [];
+        const chipSeen = new Set();
+        for (const x of chips) {
+            if (!chipSeen.has(x)) {
+                chipSeen.add(x);
+                deduped.push(x);
+            }
+        }
+        return deduped;
+    }, [promosVisibleOnClient, nonPromoServiceList]);
     const servicesForGrid = useMemo(() => {
-        if (!promoPackagesEnabled) {
-            if (serviceCatFilter === 'Todos') return SERVICES;
-            return SERVICES.filter((s) => s.category === serviceCatFilter);
+        if (!promosVisibleOnClient) {
+            if (serviceCatFilter === 'Todos') return nonPromoServiceList;
+            return nonPromoServiceList.filter((s) => s.category === serviceCatFilter);
         }
         if (serviceCatFilter === PROMO_CLIENT_FILTER_LABEL) {
-            return [...PROMO_MAES_SERVICES];
+            return [...clientCampaignBundles];
         }
         if (serviceCatFilter === 'Todos') {
-            return [...SERVICES, ...PROMO_MAES_SERVICES];
+            return [...nonPromoServiceList, ...clientCampaignBundles];
         }
-        return SERVICES.filter((s) => s.category === serviceCatFilter);
-    }, [serviceCatFilter, promoPackagesEnabled]);
+        return nonPromoServiceList.filter((s) => s.category === serviceCatFilter);
+    }, [serviceCatFilter, promosVisibleOnClient, nonPromoServiceList, clientCampaignBundles]);
 
     const todayStr = getLocalTodayStr();
 
     const selectionTotalPrice = useMemo(() => {
-        const t = selectedServiceIds.reduce((s, id) => s + Number(getServiceMeta(id)?.price || 0), 0);
+        const t = selectedServiceIds.reduce(
+            (s, id) => s + Number(getServiceMeta(id, { clientCatalog: catalogMetaLookupList })?.price || 0),
+            0
+        );
         return Math.round(t * 100) / 100;
-    }, [selectedServiceIds]);
+    }, [selectedServiceIds, catalogMetaLookupList]);
+
+    const bookingProcedureSummaryLines = useMemo(
+        () => buildBookingProcedureSummaryLines(selectedServiceIds, catalogMetaLookupList, clientCampaignBundles),
+        [selectedServiceIds, catalogMetaLookupList, clientCampaignBundles]
+    );
 
     const selectionHasPromo = useMemo(
-        () => selectedServiceIds.some((id) => PROMO_MAES_SERVICES.some((p) => p.id === id)),
-        [selectedServiceIds]
+        () =>
+            selectedServiceIds.some((id) => {
+                if (FALLBACK_PROMO_SERVICES.some((p) => p.id === id)) return true;
+                const meta = getServiceMeta(id, { clientCatalog: catalogMetaLookupList });
+                return !!(meta && meta.isPromotionalPackage);
+            }),
+        [selectedServiceIds, catalogMetaLookupList]
+    );
+
+    const isPromotionalServiceId = useCallback(
+        (id) => {
+            const sid = String(id || '').trim();
+            if (!sid) return false;
+            if (FALLBACK_PROMO_SERVICES.some((p) => p.id === sid)) return true;
+            const meta = getServiceMeta(sid, { clientCatalog: catalogMetaLookupList });
+            return !!(meta && meta.isPromotionalPackage);
+        },
+        [catalogMetaLookupList]
     );
 
     const toggleServiceSelection = (rawId) => {
         const sid = String(rawId || '').trim();
         if (!sid) return;
+        const bundle = clientCampaignBundleByCardId.get(sid);
+        if (bundle && Array.isArray(bundle.memberServiceIds) && bundle.memberServiceIds.length > 0) {
+            const memberIds = bundle.memberServiceIds;
+            setSelectedServiceIds((prev) => {
+                const allOn = memberIds.every((id) => prev.includes(id));
+                if (allOn) return prev.filter((id) => !memberIds.includes(id));
+                const next = [...prev];
+                for (const mid of memberIds) {
+                    if (!next.includes(mid)) next.push(mid);
+                }
+                return next;
+            });
+            setServiceDetailOpenId(null);
+            return;
+        }
         setSelectedServiceIds((prev) => {
             const i = prev.indexOf(sid);
             if (i >= 0) return prev.filter((_, j) => j !== i);
@@ -1233,29 +1772,25 @@ const ClientArea = ({
 
     useEffect(() => {
         const onPromoTab = serviceCatFilter === PROMO_CLIENT_FILTER_LABEL;
-        const onTodosWithPromos = serviceCatFilter === 'Todos' && promoPackagesEnabled;
-        if (
-            !onPromoTab &&
-            !onTodosWithPromos &&
-            selectedServiceIds.some((id) => PROMO_MAES_SERVICES.some((p) => p.id === id))
-        ) {
-            setSelectedServiceIds((prev) => prev.filter((id) => !PROMO_MAES_SERVICES.some((p) => p.id === id)));
+        const onTodosWithPromos = serviceCatFilter === 'Todos' && promosVisibleOnClient;
+        if (!onPromoTab && !onTodosWithPromos && selectedServiceIds.some((id) => isPromotionalServiceId(id))) {
+            setSelectedServiceIds((prev) => prev.filter((id) => !isPromotionalServiceId(id)));
             setServiceDetailOpenId(null);
         }
-    }, [serviceCatFilter, selectedServiceIds, promoPackagesEnabled]);
+    }, [serviceCatFilter, selectedServiceIds, promosVisibleOnClient, isPromotionalServiceId]);
 
     useEffect(() => {
-        if (!promoPackagesEnabled && serviceCatFilter === PROMO_CLIENT_FILTER_LABEL) {
+        if (!promosVisibleOnClient && serviceCatFilter === PROMO_CLIENT_FILTER_LABEL) {
             setServiceCatFilter('Todos');
         }
-    }, [promoPackagesEnabled, serviceCatFilter]);
+    }, [promosVisibleOnClient, serviceCatFilter]);
 
     useEffect(() => {
-        if (!promoPackagesEnabled && selectedServiceIds.some((id) => PROMO_MAES_SERVICES.some((p) => p.id === id))) {
-            setSelectedServiceIds((prev) => prev.filter((id) => !PROMO_MAES_SERVICES.some((p) => p.id === id)));
+        if (!promosVisibleOnClient && selectedServiceIds.some((id) => isPromotionalServiceId(id))) {
+            setSelectedServiceIds((prev) => prev.filter((id) => !isPromotionalServiceId(id)));
             setServiceDetailOpenId(null);
         }
-    }, [promoPackagesEnabled, selectedServiceIds]);
+    }, [promosVisibleOnClient, selectedServiceIds, isPromotionalServiceId]);
 
     useEffect(() => {
         if (!bookingData.date) {
@@ -1269,7 +1804,8 @@ const ClientArea = ({
                     appointments,
                     blockedSlots || [],
                     blockedFullDays || [],
-                    selectedServiceIds
+                    selectedServiceIds,
+                    catalogMetaLookupList
                 )
             );
             return;
@@ -1281,13 +1817,14 @@ const ClientArea = ({
                     appointments,
                     blockedSlots || [],
                     blockedFullDays || [],
-                    selectedServiceIds
+                    selectedServiceIds,
+                    catalogMetaLookupList
                 )
             );
             return;
         }
         setAvailableTimes([]);
-    }, [bookingData.date, appointments, blockedSlots, blockedFullDays, selectedServiceIds, scheduleMode]);
+    }, [bookingData.date, appointments, blockedSlots, blockedFullDays, selectedServiceIds, scheduleMode, catalogMetaLookupList]);
 
     const canProceedStep1 = useMemo(() => {
         if (selectedServiceIds.length === 0) return false;
@@ -1320,7 +1857,7 @@ const ClientArea = ({
         }
         if (scheduleMode === 'sequential' && bookingData.date && bookingData.time) {
             const sm = parseTimeToMinutes(bookingData.time);
-            const dur = getTotalDurationMinutesForServiceIds(selectedServiceIds);
+            const dur = getTotalDurationMinutesForServiceIds(selectedServiceIds, catalogMetaLookupList);
             const endLabel = sm != null ? formatMinutesAsHHMM(sm + dur) : '';
             return (
                 <div style={{ marginBottom: '10px', fontSize: '15px' }}>
@@ -1335,7 +1872,7 @@ const ClientArea = ({
                     <strong style={{ color: 'var(--primary-color)' }}>Horários por procedimento:</strong>
                     <ul style={{ margin: '8px 0 0', paddingLeft: '1.1rem', fontSize: '14px', lineHeight: 1.55 }}>
                         {selectedServiceIds.map((sid, i) => {
-                            const m = getServiceMeta(sid);
+                            const m = getServiceMeta(sid, { clientCatalog: catalogMetaLookupList });
                             const p = perServicePlan[i] || {};
                             return (
                                 <li key={`sum-${sid}-${i}`}>
@@ -1351,7 +1888,7 @@ const ClientArea = ({
             );
         }
         return null;
-    }, [selectedServiceIds, bookingData.date, bookingData.time, scheduleMode, perServicePlan]);
+    }, [selectedServiceIds, bookingData.date, bookingData.time, scheduleMode, perServicePlan, catalogMetaLookupList]);
 
     useEffect(() => {
         setBookingData(prev => ({...prev, time: ''}));
@@ -1377,7 +1914,7 @@ const ClientArea = ({
             const sid = appRow.serviceId || appRow.service_id;
             const idsRestore = getAppointmentServiceIdsFromApp(appRow);
             const effectiveIds = idsRestore.length ? idsRestore : sid ? [String(sid)] : [];
-            const metas = effectiveIds.map((id) => getServiceMeta(id)).filter(Boolean);
+            const metas = effectiveIds.map((id) => getServiceMeta(id, { clientCatalog: catalogMetaLookupList })).filter(Boolean);
             let mergedService;
             if (metas.length === 1) {
                 mergedService = metas[0];
@@ -1389,7 +1926,7 @@ const ClientArea = ({
                     cardTitle: metas.map((m) => getClientServiceCardTitle(m)).join(' + '),
                     price: Math.round(tot * 100) / 100,
                     category: '',
-                    duration: getTotalDurationMinutesForServiceIds(effectiveIds)
+                    duration: getTotalDurationMinutesForServiceIds(effectiveIds, catalogMetaLookupList)
                 };
             } else {
                 mergedService = {
@@ -1459,7 +1996,7 @@ const ClientArea = ({
         return () => {
             cancelled = true;
         };
-    }, [bookingRestoreOrderNsu, appointments, clients, onBookingRestoreConsumed, mergeAppointmentRow]);
+    }, [bookingRestoreOrderNsu, appointments, clients, onBookingRestoreConsumed, mergeAppointmentRow, catalogMetaLookupList]);
 
     const handleCreateClient = async () => {
         setNewClientFormError('');
@@ -1592,7 +2129,7 @@ const ClientArea = ({
                 throw new Error(data.error || 'Falha no servidor ao agendar.');
             }
 
-            const metas = ids.map((id) => getServiceMeta(id)).filter(Boolean);
+            const metas = ids.map((id) => getServiceMeta(id, { clientCatalog: catalogMetaLookupList })).filter(Boolean);
             const mergedForUi =
                 metas.length === 1
                     ? metas[0]
@@ -1600,9 +2137,9 @@ const ClientArea = ({
                           id: ids[0],
                           name: metas.map((m) => m.name).join(' + '),
                           cardTitle: metas.map((m) => getClientServiceCardTitle(m)).join(' + '),
-                          price: Math.round(totalP * 100) / 100,
+                          price: selectionTotalPrice,
                           category: '',
-                          duration: getTotalDurationMinutesForServiceIds(ids)
+                          duration: getTotalDurationMinutesForServiceIds(ids, catalogMetaLookupList)
                       };
 
             setCompletedAppInfo({ service: mergedForUi, app: data, client: selectedClient });
@@ -1652,9 +2189,9 @@ const ClientArea = ({
                                     key={s.id}
                                     role="button"
                                     tabIndex={0}
-                                    className={`service-card${s.promotionalCampaign ? ' service-card--promo' : ''}${
-                                        selectedServiceIds.includes(s.id) ? ' selected' : ''
-                                    }`}
+                                    className={`service-card${s.promotionalCampaign || s.isPromotionalPackage ? ' service-card--promo' : ''}${
+                                        s.isCampaignBundle ? ' service-card--campaign-bundle' : ''
+                                    }${isClientGridItemSelected(s, selectedServiceIds) ? ' selected' : ''}`}
                                     onClick={() => toggleServiceSelection(s.id)}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter' || e.key === ' ') {
@@ -1663,13 +2200,16 @@ const ClientArea = ({
                                         }
                                     }}
                                 >
-                                    {s.promotionalCampaign ? (
-                                        <span className="service-card__promo-pill" title="Vales-presente Dia das Mães">
-                                            Dia das Mães
+                                    {s.promotionalCampaign || s.isPromotionalPackage ? (
+                                        <span
+                                            className="service-card__promo-pill"
+                                            title={getClientCampaignPillLabel(s)}
+                                        >
+                                            {getClientCampaignPillLabel(s)}
                                         </span>
                                     ) : null}
                                     <div className="service-card-header">
-                                        <h3>{getClientServiceCardTitle(s)}</h3>
+                                        <h3>{s.isCampaignBundle ? CLIENT_CAMPAIGN_CARD_MAIN_TITLE : getClientServiceCardTitle(s)}</h3>
                                         <i className="fas fa-check-circle service-check" aria-hidden />
                                     </div>
                                     <div
@@ -1682,7 +2222,7 @@ const ClientArea = ({
                                             marginTop: '2px'
                                         }}
                                     >
-                                        {s.category}
+                                        {s.isCampaignBundle ? PROMO_CLIENT_FILTER_LABEL : s.category}
                                     </div>
                                     <div className="service-price">{formatPrice(s.price)}</div>
                                     <div style={{ marginTop: 'auto', paddingTop: '12px' }}>
@@ -1709,7 +2249,7 @@ const ClientArea = ({
                                         >
                                             {detailsOpen ? 'Ocultar detalhes' : 'Ver detalhes'}
                                         </button>
-                                        {detailsOpen && (s.detail || s.summary || (s.cardTitle && s.name && s.cardTitle !== s.name)) ? (
+                                        {detailsOpen && s.isCampaignBundle && Array.isArray(s.includedServices) && s.includedServices.length > 0 ? (
                                             <div
                                                 style={{
                                                     marginTop: '10px',
@@ -1719,13 +2259,41 @@ const ClientArea = ({
                                                     textAlign: 'left'
                                                 }}
                                             >
-                                                {s.cardTitle && s.name && s.cardTitle !== s.name && (
-                                                    <p style={{ margin: '0 0 10px', fontSize: '12px', color: 'var(--text-dark)' }}>
-                                                        <strong>Procedimento:</strong> {s.name}
+                                                <p style={{ margin: '0 0 8px', fontSize: '12px', color: 'var(--text-dark)' }}>
+                                                    <strong>Procedimento:</strong> {CLIENT_CAMPAIGN_CARD_MAIN_TITLE}
+                                                </p>
+                                                <p style={{ margin: '0 0 6px', fontWeight: 700, color: 'var(--text-dark)', fontSize: '12px' }}>
+                                                    Inclui:
+                                                </p>
+                                                <ul style={{ margin: '0 0 10px', paddingLeft: '1.1rem' }}>
+                                                    {s.includedServices.map((inc) => (
+                                                        <li key={inc.id} style={{ marginBottom: '4px' }}>
+                                                            {inc.label}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                                <p style={{ margin: 0, fontWeight: 700, color: 'var(--text-dark)' }}>
+                                                    Valor total: {formatPrice(s.price)}
+                                                </p>
+                                            </div>
+                                        ) : null}
+                                        {detailsOpen && !s.isCampaignBundle ? (
+                                            <div
+                                                style={{
+                                                    marginTop: '10px',
+                                                    fontSize: '13px',
+                                                    color: 'var(--text-muted)',
+                                                    lineHeight: 1.5,
+                                                    textAlign: 'left'
+                                                }}
+                                            >
+                                                {String(s.name || '').trim() ? (
+                                                    <p style={{ margin: '0 0 8px', fontSize: '12px', color: 'var(--text-dark)' }}>
+                                                        <strong>Procedimento:</strong> {String(s.name).trim()}
                                                     </p>
-                                                )}
-                                                {s.summary && <p style={{ margin: '0 0 8px' }}>{s.summary}</p>}
-                                                {s.detail && <p style={{ margin: 0 }}>{s.detail}</p>}
+                                                ) : null}
+                                                {s.summary ? <p style={{ margin: '0 0 8px' }}>{s.summary}</p> : null}
+                                                {s.detail ? <p style={{ margin: 0 }}>{s.detail}</p> : null}
                                             </div>
                                         ) : null}
                                     </div>
@@ -1889,7 +2457,7 @@ const ClientArea = ({
                                 </p>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
                                     {selectedServiceIds.map((sid, idx) => {
-                                        const m = getServiceMeta(sid);
+                                        const m = getServiceMeta(sid, { clientCatalog: catalogMetaLookupList });
                                         const row = perServicePlan[idx] || { date: '', time: '' };
                                         const slotOpts = row.date
                                             ? generateTimeSlots(
@@ -1897,7 +2465,8 @@ const ClientArea = ({
                                                   appointments,
                                                   blockedSlots || [],
                                                   blockedFullDays || [],
-                                                  [sid]
+                                                  [sid],
+                                                  catalogMetaLookupList
                                               )
                                             : [];
                                         return (
@@ -2098,15 +2667,26 @@ const ClientArea = ({
                     <div style={{background: '#fcfcfc', padding: '25px', borderRadius: '12px', textAlign: 'left', marginBottom: '20px', display: 'inline-block', maxWidth: '400px', width: '100%', border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.03)'}}>
                         <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Procedimentos:</strong></div>
                         <ul style={{ margin: '0 0 12px', paddingLeft: '1.1rem', fontSize: '14px', lineHeight: 1.5 }}>
-                            {selectedServiceIds.map((sid) => {
-                                const m = getServiceMeta(sid);
-                                return (
-                                    <li key={sid} style={{ marginBottom: '4px' }}>
-                                        {m ? getClientServiceCardTitle(m) : sid}{' '}
-                                        <span style={{ color: 'var(--text-muted)' }}>({formatPrice(Number(m?.price || 0))})</span>
+                            {bookingProcedureSummaryLines.map((line) =>
+                                line.type === 'campaign' ? (
+                                    <li key={line.key} style={{ marginBottom: '8px' }}>
+                                        <div>
+                                            <strong>{line.title}</strong>{' '}
+                                            <span style={{ color: 'var(--text-muted)' }}>({formatPrice(line.total)})</span>
+                                        </div>
+                                        {line.includes && line.includes.length > 0 ? (
+                                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                                Inclui: {line.includes.join(' + ')}
+                                            </div>
+                                        ) : null}
                                     </li>
-                                );
-                            })}
+                                ) : (
+                                    <li key={line.key} style={{ marginBottom: '4px' }}>
+                                        {line.title}{' '}
+                                        <span style={{ color: 'var(--text-muted)' }}>({formatPrice(line.total)})</span>
+                                    </li>
+                                )
+                            )}
                         </ul>
                         {scheduleSummaryBlock}
                         {bookingData.location && <div style={{marginBottom: '10px', fontSize: '15px'}}><strong style={{color: 'var(--primary-color)'}}>Endereço Cliente:</strong> {bookingData.location}</div>}
@@ -2222,11 +2802,11 @@ const ClientArea = ({
                     return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
                 };
 
-                const { scheduleHint: step4ScheduleHint } = formatAgendaServiceSummary(liveApp);
+                const { scheduleHint: step4ScheduleHint } = formatAgendaServiceSummary(liveApp, catalogMetaLookupList);
                 const lineItemsStep4 =
                     Array.isArray(liveApp?.serviceLineItems) && liveApp.serviceLineItems.length > 0
                         ? liveApp.serviceLineItems
-                        : buildLineItemsFromAppointmentApp(liveApp);
+                        : buildLineItemsFromAppointmentApp(liveApp, catalogMetaLookupList);
                 const svcTotalFromApi =
                     liveApp?.paymentSummary?.totalServicePrice != null
                         ? Number(liveApp.paymentSummary.totalServicePrice)
@@ -2418,18 +2998,18 @@ const AdminArea = ({
     blockedFullDays,
     adminToken,
     onAdminSessionInvalid,
-    promoPackagesEnabled,
-    onPromoPackagesChange
+    onExitAdmin,
+    catalogServicesClient
 }) => {
     const [adminPanelRefreshing, setAdminPanelRefreshing] = useState(false);
-    const [adminView, setAdminView] = useState('agenda'); // agenda | clients | report | blocks | campaigns
+    const [adminSidebarCollapsed, setAdminSidebarCollapsed] = useState(false);
+    const [adminView, setAdminView] = useState('agenda'); // agenda | clients | report | blocks | campaigns | services
     const [filter, setFilter] = useState('today'); // today | next | all
     const [filterDate, setFilterDate] = useState('');
     const [agendaClientSearch, setAgendaClientSearch] = useState('');
     const [blockManageDate, setBlockManageDate] = useState(() => getLocalTodayStr());
     const [reportStartDate, setReportStartDate] = useState('');
     const [reportEndDate, setReportEndDate] = useState('');
-    const [promoSaving, setPromoSaving] = useState(false);
     const [reportData, setReportData] = useState(null);
     const [reportLoading, setReportLoading] = useState(false);
     const [reportError, setReportError] = useState('');
@@ -2439,6 +3019,14 @@ const AdminArea = ({
     const [manualPayModal, setManualPayModal] = useState(null); // { id, clientName, serviceName, total, paymentType, paidAmount, note, saving, error }
     const [settleBalanceModal, setSettleBalanceModal] = useState(null); // { id, clientName, serviceName, total, paidSoFar, remaining, note, saving, error }
     const [confirmLocalPayModal, setConfirmLocalPayModal] = useState(null); // { id, clientName, serviceName, total, remaining, note, saving, error }
+    const [servicesAdminList, setServicesAdminList] = useState([]);
+    const [servicesAdminLoading, setServicesAdminLoading] = useState(false);
+    const [servicesAdminError, setServicesAdminError] = useState('');
+    const [serviceModal, setServiceModal] = useState(null);
+    const [adminCampaigns, setAdminCampaigns] = useState([]);
+    const [adminCampaignsLoading, setAdminCampaignsLoading] = useState(false);
+    const [adminCampaignsError, setAdminCampaignsError] = useState('');
+    const [campaignModal, setCampaignModal] = useState(null);
 
     const todayStr = getLocalTodayStr();
 
@@ -2450,6 +3038,74 @@ const AdminArea = ({
             onAdminSessionInvalid();
         }
         return res;
+    };
+
+    const loadAdminServices = async () => {
+        setServicesAdminLoading(true);
+        setServicesAdminError('');
+        try {
+            const res = await adminFetch(`${API_BASE_URL}/admin/services`);
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setServicesAdminError(data.error || 'Não foi possível carregar os serviços.');
+                setServicesAdminList([]);
+                return [];
+            }
+            const list = Array.isArray(data) ? data : [];
+            setServicesAdminList(list);
+            return list;
+        } catch (e) {
+            setServicesAdminError(e.message || 'Erro de rede ao carregar serviços.');
+            setServicesAdminList([]);
+            return [];
+        } finally {
+            setServicesAdminLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (adminView === 'services') {
+            loadAdminServices();
+        }
+    }, [adminView, adminToken]);
+
+    const loadAdminCampaigns = async () => {
+        setAdminCampaignsLoading(true);
+        setAdminCampaignsError('');
+        try {
+            const res = await adminFetch(`${API_BASE_URL}/admin/campaigns`);
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setAdminCampaignsError(data.error || 'Não foi possível carregar as campanhas.');
+                setAdminCampaigns([]);
+                return;
+            }
+            setAdminCampaigns(Array.isArray(data) ? data : []);
+        } catch (e) {
+            setAdminCampaignsError(e.message || 'Erro de rede ao carregar campanhas.');
+            setAdminCampaigns([]);
+        } finally {
+            setAdminCampaignsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (adminView === 'campaigns') {
+            loadAdminCampaigns();
+            loadAdminServices();
+        }
+    }, [adminView, adminToken]);
+
+    /** Campanhas: `active` pode vir como string do JSON legado — evita "Inativar" com campanha já inativa. */
+    const isAdminCampaignRowActive = (c) => {
+        if (!c) return false;
+        const v = c.active;
+        if (v === true || v === 1) return true;
+        if (v === false || v === 0 || v == null) return false;
+        const s = String(v).trim().toLowerCase();
+        if (s === 'true' || s === '1' || s === 't' || s === 'on') return true;
+        if (s === 'false' || s === '0' || s === 'f' || s === 'off' || s === '') return false;
+        return Boolean(v);
     };
 
     const openEditClient = (c) => {
@@ -2535,9 +3191,24 @@ const AdminArea = ({
         });
     }, [appointments]);
 
+    const adminCatalogLookup = useMemo(() => {
+        if (Array.isArray(catalogServicesClient) && catalogServicesClient.length > 0) {
+            return catalogServicesClient;
+        }
+        return null;
+    }, [catalogServicesClient]);
+
     const adminBlockSlots = useMemo(
-        () => generateTimeSlots(blockManageDate, appointments, blockedSlots || [], blockedFullDays || []),
-        [blockManageDate, appointments, blockedSlots, blockedFullDays]
+        () =>
+            generateTimeSlots(
+                blockManageDate,
+                appointments,
+                blockedSlots || [],
+                blockedFullDays || [],
+                [],
+                adminCatalogLookup
+            ),
+        [blockManageDate, appointments, blockedSlots, blockedFullDays, adminCatalogLookup]
     );
 
     const filteredApps = useMemo(() => {
@@ -2968,7 +3639,8 @@ const AdminArea = ({
                     const location = app.location || '';
                     const notes = app.notes || '';
                     const cancelReason = app.cancelReason || app.cancel_reason || '';
-                    const { label: serviceName, total: serviceTotal, scheduleHint } = formatAgendaServiceSummary(app);
+                    const { label: serviceName, total: serviceTotal, scheduleHint } = formatAgendaServiceSummary(app, adminCatalogLookup);
+                    const adminItems = buildLineItemsFromAppointmentApp(app, adminCatalogLookup);
                     const servicePriceStr =
                         typeof serviceTotal === 'number' && Number.isFinite(serviceTotal)
                             ? formatPrice(serviceTotal)
@@ -3000,6 +3672,23 @@ const AdminArea = ({
                                         >
                                             Horários: {scheduleHint}
                                         </div>
+                                    ) : null}
+                                    {adminItems.length > 1 ? (
+                                        <span style={{ display: 'block', marginTop: '8px', fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.45 }}>
+                                            {adminItems.map((it) => {
+                                                const cancelled =
+                                                    String(it.status || '').toLowerCase() === APPOINTMENT_ITEM_STATUS_CANCELLED;
+                                                const dLbl = it.date
+                                                    ? new Date(it.date + 'T12:00:00').toLocaleDateString('pt-BR')
+                                                    : '—';
+                                                return (
+                                                    <span key={`${app.id}-adm-${it.slotIndex}-${it.id}`} style={{ display: 'block', marginBottom: '4px' }}>
+                                                        <strong>{it.name}</strong> — {dLbl} {it.time || ''}
+                                                        {cancelled ? ' (cancelado)' : ''}
+                                                    </span>
+                                                );
+                                            })}
+                                        </span>
                                     ) : null}
                                 </>
                             }
@@ -3291,102 +3980,935 @@ const AdminArea = ({
         </div>
     );
 
-    const handlePromoToggle = async (nextEnabled) => {
-        setPromoSaving(true);
-        try {
-            const res = await adminFetch(`${API_BASE_URL}/admin/promotional-packages`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ enabled: nextEnabled })
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) {
-                alert(data.error || 'Não foi possível salvar a campanha.');
-                return;
-            }
-            const saved =
-                data.promotionalPackagesEnabled === true ||
-                data.promotionalPackagesEnabled === 'true' ||
-                String(data.promotionalPackagesEnabled || '')
-                    .trim()
-                    .toLowerCase() === 'on';
-            if (typeof onPromoPackagesChange === 'function') {
-                onPromoPackagesChange(saved);
-            }
-            if (typeof refreshData === 'function') {
-                await refreshData();
-            }
-        } catch (e) {
-            console.error(e);
-            alert('Erro de rede ao salvar.');
-        } finally {
-            setPromoSaving(false);
-        }
-    };
-
     const handleAdminPanelRefresh = async () => {
         setAdminPanelRefreshing(true);
         try {
             await refreshData();
+            if (adminView === 'services') {
+                await loadAdminServices();
+            }
+            if (adminView === 'campaigns') {
+                await loadAdminCampaigns();
+                await loadAdminServices();
+            }
         } finally {
             setAdminPanelRefreshing(false);
         }
     };
 
-    const renderCampaigns = () => (
-        <div className="admin-campaigns-panel" style={{ textAlign: 'left', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
-            <h3 style={{ margin: '0 0 8px', fontFamily: 'var(--font-heading, Georgia, serif)' }}>Vales-presente — campanha</h3>
-            <p style={{ fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.55, marginBottom: '18px' }}>
-                Use para campanhas temporárias (ex.: <strong>Dia das Mães</strong>). Com a campanha <strong>desligada</strong>, os
-                vales-presente somem da lista da cliente e novos agendamentos com esses itens são recusados no servidor.
-            </p>
+    const isoToDateInputValue = (iso) => {
+        if (!iso) return '';
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return '';
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    };
 
-            <div className="promo-admin-toggle-card">
-                <div style={{ flex: '1 1 220px', minWidth: 0 }}>
-                    <div style={{ fontWeight: 800, fontSize: '15px', color: 'var(--text-dark)', marginBottom: '4px' }}>
-                        Vales-presente Dia das Mães
-                    </div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.45 }}>
-                        Exibidos por último na etapa de escolha de serviço (e na aba Campanhas), com visual destacado.
-                    </div>
-                </div>
-                <label
-                    className="promo-admin-switch"
+    /** Início do dia local → ISO para `valid_from`. `undefined` = data inválida; `null` = vazio. */
+    const dateInputToStartOfDayIsoOrNull = (dateStr) => {
+        if (!dateStr || !String(dateStr).trim()) return null;
+        const p = String(dateStr).trim().split('-');
+        if (p.length !== 3) return undefined;
+        const y = Number(p[0]);
+        const mo = Number(p[1]);
+        const da = Number(p[2]);
+        if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(da)) return undefined;
+        const dt = new Date(y, mo - 1, da, 0, 0, 0, 0);
+        if (Number.isNaN(dt.getTime())) return undefined;
+        return dt.toISOString();
+    };
+
+    /** Fim do dia local → ISO para `valid_to`. */
+    const dateInputToEndOfDayIsoOrNull = (dateStr) => {
+        if (!dateStr || !String(dateStr).trim()) return null;
+        const p = String(dateStr).trim().split('-');
+        if (p.length !== 3) return undefined;
+        const y = Number(p[0]);
+        const mo = Number(p[1]);
+        const da = Number(p[2]);
+        if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(da)) return undefined;
+        const dt = new Date(y, mo - 1, da, 23, 59, 59, 999);
+        if (Number.isNaN(dt.getTime())) return undefined;
+        return dt.toISOString();
+    };
+
+    const formatCampaignValidityShort = (vf, vt) => {
+        if (!vf && !vt) return '—';
+        try {
+            const fmt = (iso) =>
+                iso
+                    ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+                    : '…';
+            return `${fmt(vf)} → ${fmt(vt)}`;
+        } catch (_) {
+            return '—';
+        }
+    };
+
+    const openCreateCampaign = async () => {
+        await loadAdminServices();
+        setCampaignModal({
+            mode: 'create',
+            name: '',
+            validFromStr: '',
+            validToStr: '',
+            category: 'Campanhas',
+            assignIds: [],
+            savingMeta: false,
+            error: ''
+        });
+    };
+
+    const openEditCampaign = async (c) => {
+        const list = await loadAdminServices();
+        const linked = (list || []).filter((s) => s.promotionalCampaign === c.id).map((s) => s.id);
+        setCampaignModal({
+            mode: 'edit',
+            id: c.id,
+            name: c.name || '',
+            validFromStr: c.validFrom ? isoToDateInputValue(c.validFrom) : '',
+            validToStr: c.validTo ? isoToDateInputValue(c.validTo) : '',
+            category: c.category || 'Campanhas',
+            assignIds: linked,
+            savingMeta: false,
+            error: ''
+        });
+    };
+
+    const patchCampaignModal = (k, v) => {
+        setCampaignModal((m) => (m ? { ...m, [k]: v, error: '' } : m));
+    };
+
+    const saveCampaignMeta = async () => {
+        if (!campaignModal) return;
+        const name = String(campaignModal.name || '').trim();
+        if (!name) {
+            setCampaignModal((m) => (m ? { ...m, error: 'Informe o nome da campanha.' } : m));
+            return;
+        }
+        const vf = dateInputToStartOfDayIsoOrNull(campaignModal.validFromStr);
+        const vt = dateInputToEndOfDayIsoOrNull(campaignModal.validToStr);
+        if (campaignModal.validFromStr && String(campaignModal.validFromStr).trim() && vf === undefined) {
+            setCampaignModal((m) => (m ? { ...m, error: 'Data inicial inválida.' } : m));
+            return;
+        }
+        if (campaignModal.validToStr && String(campaignModal.validToStr).trim() && vt === undefined) {
+            setCampaignModal((m) => (m ? { ...m, error: 'Data final inválida.' } : m));
+            return;
+        }
+        if (vf && vt && new Date(vf).getTime() > new Date(vt).getTime()) {
+            setCampaignModal((m) => (m ? { ...m, error: 'A data inicial deve ser anterior ou igual à data final.' } : m));
+            return;
+        }
+        const ids = [...new Set((campaignModal.assignIds || []).map((x) => String(x || '').trim()).filter(Boolean))];
+        if (ids.length === 0) {
+            setCampaignModal((m) => (m ? { ...m, error: 'Selecione pelo menos um procedimento para a campanha.' } : m));
+            return;
+        }
+        setCampaignModal((m) => (m ? { ...m, savingMeta: true, error: '' } : m));
+        try {
+            const bodyBase = {
+                name,
+                validFrom: vf,
+                validTo: vt,
+                category: String(campaignModal.category || 'Campanhas').trim() || 'Campanhas',
+                serviceIds: ids
+            };
+            const body =
+                campaignModal.mode === 'create'
+                    ? { ...bodyBase, description: '', active: true }
+                    : bodyBase;
+            let res;
+            if (campaignModal.mode === 'create') {
+                res = await adminFetch(`${API_BASE_URL}/admin/campaigns`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+            } else {
+                res = await adminFetch(`${API_BASE_URL}/admin/campaigns/${encodeURIComponent(campaignModal.id)}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+            }
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setCampaignModal((m) => (m ? { ...m, savingMeta: false, error: data.error || 'Não foi possível salvar.' } : m));
+                return;
+            }
+            setCampaignModal(null);
+            await loadAdminCampaigns();
+            await loadAdminServices();
+            await refreshData();
+        } catch (e) {
+            setCampaignModal((m) => (m ? { ...m, savingMeta: false, error: 'Erro de rede.' } : m));
+        }
+    };
+
+    const toggleAssignServiceId = (sid) => {
+        setCampaignModal((m) => {
+            if (!m) return m;
+            const id = String(sid || '').trim();
+            if (!id) return m;
+            const cur = Array.isArray(m.assignIds) ? m.assignIds : [];
+            const i = cur.indexOf(id);
+            const next = i >= 0 ? cur.filter((x) => x !== id) : [...cur, id];
+            return { ...m, assignIds: next, error: '' };
+        });
+    };
+
+    const inactivateCampaign = async (c) => {
+        if (!c || !c.id) return;
+        if (
+            !window.confirm(
+                `Inativar a campanha «${c.name}»? Os pacotes deixam de aparecer para novas clientes; agendamentos antigos permanecem intactos.`
+            )
+        ) {
+            return;
+        }
+        const res = await adminFetch(`${API_BASE_URL}/admin/campaigns/${encodeURIComponent(c.id)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ active: false })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            alert(data.error || 'Não foi possível inativar.');
+            return;
+        }
+        await loadAdminCampaigns();
+        await loadAdminServices();
+        await refreshData();
+    };
+
+    const activateCampaign = async (c) => {
+        if (!c || !c.id) return;
+        if (!window.confirm(`Reativar a campanha «${c.name}»? Os pacotes voltam a poder aparecer para novas clientes (conforme validade).`)) {
+            return;
+        }
+        const res = await adminFetch(`${API_BASE_URL}/admin/campaigns/${encodeURIComponent(c.id)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ active: true })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            alert(data.error || 'Não foi possível ativar.');
+            return;
+        }
+        await loadAdminCampaigns();
+        await loadAdminServices();
+        await refreshData();
+    };
+
+    const deleteCampaign = async (c) => {
+        if (!c || !c.id) return;
+        if (!window.confirm('Tem certeza que deseja apagar esta campanha? Ela não aparecerá mais para novos clientes.')) return;
+        try {
+            let res = await adminFetch(`${API_BASE_URL}/admin/campaigns/${encodeURIComponent(c.id)}`, { method: 'DELETE' });
+            if (!res.ok && res.status === 405) {
+                res = await adminFetch(`${API_BASE_URL}/admin/campaigns/${encodeURIComponent(c.id)}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ archived: true })
+                });
+            }
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.error || 'Não foi possível apagar.');
+                return;
+            }
+            if (campaignModal && campaignModal.mode === 'edit' && campaignModal.id === c.id) {
+                setCampaignModal(null);
+            }
+            await loadAdminCampaigns();
+            await loadAdminServices();
+            await refreshData();
+        } catch (e) {
+            alert('Erro de rede.');
+        }
+    };
+
+    const renderCampaigns = () => {
+        const fmtMoney = (p) => {
+            const n = Number(p);
+            if (!Number.isFinite(n)) return '—';
+            return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        };
+        const linkedPackagesTotal = (campaignId) => {
+            const cid = String(campaignId || '');
+            let sum = 0;
+            for (const s of servicesAdminList || []) {
+                if (String(s.promotionalCampaign || '') !== cid || !s.isPromotionalPackage) continue;
+                const n = Number(s.price);
+                if (Number.isFinite(n)) sum += n;
+            }
+            return sum;
+        };
+
+        const cidPick = campaignModal && campaignModal.mode === 'edit' ? campaignModal.id : null;
+        const assignableCampaignServices = (servicesAdminList || []).filter((s) => {
+            if (!s) return false;
+            if (s.isPromotionalPackage) {
+                const pc = String(s.promotionalCampaign || '').trim();
+                if (!cidPick) return true;
+                return !pc || pc === cidPick;
+            }
+            return true;
+        });
+
+        return (
+            <div className="admin-services-panel" style={{ textAlign: 'left', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+                <div
                     style={{
-                        flexShrink: 0,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '10px',
-                        cursor: promoSaving ? 'wait' : 'pointer',
-                        fontWeight: 700,
-                        fontSize: '14px',
-                        color: promoPackagesEnabled ? 'var(--brand-primary)' : 'var(--text-muted)'
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        justifyContent: 'space-between',
+                        gap: '12px',
+                        alignItems: 'flex-start',
+                        marginBottom: '16px'
                     }}
                 >
-                    <input
-                        type="checkbox"
-                        checked={!!promoPackagesEnabled}
-                        disabled={promoSaving}
-                        onChange={(e) => handlePromoToggle(e.target.checked)}
-                        style={{ width: '22px', height: '22px', accentColor: 'var(--brand-primary)' }}
-                    />
-                    <span>{promoPackagesEnabled ? 'Ativo' : 'Inativo'}</span>
-                </label>
-            </div>
+                    <div style={{ minWidth: 0, flex: '1 1 220px' }}>
+                        <h3 style={{ margin: '0 0 6px', fontFamily: 'var(--font-heading, Georgia, serif)' }}>Campanhas</h3>
+                        <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.55 }}>
+                            Agrupe <strong>pacotes promocionais</strong> do catálogo. <strong>Inativar</strong> ou <strong>Apagar</strong> oculta para novas
+                            clientes; agendamentos antigos permanecem intactos.
+                        </p>
+                    </div>
+                    <button type="button" className="btn-submit" onClick={openCreateCampaign}>
+                        <i className="fas fa-plus" aria-hidden="true" /> Nova campanha
+                    </button>
+                </div>
 
-            <div style={{ marginTop: '22px', fontSize: '13px', color: 'var(--text-muted)' }}>
-                <div style={{ fontWeight: 700, color: 'var(--text-dark)', marginBottom: '8px' }}>Vales-presente configurados</div>
-                <ul style={{ margin: 0, paddingLeft: '1.15rem', lineHeight: 1.55 }}>
-                    <li>
-                        <strong>Vale-presente 1</strong> (R$ 99,00) — reflexologia com escalda-pés, massagem relaxante e hidratação profunda nos pés.
-                    </li>
-                    <li style={{ marginTop: '6px' }}>
-                        <strong>Vale-presente 2</strong> (R$ 99,00) — limpeza de pele suave, máscara revigorante e massagem facial.
-                    </li>
-                </ul>
+                {adminCampaignsError ? <div className="alert alert-error" style={{ marginBottom: '12px' }}>{adminCampaignsError}</div> : null}
+
+                {adminCampaignsLoading ? (
+                    <p style={{ color: 'var(--text-muted)' }}>Carregando…</p>
+                ) : (
+                    <div
+                        className="admin-services-table-wrap"
+                        style={{
+                            overflowX: 'auto',
+                            WebkitOverflowScrolling: 'touch',
+                            borderRadius: '10px',
+                            border: '1px solid var(--border-color)',
+                            background: 'var(--card-bg)',
+                            maxWidth: '100%'
+                        }}
+                    >
+                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 'min(100%, 720px)' }}>
+                            <thead>
+                                <tr style={{ background: 'rgba(111, 76, 165, 0.08)', textAlign: 'left' }}>
+                                    <th style={{ padding: '10px 12px', fontSize: '12px' }}>Nome</th>
+                                    <th style={{ padding: '10px 12px', fontSize: '12px' }}>Categoria</th>
+                                    <th style={{ padding: '10px 12px', fontSize: '12px' }}>Valor</th>
+                                    <th style={{ padding: '10px 12px', fontSize: '12px' }}>Ativa</th>
+                                    <th style={{ padding: '10px 12px', fontSize: '12px' }}>Validade</th>
+                                    <th className="admin-campaigns-table-actions-col" style={{ padding: '10px 12px', fontSize: '12px' }}>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {adminCampaigns.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={6} style={{ padding: '14px 12px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                                            Nenhuma campanha cadastrada. Use «Nova campanha» para criar.
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    adminCampaigns.map((c) => {
+                                        const total = linkedPackagesTotal(c.id);
+                                        const nPack = c.linkedCount != null ? Number(c.linkedCount) : 0;
+                                        const rowActive = isAdminCampaignRowActive(c);
+                                        return (
+                                            <tr key={c.id} style={{ borderTop: '1px solid var(--border-color)' }}>
+                                                <td style={{ padding: '10px 12px', fontSize: '13px', wordBreak: 'break-word' }}>
+                                                    <div style={{ fontWeight: 700 }}>{c.name}</div>
+                                                </td>
+                                                <td style={{ padding: '10px 12px', fontSize: '13px', wordBreak: 'break-word' }}>
+                                                    {c.category || 'Campanhas'}
+                                                </td>
+                                                <td style={{ padding: '10px 12px', fontSize: '13px', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
+                                                    <div>{fmtMoney(total)}</div>
+                                                    {nPack > 0 ? (
+                                                        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                                                            {nPack} pacote{nPack !== 1 ? 's' : ''}
+                                                        </div>
+                                                    ) : null}
+                                                </td>
+                                                <td style={{ padding: '10px 12px', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                                                    {rowActive ? 'Sim' : 'Não'}
+                                                </td>
+                                                <td
+                                                    style={{
+                                                        padding: '10px 12px',
+                                                        fontSize: '12px',
+                                                        whiteSpace: 'nowrap',
+                                                        color: 'var(--text-muted)',
+                                                        verticalAlign: 'top'
+                                                    }}
+                                                >
+                                                    {formatCampaignValidityShort(c.validFrom, c.validTo)}
+                                                </td>
+                                                <td className="admin-campaigns-actions-cell admin-campaigns-table-actions-col">
+                                                    <div className="admin-campaigns-actions-row">
+                                                        <button
+                                                            type="button"
+                                                            className="admin-campaigns-action-btn admin-campaigns-action-btn--edit"
+                                                            onClick={() => openEditCampaign(c)}
+                                                        >
+                                                            Editar
+                                                        </button>
+                                                        {rowActive ? (
+                                                            <button
+                                                                type="button"
+                                                                className="admin-campaigns-action-btn admin-campaigns-action-btn--inativar"
+                                                                onClick={() => inactivateCampaign(c)}
+                                                            >
+                                                                Inativar
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                type="button"
+                                                                className="admin-campaigns-action-btn admin-campaigns-action-btn--ativar"
+                                                                onClick={() => activateCampaign(c)}
+                                                            >
+                                                                Ativar
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            type="button"
+                                                            className="admin-campaigns-action-btn admin-campaigns-action-btn--apagar"
+                                                            onClick={() => deleteCampaign(c)}
+                                                        >
+                                                            Apagar
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {campaignModal ? (
+                <div className="password-overlay" style={{ zIndex: 10070 }} role="dialog" aria-modal="true">
+                    <div
+                        className="password-modal"
+                        style={{
+                            maxWidth: '560px',
+                            width: '100%',
+                            textAlign: 'left',
+                            maxHeight: '90vh',
+                            overflowY: 'auto',
+                            overflowX: 'hidden',
+                            boxSizing: 'border-box'
+                        }}
+                    >
+                        <h3 style={{ marginBottom: '12px', textAlign: 'center' }}>
+                            {campaignModal.mode === 'create' ? 'Nova campanha' : 'Editar campanha'}
+                        </h3>
+                        <div className="form-group full-width">
+                            <label className="form-label">Nome *</label>
+                            <input
+                                className="form-control"
+                                style={{ minWidth: 0, width: '100%', boxSizing: 'border-box' }}
+                                value={campaignModal.name}
+                                onChange={(e) => patchCampaignModal('name', e.target.value)}
+                            />
+                        </div>
+                        <div className="form-group full-width">
+                            <label className="form-label">Categoria</label>
+                            <input
+                                className="form-control"
+                                style={{ minWidth: 0, width: '100%', boxSizing: 'border-box' }}
+                                value={campaignModal.category}
+                                onChange={(e) => patchCampaignModal('category', e.target.value)}
+                            />
+                        </div>
+                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '4px' }}>
+                            <div className="form-group full-width" style={{ flex: '1 1 200px', minWidth: 0 }}>
+                                <label className="form-label">Início da validade (opcional)</label>
+                                <input
+                                    className="form-control"
+                                    type="date"
+                                    style={{ minWidth: 0, width: '100%', boxSizing: 'border-box' }}
+                                    value={campaignModal.validFromStr}
+                                    onChange={(e) => patchCampaignModal('validFromStr', e.target.value)}
+                                />
+                            </div>
+                            <div className="form-group full-width" style={{ flex: '1 1 200px', minWidth: 0 }}>
+                                <label className="form-label">Fim da validade (opcional)</label>
+                                <input
+                                    className="form-control"
+                                    type="date"
+                                    style={{ minWidth: 0, width: '100%', boxSizing: 'border-box' }}
+                                    value={campaignModal.validToStr}
+                                    onChange={(e) => patchCampaignModal('validToStr', e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 12px', lineHeight: 1.45 }}>
+                            As datas usam o dia inteiro: início à meia-noite e fim até 23h59 do dia escolhido (horário local).
+                        </p>
+
+                        <div style={{ marginTop: '8px', marginBottom: '12px' }}>
+                            <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '8px' }}>Pacotes / procedimentos da campanha</div>
+                            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 8px', lineHeight: 1.45 }}>
+                                Marque um ou mais itens do catálogo. O cliente vê cada pacote na aba Campanhas; no agendamento, o valor total é a soma dos
+                                procedimentos selecionados (cada um com o preço do catálogo).
+                            </p>
+                            <div
+                                style={{
+                                    maxHeight: 'min(280px, 45vh)',
+                                    overflowY: 'auto',
+                                    WebkitOverflowScrolling: 'touch',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: '8px',
+                                    padding: '8px',
+                                    marginBottom: '4px'
+                                }}
+                            >
+                                {servicesAdminLoading ? (
+                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Carregando catálogo…</div>
+                                ) : assignableCampaignServices.length === 0 ? (
+                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Nenhum procedimento disponível para vincular.</div>
+                                ) : (
+                                    assignableCampaignServices.map((s) => (
+                                        <label
+                                            key={s.id}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'flex-start',
+                                                gap: '8px',
+                                                fontSize: '13px',
+                                                padding: '6px 4px',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={(campaignModal.assignIds || []).indexOf(s.id) >= 0}
+                                                onChange={() => toggleAssignServiceId(s.id)}
+                                            />
+                                            <span>
+                                                <strong>{s.name}</strong>
+                                                <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+                                                    {' '}
+                                                    — {Number(s.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                </span>
+                                            </span>
+                                        </label>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
+                        {campaignModal.error ? (
+                            <div className="alert alert-error" style={{ marginBottom: '10px', fontSize: '13px' }}>
+                                {campaignModal.error}
+                            </div>
+                        ) : null}
+
+                        <div className="modal-actions" style={{ marginTop: '8px', paddingBottom: 'max(12px, env(safe-area-inset-bottom, 0px))' }}>
+                            <button type="button" className="btn-cancel" onClick={() => setCampaignModal(null)} disabled={!!campaignModal.savingMeta}>
+                                Fechar
+                            </button>
+                            <button type="button" className="btn-submit" style={{ flex: 1 }} onClick={saveCampaignMeta} disabled={!!campaignModal.savingMeta}>
+                                {campaignModal.savingMeta ? 'Salvando…' : 'Salvar campanha'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
             </div>
-        </div>
-    );
+        );
+    };
+
+    const renderAdminServices = () => {
+        const fmtMoney = (p) => {
+            const n = Number(p);
+            if (!Number.isFinite(n)) return '—';
+            return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        };
+
+        const openCreate = () => {
+            setServiceModal({
+                mode: 'create',
+                name: '',
+                price: '',
+                duration: 60,
+                detail: '',
+                active: true,
+                saving: false,
+                error: ''
+            });
+        };
+
+        const openEdit = (row) => {
+            setServiceModal({
+                mode: 'edit',
+                id: row.id,
+                name: row.name || '',
+                existingCategory: String(row.category || '').trim(),
+                price: String(row.price != null ? row.price : ''),
+                duration: row.duration != null ? Number(row.duration) : 60,
+                detail: row.detail || '',
+                active: row.active !== false,
+                saving: false,
+                error: ''
+            });
+        };
+
+        const closeSvc = () => {
+            setServiceModal(null);
+        };
+
+        const patchField = (key, val) => {
+            setServiceModal((m) => (m ? { ...m, [key]: val, error: '' } : m));
+        };
+
+        const submitServiceModal = async () => {
+            if (!serviceModal) return;
+            const name = String(serviceModal.name || '').trim();
+            if (!name) {
+                setServiceModal((m) => (m ? { ...m, error: 'Informe o nome.' } : m));
+                return;
+            }
+            const inferred = inferServiceCategoryFromName(name);
+            const category =
+                serviceModal.mode === 'edit'
+                    ? String(serviceModal.existingCategory || '').trim() || inferred
+                    : inferred;
+            const priceNum = Number(String(serviceModal.price).replace(',', '.'));
+            if (!Number.isFinite(priceNum) || priceNum < 0) {
+                setServiceModal((m) => (m ? { ...m, error: 'Informe um preço válido.' } : m));
+                return;
+            }
+            const duration = Math.round(Number(serviceModal.duration));
+            if (!Number.isFinite(duration) || duration <= 0) {
+                setServiceModal((m) => (m ? { ...m, error: 'Duração inválida (minutos).' } : m));
+                return;
+            }
+            setServiceModal((m) => (m ? { ...m, saving: true, error: '' } : m));
+            try {
+                const bodyBase = {
+                    name,
+                    category,
+                    price: priceNum,
+                    duration,
+                    detail: String(serviceModal.detail || ''),
+                    cardTitle: name,
+                    active: !!serviceModal.active,
+                    /* Pacotes e campanhas: aba Campanhas. Modal desta grade só trata serviços comuns. */
+                    isPromotionalPackage: false,
+                    promotionalCampaign: null
+                };
+                const body =
+                    serviceModal.mode === 'create' ? { ...bodyBase, summary: '' } : bodyBase;
+                let res;
+                if (serviceModal.mode === 'create') {
+                    res = await adminFetch(`${API_BASE_URL}/admin/services`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    });
+                } else {
+                    res = await adminFetch(`${API_BASE_URL}/admin/services/${encodeURIComponent(serviceModal.id)}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    });
+                }
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    setServiceModal((m) => (m ? { ...m, saving: false, error: data.error || 'Não foi possível salvar.' } : m));
+                    return;
+                }
+                closeSvc();
+                await loadAdminServices();
+                await refreshData();
+            } catch (e) {
+                setServiceModal((m) => (m ? { ...m, saving: false, error: e.message || 'Erro de rede.' } : m));
+            }
+        };
+
+        const toggleActiveRow = async (row) => {
+            const msg = row.active
+                ? 'Inativar este serviço? Ele deixará de aparecer para novas clientes no agendamento online.'
+                : 'Reativar este serviço?';
+            if (!window.confirm(msg)) return;
+            try {
+                const res = await adminFetch(`${API_BASE_URL}/admin/services/${encodeURIComponent(row.id)}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ active: !row.active })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    alert(data.error || 'Não foi possível atualizar.');
+                    return;
+                }
+                await loadAdminServices();
+                await refreshData();
+            } catch (e) {
+                alert('Erro de rede.');
+            }
+        };
+
+        const deleteServiceRow = async (row) => {
+            if (!row || !row.id) return;
+            if (!window.confirm('Tem certeza que deseja apagar este serviço?')) return;
+            try {
+                const res = await adminFetch(`${API_BASE_URL}/admin/services/${encodeURIComponent(row.id)}`, {
+                    method: 'DELETE'
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    alert(data.error || 'Não foi possível apagar.');
+                    return;
+                }
+                if (serviceModal && serviceModal.mode === 'edit' && serviceModal.id === row.id) {
+                    setServiceModal(null);
+                }
+                await loadAdminServices();
+                await refreshData();
+            } catch (e) {
+                alert('Erro de rede.');
+            }
+        };
+
+        const servicesMainGridRows = servicesAdminList.filter((row) => !row.isPromotionalPackage);
+
+        return (
+            <div className="admin-services-panel" style={{ textAlign: 'left', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+                <div
+                    style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        justifyContent: 'space-between',
+                        gap: '12px',
+                        alignItems: 'flex-start',
+                        marginBottom: '16px'
+                    }}
+                >
+                    <div style={{ minWidth: 0, flex: '1 1 220px' }}>
+                        <h3 style={{ margin: '0 0 6px', fontFamily: 'var(--font-heading, Georgia, serif)' }}>Serviços</h3>
+                        <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-muted)', lineHeight: 1.55 }}>
+                            Catálogo dos <strong>procedimentos comuns</strong> do agendamento online. <strong>Inativar</strong> oculta para novas clientes;
+                            <strong>Apagar</strong> remove do painel e da vitrine (arquivo seguro — histórico de agendamentos antigos continua intacto).
+                            Pacotes, vales e campanhas ficam na aba <strong>Campanhas</strong>.
+                        </p>
+                    </div>
+                    <button type="button" className="btn-submit" onClick={openCreate}>
+                        <i className="fas fa-plus" aria-hidden="true" /> Novo serviço
+                    </button>
+                </div>
+
+                {servicesAdminError && <div className="alert alert-error" style={{ marginBottom: '12px' }}>{servicesAdminError}</div>}
+
+                {servicesAdminLoading ? (
+                    <p style={{ color: 'var(--text-muted)' }}>Carregando…</p>
+                ) : (
+                    <div
+                        className="admin-services-table-wrap"
+                        style={{
+                            overflowX: 'auto',
+                            WebkitOverflowScrolling: 'touch',
+                            borderRadius: '10px',
+                            border: '1px solid var(--border-color)',
+                            background: 'var(--card-bg)',
+                            maxWidth: '100%'
+                        }}
+                    >
+                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 'min(100%, 560px)' }}>
+                            <thead>
+                                <tr style={{ background: 'rgba(111, 76, 165, 0.08)', textAlign: 'left' }}>
+                                    <th style={{ padding: '10px 12px', fontSize: '12px' }}>Nome</th>
+                                    <th style={{ padding: '10px 12px', fontSize: '12px' }}>Categoria</th>
+                                    <th style={{ padding: '10px 12px', fontSize: '12px' }}>Preço</th>
+                                    <th style={{ padding: '10px 12px', fontSize: '12px' }}>Ativo</th>
+                                    <th className="admin-campaigns-table-actions-col" style={{ padding: '10px 12px', fontSize: '12px' }}>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {servicesMainGridRows.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={5} style={{ padding: '14px 12px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                                            Nenhum serviço comum cadastrado. Use «Novo serviço» ou gerencie vales e pacotes na aba Campanhas.
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    servicesMainGridRows.map((row) => (
+                                    <tr key={row.id} style={{ borderTop: '1px solid var(--border-color)' }}>
+                                        <td style={{ padding: '10px 12px', fontSize: '13px', wordBreak: 'break-word' }}>
+                                            <div style={{ fontWeight: 700 }}>{row.name}</div>
+                                        </td>
+                                        <td style={{ padding: '10px 12px', fontSize: '13px', wordBreak: 'break-word' }}>{row.category || '—'}</td>
+                                        <td style={{ padding: '10px 12px', fontSize: '13px', whiteSpace: 'nowrap' }}>{fmtMoney(row.price)}</td>
+                                        <td style={{ padding: '10px 12px', fontSize: '13px' }}>{row.active ? 'Sim' : 'Não'}</td>
+                                        <td className="admin-campaigns-actions-cell admin-campaigns-table-actions-col">
+                                            <div className="admin-campaigns-actions-row">
+                                                <button
+                                                    type="button"
+                                                    className="admin-campaigns-action-btn admin-campaigns-action-btn--edit"
+                                                    onClick={() => openEdit(row)}
+                                                >
+                                                    Editar
+                                                </button>
+                                                {row.active ? (
+                                                    <button
+                                                        type="button"
+                                                        className="admin-campaigns-action-btn admin-campaigns-action-btn--inativar"
+                                                        onClick={() => toggleActiveRow(row)}
+                                                    >
+                                                        Inativar
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        type="button"
+                                                        className="admin-campaigns-action-btn admin-campaigns-action-btn--ativar"
+                                                        onClick={() => toggleActiveRow(row)}
+                                                    >
+                                                        Ativar
+                                                    </button>
+                                                )}
+                                                <button
+                                                    type="button"
+                                                    className="admin-campaigns-action-btn admin-campaigns-action-btn--apagar"
+                                                    onClick={() => deleteServiceRow(row)}
+                                                >
+                                                    Apagar
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {serviceModal && (
+                    <div className="password-overlay" style={{ zIndex: 10060 }} role="dialog" aria-modal="true">
+                        <div
+                            className="password-modal"
+                            style={{
+                                maxWidth: '520px',
+                                width: '100%',
+                                overflow: 'visible',
+                                boxSizing: 'border-box',
+                                textAlign: 'left'
+                            }}
+                        >
+                            <div
+                                style={{
+                                    maxHeight: 'min(90vh, 720px)',
+                                    overflowY: 'auto',
+                                    overflowX: 'hidden',
+                                    WebkitOverflowScrolling: 'touch',
+                                    boxSizing: 'border-box'
+                                }}
+                            >
+                                <h3 style={{ marginBottom: '12px', textAlign: 'center' }}>
+                                    {serviceModal.mode === 'create' ? 'Novo serviço' : 'Editar serviço'}
+                                </h3>
+                                <div className="form-group full-width">
+                                    <label className="form-label">Nome *</label>
+                                    <input
+                                        className="form-control"
+                                        style={{ minWidth: 0, width: '100%', boxSizing: 'border-box' }}
+                                        value={serviceModal.name}
+                                        onChange={(e) => patchField('name', e.target.value)}
+                                    />
+                                </div>
+                                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                                <div className="form-group full-width" style={{ flex: '1 1 140px', minWidth: 0 }}>
+                                    <label className="form-label">Preço (R$) *</label>
+                                    <input
+                                        className="form-control"
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={serviceModal.price}
+                                        onChange={(e) => patchField('price', e.target.value)}
+                                    />
+                                </div>
+                                <div className="form-group full-width" style={{ flex: '0 0 120px', minWidth: 0 }}>
+                                    <label className="form-label">Duração (min) *</label>
+                                    <input
+                                        className="form-control"
+                                        type="number"
+                                        min="1"
+                                        step="1"
+                                        value={serviceModal.duration}
+                                        onChange={(e) => patchField('duration', e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                            <div className="form-group full-width">
+                                <label className="form-label">Descrição Procedimento</label>
+                                <textarea
+                                    className="form-control"
+                                    style={{ minWidth: 0, width: '100%', boxSizing: 'border-box' }}
+                                    rows={3}
+                                    value={serviceModal.detail}
+                                    onChange={(e) => patchField('detail', e.target.value)}
+                                />
+                            </div>
+                            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 12px', lineHeight: 1.45 }}>
+                                Vales, pacotes promocionais e vínculo com campanhas são geridos na aba <strong>Campanhas</strong>.
+                            </p>
+                            <label
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'flex-start',
+                                    gap: '10px',
+                                    marginBottom: '12px',
+                                    fontSize: '14px',
+                                    lineHeight: 1.4,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={!!serviceModal.active}
+                                    onChange={(e) => patchField('active', e.target.checked)}
+                                    style={{ marginTop: '3px', flexShrink: 0, width: '18px', height: '18px', accentColor: 'var(--brand-primary)' }}
+                                />
+                                <span>
+                                    <strong>Visível para clientes</strong>
+                                    <span style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 500, marginTop: '4px' }}>
+                                        Quando desmarcado, o serviço deixa de aparecer no agendamento online para novas clientes (agendamentos já feitos
+                                        permanecem).
+                                    </span>
+                                </span>
+                            </label>
+                            {serviceModal.error && (
+                                <div className="alert alert-error" style={{ marginBottom: '10px', fontSize: '13px' }}>
+                                    {serviceModal.error}
+                                </div>
+                            )}
+                            <div className="modal-actions" style={{ marginTop: '8px' }}>
+                                <button type="button" className="btn-cancel" onClick={closeSvc} disabled={serviceModal.saving}>
+                                    Cancelar
+                                </button>
+                                <button type="button" className="btn-submit" style={{ flex: 1 }} onClick={submitServiceModal} disabled={serviceModal.saving}>
+                                    {serviceModal.saving ? 'Salvando…' : 'Salvar'}
+                                </button>
+                            </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     const renderReport = () => {
         const summary = reportData?.summary || null;
@@ -3522,46 +5044,92 @@ const AdminArea = ({
         );
     };
 
+    const adminNavItems = [
+        { id: 'agenda', label: 'Agenda Geral', icon: 'fa-calendar-days' },
+        { id: 'clients', label: 'Radar Clientes', icon: 'fa-user-group' },
+        { id: 'report', label: 'Relatórios', icon: 'fa-chart-line' },
+        { id: 'blocks', label: 'Horários', icon: 'fa-clock' },
+        { id: 'services', label: 'Serviços', icon: 'fa-spa' },
+        { id: 'campaigns', label: 'Campanhas', icon: 'fa-bullhorn' }
+    ];
+
     return (
-        <div className="booking-section step-container" style={{textAlign: 'center'}}>
-            <div className="admin-panel-head">
-                <h2>Painel Profissional</h2>
-                <button
-                    type="button"
-                    className="btn-admin"
-                    onClick={handleAdminPanelRefresh}
-                    disabled={adminPanelRefreshing}
-                    aria-busy={adminPanelRefreshing}
+        <div className="booking-section step-container admin-panel-root">
+            <div className="admin-layout">
+                <aside
+                    className={`admin-sidebar${adminSidebarCollapsed ? ' admin-sidebar--collapsed' : ''}`}
+                    aria-label="Menu lateral do painel"
                 >
-                    <i className={`fas fa-sync-alt${adminPanelRefreshing ? ' fa-spin' : ''}`} aria-hidden="true" />
-                    {adminPanelRefreshing ? ' Atualizando…' : ' Atualizar'}
-                </button>
-            </div>
+                    <div className="admin-sidebar-inner">
+                        <div className="admin-sidebar-title-row">
+                            <h3 className="admin-sidebar-heading">Menu</h3>
+                            <button
+                                type="button"
+                                className="admin-sidebar-toggle"
+                                onClick={() => setAdminSidebarCollapsed((c) => !c)}
+                                aria-expanded={!adminSidebarCollapsed}
+                                aria-controls="admin-main-panel"
+                                title={adminSidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}
+                            >
+                                <i
+                                    className={`fas ${adminSidebarCollapsed ? 'fa-chevron-right' : 'fa-chevron-left'}`}
+                                    aria-hidden="true"
+                                />
+                            </button>
+                        </div>
+                        <nav className="admin-sidebar-nav" aria-label="Seções do painel">
+                            {adminNavItems.map((item) => (
+                                <button
+                                    key={item.id}
+                                    type="button"
+                                    className={`admin-menu-item tab-btn${adminView === item.id ? ' active' : ''}`}
+                                    onClick={() => setAdminView(item.id)}
+                                    aria-current={adminView === item.id ? 'page' : undefined}
+                                    aria-label={item.label}
+                                >
+                                    <i className={`fas ${item.icon}`} aria-hidden="true" />
+                                    <span className="admin-menu-item-label">{item.label}</span>
+                                </button>
+                            ))}
+                            <button
+                                type="button"
+                                className="admin-menu-item admin-menu-item--exit tab-btn"
+                                onClick={() => {
+                                    if (typeof onExitAdmin === 'function') onExitAdmin();
+                                }}
+                                aria-label="Sair do painel profissional"
+                            >
+                                <i className="fas fa-right-from-bracket" aria-hidden="true" />
+                                <span className="admin-menu-item-label">Sair</span>
+                            </button>
+                        </nav>
+                    </div>
+                </aside>
 
-            <div className="filter-tabs admin-main-tabs" style={{ justifyContent: 'center' }}>
-                <button className={`tab-btn ${adminView === 'agenda' ? 'active' : ''}`} onClick={() => setAdminView('agenda')}>
-                    Agenda Geral
-                </button>
-                <button className={`tab-btn ${adminView === 'clients' ? 'active' : ''}`} onClick={() => setAdminView('clients')}>
-                    Radar de Clientes
-                </button>
-                <button className={`tab-btn ${adminView === 'report' ? 'active' : ''}`} onClick={() => setAdminView('report')}>
-                    Relatório
-                </button>
-                <button className={`tab-btn ${adminView === 'blocks' ? 'active' : ''}`} onClick={() => setAdminView('blocks')}>
-                    Bloquear horários
-                </button>
-                <button className={`tab-btn ${adminView === 'campaigns' ? 'active' : ''}`} onClick={() => setAdminView('campaigns')}>
-                    Campanhas
-                </button>
-            </div>
+                <div className="admin-content" id="admin-main-panel">
+                    <div className="admin-panel-head">
+                        <h2>Painel Profissional</h2>
+                        <button
+                            type="button"
+                            className="btn-admin"
+                            onClick={handleAdminPanelRefresh}
+                            disabled={adminPanelRefreshing}
+                            aria-busy={adminPanelRefreshing}
+                        >
+                            <i className={`fas fa-sync-alt${adminPanelRefreshing ? ' fa-spin' : ''}`} aria-hidden="true" />
+                            {adminPanelRefreshing ? ' Atualizando…' : ' Atualizar'}
+                        </button>
+                    </div>
 
-            <div style={{marginTop: '18px'}}>
-                {adminView === 'agenda' && renderAgenda()}
-                {adminView === 'clients' && renderClients()}
-                {adminView === 'report' && renderReport()}
-                {adminView === 'blocks' && renderBlockedSlots()}
-                {adminView === 'campaigns' && renderCampaigns()}
+                    <div className="admin-content-body">
+                        {adminView === 'agenda' && renderAgenda()}
+                        {adminView === 'clients' && renderClients()}
+                        {adminView === 'report' && renderReport()}
+                        {adminView === 'blocks' && renderBlockedSlots()}
+                        {adminView === 'campaigns' && renderCampaigns()}
+                        {adminView === 'services' && renderAdminServices()}
+                    </div>
+                </div>
             </div>
 
             {confirmLocalPayModal && (
@@ -3768,7 +5336,16 @@ const AdminArea = ({
     );
 };
 
-const MyAppointmentsArea = ({ appointments, refreshData, clients, setView, adminWhatsApp }) => {
+const MyAppointmentsArea = ({
+    appointments,
+    refreshData,
+    clients,
+    setView,
+    adminWhatsApp,
+    catalogServicesClient,
+    blockedSlots,
+    blockedFullDays
+}) => {
     const readStoredMyAppointmentsDigits = () => {
         try {
             const d = String(sessionStorage.getItem(MY_APPOINTMENTS_PHONE_STORAGE_KEY) || '').replace(/\D/g, '');
@@ -3785,10 +5362,20 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView, admin
     const [selfEditSaving, setSelfEditSaving] = useState(false);
     const [selfEditBanner, setSelfEditBanner] = useState('');
     const [cancelBanner, setCancelBanner] = useState('');
+    const [rescheduleModal, setRescheduleModal] = useState(null);
+    const [rescheduleSaving, setRescheduleSaving] = useState(false);
+    const [rescheduleError, setRescheduleError] = useState('');
     const [profileFromServer, setProfileFromServer] = useState(null);
     const [myAppsRefreshing, setMyAppsRefreshing] = useState(false);
     const myAppsRefreshDebounceRef = useRef(null);
     const myAppsRefreshInFlight = useRef(false);
+
+    const myAppsCatalogLookup = useMemo(() => {
+        if (Array.isArray(catalogServicesClient) && catalogServicesClient.length > 0) {
+            return catalogServicesClient;
+        }
+        return null;
+    }, [catalogServicesClient]);
 
     const cleanPhone = (p) => String(p || '').replace(/\D/g, '');
     const myPhone = cleanPhone(phoneInput);
@@ -3950,14 +5537,15 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView, admin
 
     const handleCancelMyAppointment = async (app) => {
         if (!app?.id) return;
-        if (!window.confirm('Deseja realmente cancelar este agendamento?')) return;
+        if (!window.confirm('Deseja realmente cancelar este agendamento por completo?')) return;
         try {
             const res = await fetch(`${API_BASE_URL}/appointments/${encodeURIComponent(app.id)}/cancel`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     cancelledBy: 'client',
-                    cancelReason: 'Cancelado pelo cliente em Meus agendamentos'
+                    cancelReason: 'Cancelado pelo cliente em Meus agendamentos',
+                    verifyPhoneDigits: myPhone
                 })
             });
             const data = await res.json().catch(() => ({}));
@@ -3970,6 +5558,117 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView, admin
             await refreshData();
         } catch (e) {
             alert(e.message || 'Erro ao cancelar o agendamento.');
+        }
+    };
+
+    const canClientActOnAppointmentItem = (item, app) => {
+        if (String(item.status || '').toLowerCase() === APPOINTMENT_ITEM_STATUS_CANCELLED) return false;
+        const st = String(app?.status || '').trim();
+        if (st === 'cancelled' || st === 'completed') return false;
+        if (st !== 'pending_payment' && st !== 'confirmed') return false;
+        if (!item.date || !item.time) return false;
+        const apDateTimeStr = `${item.date}T${item.time}:00-03:00`;
+        const diffHours = (new Date(apDateTimeStr).getTime() - Date.now()) / (1000 * 60 * 60);
+        return diffHours >= 2;
+    };
+
+    const handleCancelMyAppointmentItem = async (app, item) => {
+        if (!app?.id || item?.slotIndex == null) return;
+        if (
+            !window.confirm(
+                `Cancelar somente «${item.name || 'este procedimento'}»?\n\nOs demais procedimentos deste agendamento permanecem ativos.`
+            )
+        ) {
+            return;
+        }
+        try {
+            const res = await fetch(
+                `${API_BASE_URL}/appointments/${encodeURIComponent(app.id)}/slots/${encodeURIComponent(item.slotIndex)}/cancel`,
+                {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cancelledBy: 'client',
+                        cancelReason: 'Procedimento cancelado pelo cliente em Meus agendamentos',
+                        verifyPhoneDigits: myPhone
+                    })
+                }
+            );
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.error || 'Não foi possível cancelar este procedimento.');
+            }
+            setCancelBanner(`Procedimento «${item.name || 'selecionado'}» cancelado. Os demais itens do agendamento foram mantidos.`);
+            await refreshData();
+        } catch (e) {
+            alert(e.message || 'Erro ao cancelar o procedimento.');
+        }
+    };
+
+    const openRescheduleItem = (app, item, opts) => {
+        if (!item) return;
+        setRescheduleError('');
+        setRescheduleModal({
+            appId: app.id,
+            slotIndex: item.slotIndex,
+            serviceId: item.id,
+            serviceName: item.name,
+            date: item.date || '',
+            time: normalizeSlotTimeLabel(item.time) || '',
+            generalLabel: !!(opts && opts.generalLabel)
+        });
+    };
+
+    const openRescheduleGeneral = (app) => {
+        const item = getActiveLineItemsFromAppointmentApp(app, myAppsCatalogLookup)[0];
+        if (!item) return;
+        openRescheduleItem(app, item, { generalLabel: true });
+    };
+
+    const rescheduleSlotsForModal = useMemo(() => {
+        if (!rescheduleModal?.date) return [];
+        return generateTimeSlots(
+            rescheduleModal.date,
+            appointments || [],
+            blockedSlots || [],
+            blockedFullDays || [],
+            rescheduleModal.serviceId ? [rescheduleModal.serviceId] : [],
+            myAppsCatalogLookup
+        );
+    }, [rescheduleModal, appointments, blockedSlots, blockedFullDays, myAppsCatalogLookup]);
+
+    const submitRescheduleItem = async () => {
+        if (!rescheduleModal) return;
+        setRescheduleError('');
+        if (!rescheduleModal.date || !rescheduleModal.time) {
+            setRescheduleError('Escolha data e horário.');
+            return;
+        }
+        setRescheduleSaving(true);
+        try {
+            const res = await fetch(
+                `${API_BASE_URL}/appointments/${encodeURIComponent(rescheduleModal.appId)}/slots/${encodeURIComponent(rescheduleModal.slotIndex)}/reschedule`,
+                {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: rescheduleModal.date,
+                        time: rescheduleModal.time,
+                        verifyPhoneDigits: myPhone
+                    })
+                }
+            );
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.error || 'Não foi possível reagendar este procedimento.');
+            }
+            setRescheduleModal(null);
+            setCancelBanner(`Procedimento «${rescheduleModal.serviceName || 'selecionado'}» reagendado com sucesso.`);
+            await refreshData();
+        } catch (e) {
+            setRescheduleError(e.message || 'Erro ao reagendar.');
+        } finally {
+            setRescheduleSaving(false);
         }
     };
 
@@ -4144,7 +5843,7 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView, admin
                 {myApps.map(app => {
                     const clientName = app.clientName || app.client_name || 'Cliente';
                     const phone = app.clientPhone || app.client_phone || '';
-                    const { label: serviceName, total: serviceTotal, scheduleHint } = formatAgendaServiceSummary(app);
+                    const { label: serviceName, total: serviceTotal, scheduleHint } = formatAgendaServiceSummary(app, myAppsCatalogLookup);
                     const servicePriceStr =
                         typeof serviceTotal === 'number' && Number.isFinite(serviceTotal) ? formatPrice(serviceTotal) : null;
                     const dateLabel = app.date
@@ -4155,6 +5854,14 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView, admin
                     const notes = app.notes || '';
                     const cancelReason = app.cancelReason || app.cancel_reason || '';
                     const paymentBlock = buildMyAppointmentsPaymentBlock(app, serviceTotal);
+                    const appointmentItems = buildLineItemsFromAppointmentApp(app, myAppsCatalogLookup);
+                    const activeItems = getActiveLineItemsFromAppointmentApp(app, myAppsCatalogLookup);
+                    const actionMode = getMyAppointmentActionMode(app, myAppsCatalogLookup);
+                    const showPerItemActions = actionMode === 'multi';
+                    const canManage = canClientCancelAppointment(app);
+                    const soleActiveItem = activeItems.length === 1 ? activeItems[0] : null;
+                    const canRescheduleGeneral =
+                        actionMode === 'single' && soleActiveItem && canClientActOnAppointmentItem(soleActiveItem, app);
 
                     return (
                         <AgendaAppointmentCard
@@ -4212,26 +5919,104 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView, admin
                                 </>
                             }
                             footer={
-                                canClientCancelAppointment(app) ? (
-                                    <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #e5e7eb' }}>
-                                        <button
-                                            type="button"
-                                            className="btn-cancel my-app-card__cancel"
-                                            onClick={() => handleCancelMyAppointment(app)}
-                                            style={{
-                                                padding: '8px 14px',
-                                                fontSize: '13px',
-                                                borderColor: 'rgba(180, 83, 9, 0.45)',
-                                                color: '#b45309'
-                                            }}
-                                        >
-                                            Cancelar este agendamento
-                                        </button>
+                                canManage ? (
+                                    <div className="my-app-card-footer-actions">
+                                        {actionMode === 'single' ? (
+                                            <>
+                                                <button
+                                                    type="button"
+                                                    className="btn-cancel my-app-card__cancel"
+                                                    onClick={() => handleCancelMyAppointment(app)}
+                                                    style={{ borderColor: 'rgba(180, 83, 9, 0.45)', color: '#b45309' }}
+                                                >
+                                                    Cancelar agendamento
+                                                </button>
+                                                {canRescheduleGeneral ? (
+                                                    <button
+                                                        type="button"
+                                                        className="my-app-btn-secondary btn-admin"
+                                                        style={{
+                                                            border: '1px solid var(--border-color)',
+                                                            borderRadius: '8px',
+                                                            background: '#fff'
+                                                        }}
+                                                        onClick={() => openRescheduleGeneral(app)}
+                                                    >
+                                                        Reagendar agendamento
+                                                    </button>
+                                                ) : null}
+                                            </>
+                                        ) : null}
+                                        {actionMode === 'multi' ? (
+                                            <button
+                                                type="button"
+                                                className="btn-cancel my-app-card-footer-actions__complete"
+                                                onClick={() => handleCancelMyAppointment(app)}
+                                            >
+                                                Cancelar agendamento completo
+                                            </button>
+                                        ) : null}
                                     </div>
                                 ) : null
                             }
                         >
                             <>
+                                {appointmentItems.length > 0 ? (
+                                    <div className="my-app-procedures-box">
+                                        <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-dark)' }}>Procedimentos</div>
+                                        {appointmentItems.map((item) => {
+                                            const cancelled =
+                                                String(item.status || '').toLowerCase() === APPOINTMENT_ITEM_STATUS_CANCELLED;
+                                            const itemDate = item.date
+                                                ? new Date(item.date + 'T12:00:00').toLocaleDateString('pt-BR')
+                                                : '—';
+                                            const itemTime = item.time || '—';
+                                            const canActItem =
+                                                showPerItemActions && canClientActOnAppointmentItem(item, app);
+                                            return (
+                                                <div
+                                                    key={`${app.id}-${item.slotIndex}-${item.id}`}
+                                                    className={`my-app-procedure-row${cancelled ? ' my-app-procedure-row--cancelled' : ''}`}
+                                                >
+                                                    <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '4px' }}>
+                                                        {item.name || item.id}
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                                                        {itemDate} • {itemTime}
+                                                    </div>
+                                                    <div style={{ fontSize: '12px', marginBottom: canActItem ? '6px' : 0 }}>
+                                                        <strong>Status:</strong>{' '}
+                                                        {cancelled ? 'Cancelado' : app.status === 'pending_payment' ? 'Pendente pagamento' : 'Confirmado'}
+                                                    </div>
+                                                    {canActItem ? (
+                                                        <div className="my-app-procedure-actions">
+                                                            <button
+                                                                type="button"
+                                                                className="btn-cancel"
+                                                                style={{ borderColor: 'rgba(180, 83, 9, 0.45)', color: '#b45309' }}
+                                                                onClick={() => handleCancelMyAppointmentItem(app, item)}
+                                                            >
+                                                                Cancelar este procedimento
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="my-app-btn-secondary btn-admin"
+                                                                style={{
+                                                                    border: '1px solid var(--border-color)',
+                                                                    borderRadius: '8px',
+                                                                    background: '#fff'
+                                                                }}
+                                                                onClick={() => openRescheduleItem(app, item)}
+                                                            >
+                                                                Reagendar este procedimento
+                                                            </button>
+                                                        </div>
+                                                    ) : null}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : null}
                                 {paymentBlock && (
                                     <div
                                         style={{
@@ -4318,6 +6103,43 @@ const MyAppointmentsArea = ({ appointments, refreshData, clients, setView, admin
                     );
                 })}
             </div>
+
+            {rescheduleModal && (
+                <div
+                    className="password-overlay"
+                    style={{ zIndex: 10055, padding: '12px', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}
+                    role="dialog"
+                    aria-modal="true"
+                >
+                    <div className="password-modal" style={{ maxWidth: 'min(440px, calc(100vw - 24px))', width: '100%', textAlign: 'left', maxHeight: '90vh', overflowY: 'auto', boxSizing: 'border-box' }}>
+                        <h3 style={{ marginBottom: '12px', textAlign: 'center' }}>
+                            {rescheduleModal.generalLabel ? 'Reagendar agendamento' : 'Reagendar procedimento'}
+                        </h3>
+                        <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '0 0 12px', lineHeight: 1.45 }}>
+                            <strong>{rescheduleModal.serviceName}</strong> — escolha nova data e horário.
+                        </p>
+                        <div className="form-group full-width">
+                            <label className="form-label">Nova data</label>
+                            <input type="date" className="form-control" min={getLocalTodayStr()} value={rescheduleModal.date} onChange={(e) => setRescheduleModal((m) => (m ? { ...m, date: e.target.value, time: '' } : m))} style={{ width: '100%', boxSizing: 'border-box' }} />
+                        </div>
+                        {rescheduleModal.date ? (
+                            <div className="form-group full-width">
+                                <label className="form-label">Novo horário</label>
+                                <div className="time-slots-grid" style={{ marginTop: '8px' }}>
+                                    {rescheduleSlotsForModal.map((slot) => (
+                                        <button key={slot.time} type="button" className={`time-slot${rescheduleModal.time === slot.time ? ' selected' : ''}${!slot.available ? ' disabled' : ''}`} disabled={!slot.available} onClick={() => slot.available && setRescheduleModal((m) => (m ? { ...m, time: slot.time } : m))}>{slot.time}</button>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : null}
+                        {rescheduleError ? <div className="alert alert-error" style={{ marginTop: '10px', fontSize: '13px' }}>{rescheduleError}</div> : null}
+                        <div className="modal-actions" style={{ marginTop: '12px' }}>
+                            <button type="button" className="btn-cancel" onClick={() => { setRescheduleModal(null); setRescheduleError(''); }} disabled={rescheduleSaving}>Voltar</button>
+                            <button type="button" className="btn-submit" style={{ flex: 1 }} onClick={() => void submitRescheduleItem()} disabled={rescheduleSaving}>{rescheduleSaving ? 'Salvando…' : 'Confirmar reagendamento'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {selfEditModal && (
                 <div className="password-overlay self-edit-overlay" style={{ zIndex: 10050, padding: '12px', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }} role="dialog" aria-modal="true" aria-labelledby="self-edit-title">
@@ -4406,6 +6228,7 @@ const App = () => {
     const [blockedFullDays, setBlockedFullDays] = useState([]);
     const [adminWhatsApp, setAdminWhatsApp] = useState('');
     const [promoPackagesEnabled, setPromoPackagesEnabled] = useState(false);
+    const [catalogServicesClient, setCatalogServicesClient] = useState(null);
 
     const handleAdminLoginSuccess = (token) => {
         try {
@@ -4514,6 +6337,14 @@ const App = () => {
                             .toLowerCase() === 'on'
                 );
             }
+
+            const resSvc = await fetch(`${API_BASE_URL}/public/services`, { cache: 'no-store' });
+            if (resSvc.ok) {
+                const svcList = await resSvc.json().catch(() => null);
+                setCatalogServicesClient(Array.isArray(svcList) ? svcList : null);
+            } else {
+                setCatalogServicesClient(null);
+            }
         } catch (e) {
             console.error(e);
         }
@@ -4562,6 +6393,7 @@ const App = () => {
                         bookingRestoreOrderNsu={bookingRestoreOrderNsu}
                         onBookingRestoreConsumed={clearBookingRestore}
                         mergeAppointmentRow={mergeAppointmentRow}
+                        catalogServicesClient={catalogServicesClient}
                     />
                 )}
                 {view === 'my_apps' && (
@@ -4571,6 +6403,9 @@ const App = () => {
                         clients={clients}
                         setView={setView}
                         adminWhatsApp={adminWhatsApp}
+                        catalogServicesClient={catalogServicesClient}
+                        blockedSlots={blockedSlots}
+                        blockedFullDays={blockedFullDays}
                     />
                 )}
                 {view === 'admin' && (
@@ -4582,8 +6417,8 @@ const App = () => {
                         blockedFullDays={blockedFullDays}
                         adminToken={adminToken}
                         onAdminSessionInvalid={handleAdminSessionInvalid}
-                        promoPackagesEnabled={promoPackagesEnabled}
-                        onPromoPackagesChange={setPromoPackagesEnabled}
+                        onExitAdmin={() => setView('client')}
+                        catalogServicesClient={catalogServicesClient}
                     />
                 )}
             </main>
