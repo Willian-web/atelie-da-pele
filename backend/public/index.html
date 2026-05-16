@@ -822,9 +822,13 @@ const buildClientCampaignBundles = (promoList) => {
     for (const [groupKey, members] of groups) {
         members.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR'));
         const cid = groupKey.startsWith('__solo__') ? '' : groupKey;
-        const price = Math.round(members.reduce((sum, m) => sum + (Number(m.price) || 0), 0) * 100) / 100;
-        const duration = members.reduce((sum, m) => sum + (Number(m.duration) || DEFAULT_APPOINTMENT_DURATION_MIN), 0);
         const first = members[0];
+        const campaignPromo =
+            first.campaignPromotionalPrice != null
+                ? first.campaignPromotionalPrice
+                : first.campaign_promotional_price;
+        const price = getCampaignBundlePrice(members, campaignPromo);
+        const duration = members.reduce((sum, m) => sum + (Number(m.duration) || DEFAULT_APPOINTMENT_DURATION_MIN), 0);
         const campaignName =
             String(first.promotionalCampaignName || '').trim() ||
             (cid
@@ -1121,6 +1125,48 @@ const isProcedurePriceAtOrBelowSignal = (price) => {
 };
 
 const formatPrice = (price) => price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+/** Entrada monetária BR: vazio → null; inválido → undefined; válido → número. */
+const parseBrMoneyInput = (raw) => {
+    if (raw === null || raw === undefined) return null;
+    const s = String(raw).trim();
+    if (!s) return null;
+    const normalized = s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s.replace(',', '.');
+    const n = Number(normalized);
+    if (!Number.isFinite(n) || n <= 0) return undefined;
+    return Math.round(n * 100) / 100;
+};
+
+const formatBrMoneyInput = (n) => {
+    if (n == null || n === '' || !Number.isFinite(Number(n))) return '';
+    return Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
+/** Valor do pacote/campanha: preço promocional manual ou soma dos procedimentos. */
+const getCampaignBundlePrice = (members, campaignPromotionalPrice) => {
+    const promo = Number(campaignPromotionalPrice);
+    if (Number.isFinite(promo) && promo > 0) return Math.round(promo * 100) / 100;
+    const list = Array.isArray(members) ? members : [];
+    return Math.round(list.reduce((sum, m) => sum + (Number(m.price) || 0), 0) * 100) / 100;
+};
+
+/** Total da seleção (campanhas completas + serviços avulsos). */
+const computeSelectionTotalPrice = (selectedIds, catalog, campaignBundles) => {
+    const ids = Array.isArray(selectedIds) ? selectedIds : [];
+    const used = new Set();
+    let total = 0;
+    for (const b of campaignBundles || []) {
+        const mids = b.memberServiceIds || [];
+        if (!mids.length || !mids.every((mid) => ids.includes(mid))) continue;
+        mids.forEach((mid) => used.add(mid));
+        total += Number(b.price) || 0;
+    }
+    for (const id of ids) {
+        if (used.has(id)) continue;
+        total += Number(getServiceMeta(id, { clientCatalog: catalog })?.price || 0);
+    }
+    return Math.round(total * 100) / 100;
+};
 
 const isValidEmailFormat = (s) => {
     const t = String(s || '').trim().toLowerCase();
@@ -1833,13 +1879,10 @@ const ClientArea = ({
 
     const todayStr = getLocalTodayStr();
 
-    const selectionTotalPrice = useMemo(() => {
-        const t = selectedServiceIds.reduce(
-            (s, id) => s + Number(getServiceMeta(id, { clientCatalog: catalogMetaLookupList })?.price || 0),
-            0
-        );
-        return Math.round(t * 100) / 100;
-    }, [selectedServiceIds, catalogMetaLookupList]);
+    const selectionTotalPrice = useMemo(
+        () => computeSelectionTotalPrice(selectedServiceIds, catalogMetaLookupList, clientCampaignBundles),
+        [selectedServiceIds, catalogMetaLookupList, clientCampaignBundles]
+    );
 
     const bookingProcedureSummaryLines = useMemo(
         () => buildBookingProcedureSummaryLines(selectedServiceIds, catalogMetaLookupList, clientCampaignBundles),
@@ -4352,6 +4395,7 @@ const AdminArea = ({
             validFromStr: '',
             validToStr: '',
             category: 'Campanhas',
+            promotionalPriceStr: '',
             assignIds: [],
             savingMeta: false,
             error: ''
@@ -4368,6 +4412,10 @@ const AdminArea = ({
             validFromStr: c.validFrom ? isoToDateInputValue(c.validFrom) : '',
             validToStr: c.validTo ? isoToDateInputValue(c.validTo) : '',
             category: c.category || 'Campanhas',
+            promotionalPriceStr:
+                c.promotionalPrice != null && Number(c.promotionalPrice) > 0
+                    ? formatBrMoneyInput(c.promotionalPrice)
+                    : '',
             assignIds: linked,
             savingMeta: false,
             error: ''
@@ -4404,6 +4452,11 @@ const AdminArea = ({
             setCampaignModal((m) => (m ? { ...m, error: 'Selecione pelo menos um procedimento para a campanha.' } : m));
             return;
         }
+        const parsedPromo = parseBrMoneyInput(campaignModal.promotionalPriceStr);
+        if (parsedPromo === undefined) {
+            setCampaignModal((m) => (m ? { ...m, error: 'Preço promocional inválido. Use um valor maior que zero.' } : m));
+            return;
+        }
         setCampaignModal((m) => (m ? { ...m, savingMeta: true, error: '' } : m));
         try {
             const bodyBase = {
@@ -4411,6 +4464,7 @@ const AdminArea = ({
                 validFrom: vf,
                 validTo: vt,
                 category: String(campaignModal.category || 'Campanhas').trim() || 'Campanhas',
+                promotionalPrice: parsedPromo,
                 serviceIds: ids
             };
             const body =
@@ -4535,15 +4589,17 @@ const AdminArea = ({
             if (!Number.isFinite(n)) return '—';
             return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
         };
-        const linkedPackagesTotal = (campaignId) => {
-            const cid = String(campaignId || '');
+        const linkedPackagesTotal = (campaignRow) => {
+            const cid = String(campaignRow?.id || campaignRow || '');
+            const promo = campaignRow?.promotionalPrice != null ? Number(campaignRow.promotionalPrice) : null;
+            if (Number.isFinite(promo) && promo > 0) return promo;
             let sum = 0;
             for (const s of servicesAdminList || []) {
                 if (String(s.promotionalCampaign || '') !== cid || !s.isPromotionalPackage) continue;
                 const n = Number(s.price);
                 if (Number.isFinite(n)) sum += n;
             }
-            return sum;
+            return Math.round(sum * 100) / 100;
         };
 
         const cidPick = campaignModal && campaignModal.mode === 'edit' ? campaignModal.id : null;
@@ -4593,7 +4649,7 @@ const AdminArea = ({
                             </p>
                         ) : (
                             adminCampaigns.map((c) => {
-                                const total = linkedPackagesTotal(c.id);
+                                const total = linkedPackagesTotal(c);
                                 const nPack = c.linkedCount != null ? Number(c.linkedCount) : 0;
                                 const rowActive = isAdminCampaignRowActive(c);
                                 return (
@@ -4690,7 +4746,7 @@ const AdminArea = ({
                                     </tr>
                                 ) : (
                                     adminCampaigns.map((c) => {
-                                        const total = linkedPackagesTotal(c.id);
+                                        const total = linkedPackagesTotal(c);
                                         const nPack = c.linkedCount != null ? Number(c.linkedCount) : 0;
                                         const rowActive = isAdminCampaignRowActive(c);
                                         return (
@@ -4842,11 +4898,27 @@ const AdminArea = ({
                             As datas usam o dia inteiro: início à meia-noite e fim até 23h59 do dia escolhido (horário local).
                         </p>
 
+                        <div className="form-group full-width">
+                            <label className="form-label">Preço promocional (opcional)</label>
+                            <input
+                                className="form-control"
+                                type="text"
+                                inputMode="decimal"
+                                placeholder="Ex.: 199,00"
+                                style={{ minWidth: 0, width: '100%', boxSizing: 'border-box' }}
+                                value={campaignModal.promotionalPriceStr || ''}
+                                onChange={(e) => patchCampaignModal('promotionalPriceStr', e.target.value)}
+                            />
+                            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '6px 0 0', lineHeight: 1.45 }}>
+                                Se preenchido, este valor será usado no lugar da soma dos procedimentos.
+                            </p>
+                        </div>
+
                         <div style={{ marginTop: '8px', marginBottom: '12px' }}>
                             <div style={{ fontWeight: 700, fontSize: '14px', marginBottom: '8px' }}>Pacotes / procedimentos da campanha</div>
                             <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 8px', lineHeight: 1.45 }}>
-                                Marque um ou mais itens do catálogo. O cliente vê cada pacote na aba Campanhas; no agendamento, o valor total é a soma dos
-                                procedimentos selecionados (cada um com o preço do catálogo).
+                                Marque um ou mais itens do catálogo. O cliente vê um card único na aba Campanhas; o valor da campanha segue o preço promocional
+                                (se informado) ou a soma dos procedimentos marcados.
                             </p>
                             <div
                                 style={{

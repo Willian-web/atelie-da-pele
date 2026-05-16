@@ -594,6 +594,10 @@ async function initDB() {
             ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ NULL
         `);
         await client.query(`
+            ALTER TABLE promotional_campaigns
+            ADD COLUMN IF NOT EXISTS promotional_price NUMERIC(10, 2) NULL
+        `);
+        await client.query(`
             CREATE INDEX IF NOT EXISTS idx_promotional_campaigns_archived
             ON promotional_campaigns (archived_at)
         `);
@@ -1193,7 +1197,7 @@ async function refreshPromotionalSettingsCache() {
     try {
         promoPackagesEnabledCache = await readPromotionalPackagesEnabledFromDb();
         const { rows } = await pool.query(
-            `SELECT id, name, description, active, valid_from, valid_to, category, sort_order, created_at, updated_at, archived_at
+            `SELECT id, name, description, active, valid_from, valid_to, category, sort_order, promotional_price, created_at, updated_at, archived_at
              FROM promotional_campaigns
              WHERE archived_at IS NULL
              ORDER BY sort_order ASC, name ASC`
@@ -1245,6 +1249,74 @@ function getCampaignRowById(campaignId) {
     return promotionalCampaignsAll.find((r) => String(r.id) === cid) || null;
 }
 
+/** Preço promocional manual da campanha (null = usar soma dos procedimentos). */
+function getCampaignPromotionalPrice(campaignId) {
+    const row = getCampaignRowById(campaignId);
+    if (!row || row.promotional_price == null) return null;
+    const n = roundMoney2(Number(row.promotional_price));
+    return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function getCampaignMemberServiceIds(campaignId) {
+    const cid = String(campaignId || '').trim();
+    if (!cid) return [];
+    return (servicesCatalogAll || [])
+        .filter((s) => s && !s.archived_at && String(s.promotional_campaign || '').trim() === cid)
+        .map((s) => String(s.id))
+        .filter(Boolean);
+}
+
+/**
+ * Valor total para agendamento/relatório: campanha com todos os membros selecionados usa promotional_price se houver.
+ * @param {string[]} serviceIds
+ */
+function computeTotalPriceForServiceIds(serviceIds) {
+    const ids = Array.isArray(serviceIds) ? serviceIds.map((x) => String(x || '').trim()).filter(Boolean) : [];
+    if (!ids.length) return 0;
+    const idSet = new Set(ids);
+    const consumed = new Set();
+    let total = 0;
+
+    if (Array.isArray(promotionalCampaignsAll)) {
+        for (const camp of promotionalCampaignsAll) {
+            const cid = String(camp.id || '').trim();
+            if (!cid) continue;
+            const memberIds = getCampaignMemberServiceIds(cid);
+            if (!memberIds.length) continue;
+            if (!memberIds.every((mid) => idSet.has(mid))) continue;
+
+            const promo = getCampaignPromotionalPrice(cid);
+            if (promo != null) {
+                total += promo;
+            } else {
+                let sumMembers = 0;
+                for (const mid of memberIds) {
+                    sumMembers += roundMoney2(Number(findServiceById(mid).price) || 0);
+                }
+                total += roundMoney2(sumMembers);
+            }
+            memberIds.forEach((mid) => consumed.add(mid));
+        }
+    }
+
+    for (const id of ids) {
+        if (consumed.has(id)) continue;
+        total += roundMoney2(Number(findServiceById(id).price) || 0);
+    }
+    return roundMoney2(total);
+}
+
+/** `null` = ausente; número = válido; `undefined` = inválido. */
+function parsePromotionalPriceInput(raw) {
+    if (raw === null || raw === undefined) return null;
+    const s = String(raw).trim();
+    if (!s) return null;
+    const normalized = s.includes(',') ? s.replace(/\./g, '').replace(',', '.') : s.replace(',', '.');
+    const n = Number(normalized);
+    if (!Number.isFinite(n) || n <= 0) return undefined;
+    return roundMoney2(n);
+}
+
 /** Catálogo visível para novos agendamentos: pacotes exigem campanha ativa e dentro da validade (sem interruptor global). */
 function isServiceVisibleForBooking(s) {
     if (!s || s.active === false) return false;
@@ -1284,6 +1356,7 @@ function toPublicServiceJson(s) {
         cardTitle: s.card_title || undefined,
         promotionalCampaign: s.promotional_campaign || undefined,
         promotionalCampaignName: getCampaignDisplayName(s.promotional_campaign) || undefined,
+        campaignPromotionalPrice: getCampaignPromotionalPrice(s.promotional_campaign) ?? undefined,
         isPromotionalPackage: !!s.is_promotional_package
     };
 }
@@ -1380,16 +1453,13 @@ function getAppointmentServiceIdsFromRow(row) {
 /** Nome e preço agregados para e-mails (admin/cliente). */
 function buildServiceEmailAggregate(ids) {
     const lines = [];
-    let total = 0;
     for (const id of ids) {
         const s = findServiceById(id);
-        const p = roundMoney2(Number(s.price) || 0);
-        total += p;
         lines.push(s.name || id);
     }
     return {
         name: lines.join(' + '),
-        price: roundMoney2(total)
+        price: computeTotalPriceForServiceIds(ids)
     };
 }
 
@@ -1410,21 +1480,16 @@ function normalizeIncomingServiceIds(body) {
 }
 
 function normalizeAppointmentFinancials(row) {
-    const activeSlots = getActiveServiceSlotsFromRow(row);
-    let totalServicePrice = 0;
-    if (activeSlots.length) {
-        totalServicePrice = roundMoney2(activeSlots.reduce((sum, sl) => sum + roundMoney2(Number(sl.price) || 0), 0));
-    } else {
-        const ids = getAppointmentServiceIdsFromRow(row);
-        for (const id of ids) {
-            const s = findServiceById(id);
-            totalServicePrice += roundMoney2(Number(s.price) || 0);
-        }
-        totalServicePrice = roundMoney2(totalServicePrice);
-    }
+    const ids = getAppointmentServiceIdsFromRow(row);
+    let totalServicePrice = ids.length ? computeTotalPriceForServiceIds(ids) : 0;
     if (!Number.isFinite(totalServicePrice) || totalServicePrice <= 0) {
-        const fallback = findServiceById(row.service_id);
-        totalServicePrice = roundMoney2(Number(fallback.price) || 0);
+        const activeSlots = getActiveServiceSlotsFromRow(row);
+        if (activeSlots.length) {
+            totalServicePrice = roundMoney2(activeSlots.reduce((sum, sl) => sum + roundMoney2(Number(sl.price) || 0), 0));
+        } else {
+            const fallback = findServiceById(row.service_id);
+            totalServicePrice = roundMoney2(Number(fallback.price) || 0);
+        }
     }
 
     const rawTypeEarly = row.payment_type != null ? String(row.payment_type).toLowerCase().trim() : '';
@@ -2903,6 +2968,11 @@ function mapCampaignRowToAdminApi(row) {
         String(rawAct || '')
             .trim()
             .toLowerCase() === '1';
+    const promoRaw = row.promotional_price;
+    const promotionalPrice =
+        promoRaw != null && Number.isFinite(Number(promoRaw)) && Number(promoRaw) > 0
+            ? roundMoney2(Number(promoRaw))
+            : null;
     return {
         id: row.id,
         name: row.name,
@@ -2912,6 +2982,7 @@ function mapCampaignRowToAdminApi(row) {
         validTo: row.valid_to ? new Date(row.valid_to).toISOString() : null,
         category: row.category != null ? String(row.category) : 'Campanhas',
         sortOrder: Math.round(Number(row.sort_order)) || 0,
+        promotionalPrice,
         linkedCount: row.linked_count != null ? Number(row.linked_count) : undefined,
         createdAt: row.created_at || null,
         updatedAt: row.updated_at || null
@@ -3041,6 +3112,16 @@ app.post('/admin/campaigns', requireAdminAuth, async (req, res) => {
         return res.status(400).json({ error: 'Selecione pelo menos um procedimento para a campanha.' });
     }
 
+    let promotionalPriceDb = null;
+    if (b.promotionalPrice !== undefined || b.promotional_price !== undefined) {
+        const rawP = b.promotionalPrice !== undefined ? b.promotionalPrice : b.promotional_price;
+        const parsedP = parsePromotionalPriceInput(rawP);
+        if (parsedP === undefined) {
+            return res.status(400).json({ error: 'Preço promocional inválido. Use um valor maior que zero.' });
+        }
+        promotionalPriceDb = parsedP;
+    }
+
     const dbClient = await pool.connect();
     try {
         await dbClient.query('BEGIN');
@@ -3065,11 +3146,11 @@ app.post('/admin/campaigns', requireAdminAuth, async (req, res) => {
             : 0;
         const ins = await dbClient.query(
             `
-            INSERT INTO promotional_campaigns (id, name, description, active, valid_from, valid_to, category, sort_order)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            RETURNING id, name, description, active, valid_from, valid_to, category, sort_order, created_at, updated_at
+            INSERT INTO promotional_campaigns (id, name, description, active, valid_from, valid_to, category, sort_order, promotional_price)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            RETURNING id, name, description, active, valid_from, valid_to, category, sort_order, promotional_price, created_at, updated_at
         `,
-            [id, name, description, active, vf, vt, category, sortOrder]
+            [id, name, description, active, vf, vt, category, sortOrder, promotionalPriceDb]
         );
         await applyCampaignLinkedServiceIds(dbClient, id, serviceIdsNorm);
         await dbClient.query('COMMIT');
@@ -3191,6 +3272,14 @@ app.patch('/admin/campaigns/:id', requireAdminAuth, async (req, res) => {
         const d = parseOptionalIsoTimestamp(raw);
         if (d === undefined) return res.status(400).json({ error: 'validTo inválido.' });
         push('valid_to', d);
+    }
+    if (b.promotionalPrice !== undefined || b.promotional_price !== undefined) {
+        const rawP = b.promotionalPrice !== undefined ? b.promotionalPrice : b.promotional_price;
+        const parsedP = parsePromotionalPriceInput(rawP);
+        if (parsedP === undefined) {
+            return res.status(400).json({ error: 'Preço promocional inválido. Use um valor maior que zero.' });
+        }
+        push('promotional_price', parsedP);
     }
 
     const hasServiceIdsKey = b.serviceIds !== undefined || b.service_ids !== undefined;
@@ -3733,9 +3822,7 @@ app.post('/appointments', async (req, res) => {
             });
         }
 
-        const totalServicePrice = roundMoney2(
-            serviceIdsNorm.reduce((sum, id) => sum + Number(catalogById.get(id).price || 0), 0)
-        );
+        const totalServicePrice = computeTotalPriceForServiceIds(serviceIdsNorm);
 
         if (!Number.isFinite(totalServicePrice) || totalServicePrice <= 0) {
             return res.status(400).json({ error: 'Serviço inválido ou valor não encontrado para este procedimento.' });
