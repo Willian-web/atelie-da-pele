@@ -1431,11 +1431,457 @@ textarea.form-control {
         flex-direction: column;
         align-items: stretch;
         width: 100%;
-        max-width: 120px;
+        max-width: 100%;
     }
 
     .admin-campaigns-action-btn {
         width: 100%;
         min-width: 0;
+    }
+}
+
+/* —— Painel profissional: mobile ≤768px (chips; Serviços/Campanhas em cards via JSX) —— */
+.admin-mobile-nav {
+    display: none;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    margin: 0 0 12px;
+    padding: 4px 0 10px;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    border-bottom: 1px solid var(--border-color);
+    padding-left: max(0px, env(safe-area-inset-left, 0px));
+    padding-right: max(0px, env(safe-area-inset-right, 0px));
+}
+
+.admin-mobile-nav::-webkit-scrollbar {
+    height: 4px;
+}
+
+.admin-mobile-nav::-webkit-scrollbar-thumb {
+    background: rgba(111, 76, 165, 0.25);
+    border-radius: 4px;
+}
+
+.admin-mobile-nav__chip {
+    flex: 0 0 auto;
+    padding: 7px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    min-height: 36px;
+    box-sizing: border-box;
+}
+
+.admin-mobile-nav__chip--exit {
+    border-color: rgba(196, 92, 106, 0.45);
+    color: var(--danger);
+}
+
+.admin-mobile-nav__chip--exit:hover {
+    border-color: var(--danger);
+    background: var(--danger-soft);
+}
+
+/* Cartões administrativos — Serviços / Campanhas (mobile; renderizados só em viewport ≤768px) */
+.admin-catalog-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
+}
+
+.admin-catalog-card {
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--card-bg);
+    padding: 14px 16px;
+    box-shadow: var(--shadow-soft);
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
+}
+
+.admin-catalog-card__title {
+    margin: 0 0 12px;
+    padding: 0;
+    font-size: 1.08rem;
+    font-weight: 700;
+    font-family: var(--font-heading);
+    color: var(--text-dark);
+    line-height: 1.35;
+    word-break: normal;
+    overflow-wrap: break-word;
+}
+
+.admin-catalog-card__field {
+    margin-bottom: 10px;
+}
+
+.admin-catalog-card__field:last-of-type {
+    margin-bottom: 0;
+}
+
+.admin-catalog-card__label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    font-family: var(--font-body);
+}
+
+.admin-catalog-card__value {
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--text-dark);
+    word-break: normal;
+    overflow-wrap: break-word;
+}
+
+.admin-catalog-card__sub {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    line-height: 1.35;
+    word-break: normal;
+    overflow-wrap: break-word;
+}
+
+.admin-catalog-card__actions {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(111, 76, 165, 0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.admin-catalog-card__actions .admin-campaigns-action-btn {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    height: auto;
+    white-space: normal;
+    padding: 10px 12px;
+    box-sizing: border-box;
+}
+
+.admin-catalog-card__btn-apagar {
+    border-color: rgba(196, 92, 106, 0.5) !important;
+    color: var(--danger) !important;
+    background: transparent !important;
+}
+
+.admin-catalog-card__btn-apagar:hover {
+    border-color: var(--danger) !important;
+    background: var(--danger-soft) !important;
+    color: #9b1c1c !important;
+}
+
+.admin-catalog-empty {
+    margin: 0;
+    padding: 18px 16px;
+    border-radius: 12px;
+    border: 1px dashed var(--border-color);
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.5;
+    text-align: center;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+}
+
+@media (max-width: 768px) {
+    .admin-panel-root .admin-layout {
+        max-width: 100%;
+        overflow-x: clip;
+    }
+
+    .admin-panel-root .admin-mobile-nav {
+        display: flex;
+    }
+
+    .admin-panel-root .admin-sidebar {
+        display: none !important;
+    }
+
+    .admin-panel-root .admin-panel-head {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+
+    .admin-panel-root .admin-panel-head h2 {
+        flex: none;
+        width: 100%;
+        min-width: 0;
+        word-break: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .admin-panel-root .admin-panel-head .btn-admin {
+        align-self: flex-start;
+        max-width: 100%;
+    }
+
+    .admin-panel-root .admin-content-body {
+        margin-top: 0;
+    }
+}
+
+@media (min-width: 769px) {
+    .admin-mobile-nav {
+        display: none !important;
+    }
+}
+
+/* Etapa 1 — «Como deseja agendar os procedimentos?» (estilos extraídos do inline) */
+.schedule-mode-block {
+    margin-top: 28px;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    background: #faf9fb;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+/* Tela inicial do agendamento (cliente) — estrutura comum */
+.client-booking-home__intro {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: -8px 0 12px;
+    line-height: 1.45;
+    text-align: center;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.client-booking-home__step1-form {
+    margin-top: 40px;
+}
+
+.service-card__footer {
+    margin-top: auto;
+    padding-top: 12px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.service-card__details-btn {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    border: none;
+    background: transparent;
+    padding: 6px 0;
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--brand-primary);
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
+    line-height: 1.35;
+    min-height: 40px;
+    border-bottom: 1px solid rgba(166, 120, 180, 0.35);
+    border-radius: 0;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.service-card__details-btn:hover {
+    color: var(--brand-dark);
+    border-bottom-color: rgba(111, 76, 165, 0.55);
+}
+
+.service-card__details-btn:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+
+/* Tela inicial — refinamento só em mobile ≤768px (desktop ≥769px inalterado) */
+@media (max-width: 768px) {
+    .top-bar.top-bar--site-header {
+        padding: 8px 0 10px;
+        margin-bottom: 10px;
+        gap: 8px;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+    }
+
+    .top-bar--site-header .logo {
+        align-items: center;
+        width: 100%;
+    }
+
+    .top-bar--site-header .logo-sub {
+        text-align: center;
+    }
+
+    .top-bar--site-header .top-bar__nav {
+        justify-content: center !important;
+        width: 100%;
+        gap: 8px;
+        row-gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    .top-bar--site-header .btn-admin {
+        flex: 1 1 calc(50% - 4px);
+        min-width: 0;
+        max-width: 100%;
+        min-height: 44px;
+        padding: 8px 10px;
+        justify-content: center;
+        white-space: normal;
+        text-align: center;
+        line-height: 1.25;
+    }
+
+    .client-booking-home.booking-section {
+        padding: 12px 14px 18px;
+        padding-bottom: max(80px, calc(20px + env(safe-area-inset-bottom, 0px)));
+        overflow-x: hidden;
+    }
+
+    .client-booking-home .section-title {
+        margin-bottom: 8px;
+        font-size: clamp(1.12rem, 4vw, 1.42rem);
+        line-height: 1.22;
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    .client-booking-home__intro {
+        margin: -4px 0 10px;
+        font-size: 12.5px;
+        line-height: 1.38;
+    }
+
+    .client-booking-home .service-category-chips {
+        gap: 6px;
+        row-gap: 6px;
+        margin-bottom: 12px;
+        justify-content: center;
+        align-items: flex-start;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
+    .client-booking-home .service-category-chip {
+        padding: 6px 10px;
+        font-size: 11.5px;
+        font-weight: 600;
+        word-break: normal;
+        overflow-wrap: break-word;
+        hyphens: manual;
+        line-height: 1.25;
+    }
+
+    .client-booking-home .services-grid {
+        gap: 10px;
+        margin-bottom: 18px;
+    }
+
+    .client-booking-home .service-card {
+        padding: 12px 12px 14px;
+        min-height: 0;
+        border-radius: 12px;
+    }
+
+    .client-booking-home .service-card-header {
+        margin-bottom: 6px;
+        gap: 6px;
+    }
+
+    .client-booking-home .service-card h3 {
+        font-size: clamp(0.95rem, 3.6vw, 1.05rem);
+        line-height: 1.28;
+        word-break: normal;
+        overflow-wrap: break-word;
+        hyphens: none;
+    }
+
+    .client-booking-home .service-price {
+        margin-top: 8px;
+        font-size: clamp(1.05rem, 3.5vw, 1.22rem);
+    }
+
+    .client-booking-home .service-card__footer {
+        padding-top: 8px;
+    }
+
+    .client-booking-home .service-card__details-btn {
+        min-height: 44px;
+        padding: 8px 2px 8px 0;
+        font-size: 13px;
+        font-weight: 700;
+        border-bottom-width: 2px;
+    }
+
+    .client-booking-home .service-card--campaign-bundle .service-card__promo-pill {
+        position: static;
+        display: inline-block;
+        width: fit-content;
+        max-width: 100%;
+        margin: 0 0 8px 0;
+        align-self: flex-end;
+        text-align: center;
+    }
+
+    .client-booking-home .service-card--campaign-bundle .service-card-header {
+        padding-top: 0;
+        padding-right: 0;
+        margin-bottom: 4px;
+    }
+
+    .client-booking-home .service-card--promo:not(.service-card--campaign-bundle) .service-card-header {
+        padding-right: 62px;
+    }
+
+    .client-booking-home .service-card__promo-pill {
+        top: 8px;
+        right: 8px;
+        font-size: 8.5px;
+        padding: 4px 8px;
+        max-width: min(52%, 112px);
+        line-height: 1.2;
+        white-space: normal;
+        text-align: center;
+    }
+
+    .client-booking-home .schedule-mode-block {
+        margin-top: 18px;
+        padding: 12px;
+    }
+
+    .client-booking-home__step1-form {
+        margin-top: 20px;
     }
 }

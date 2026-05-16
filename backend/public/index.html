@@ -63,9 +63,14 @@
                 right: max(20px, env(safe-area-inset-right, 0px));
             }
         }
-        @media (max-width: 480px) {
-            .atelie-wa-float { padding: 12px; }
+        @media (max-width: 768px) {
+            .atelie-wa-float {
+                padding: 11px 12px;
+                bottom: max(12px, env(safe-area-inset-bottom, 0px));
+                right: max(12px, env(safe-area-inset-right, 0px));
+            }
             .atelie-wa-float__label { display: none; }
+            .atelie-wa-float .fab { font-size: 20px; }
         }
         .atelie-wa-discrete {
             display: inline-flex;
@@ -309,6 +314,7 @@
             max-width: 100%;
             box-sizing: border-box;
             text-align: left;
+            overflow-x: clip;
         }
         .admin-layout {
             display: flex;
@@ -439,7 +445,8 @@
             color: var(--text-muted);
             line-height: 1.5;
         }
-        @media (min-width: 768px) {
+        /* Desktop/tablet largo: sidebar a partir de 769px (mobile inclui 768px). */
+        @media (min-width: 769px) {
             .admin-layout {
                 flex-direction: row;
                 align-items: flex-start;
@@ -2160,11 +2167,9 @@ const ClientArea = ({
         <>
         <div>
             {step === 1 && (
-                <div className="booking-section step-container">
+                <div className="booking-section step-container client-booking-home">
                     <h2 className="section-title">O que deseja agendar?</h2>
-                    <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '-8px 0 12px', lineHeight: 1.45 }}>
-                        Escolha os procedimentos desejados.
-                    </p>
+                    <p className="client-booking-home__intro">Escolha os procedimentos desejados.</p>
                     <div className="service-category-chips" role="tablist" aria-label="Filtrar por categoria ou campanha">
                         {serviceCategoryChips.map((label) => (
                             <button
@@ -2225,27 +2230,15 @@ const ClientArea = ({
                                         {s.isCampaignBundle ? PROMO_CLIENT_FILTER_LABEL : s.category}
                                     </div>
                                     <div className="service-price">{formatPrice(s.price)}</div>
-                                    <div style={{ marginTop: 'auto', paddingTop: '12px' }}>
+                                    <div className="service-card__footer">
                                         <button
                                             type="button"
+                                            className="service-card__details-btn"
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 setServiceDetailOpenId((prev) => (prev === s.id ? null : s.id));
                                             }}
                                             aria-expanded={detailsOpen}
-                                            style={{
-                                                border: 'none',
-                                                background: 'transparent',
-                                                padding: '4px 0',
-                                                margin: 0,
-                                                fontSize: '12px',
-                                                fontWeight: 600,
-                                                color: 'var(--brand-primary)',
-                                                cursor: 'pointer',
-                                                textDecoration: 'none',
-                                                borderBottom: '1px solid rgba(166, 120, 180, 0.35)',
-                                                fontFamily: 'inherit'
-                                            }}
                                         >
                                             {detailsOpen ? 'Ocultar detalhes' : 'Ver detalhes'}
                                         </button>
@@ -2303,16 +2296,7 @@ const ClientArea = ({
                     </div>
 
                     {selectedServiceIds.length > 1 && (
-                        <div
-                            className="schedule-mode-block"
-                            style={{
-                                marginTop: '28px',
-                                padding: '16px',
-                                borderRadius: '12px',
-                                border: '1px solid var(--border-color)',
-                                background: '#faf9fb'
-                            }}
-                        >
+                        <div className="schedule-mode-block">
                             <h3 className="section-title" style={{ fontSize: '17px', marginBottom: '10px' }}>
                                 Como deseja agendar os procedimentos?
                             </h3>
@@ -2384,8 +2368,7 @@ const ClientArea = ({
                             e.preventDefault();
                             if (canProceedStep1) setStep(2);
                         }}
-                        className="form-grid"
-                        style={{ marginTop: '40px' }}
+                        className="form-grid client-booking-home__step1-form"
                     >
                         {(selectedServiceIds.length <= 1 || scheduleMode === 'sequential') && (
                             <>
@@ -3027,8 +3010,27 @@ const AdminArea = ({
     const [adminCampaignsLoading, setAdminCampaignsLoading] = useState(false);
     const [adminCampaignsError, setAdminCampaignsError] = useState('');
     const [campaignModal, setCampaignModal] = useState(null);
+    /** Mobile ≤768px: Serviços e Campanhas em cards em vez de tabela. */
+    const [adminCatalogCardsLayout, setAdminCatalogCardsLayout] = useState(() =>
+        typeof window !== 'undefined' && window.matchMedia
+            ? window.matchMedia('(max-width: 768px)').matches
+            : false
+    );
 
     const todayStr = getLocalTodayStr();
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+        const mq = window.matchMedia('(max-width: 768px)');
+        const sync = () => setAdminCatalogCardsLayout(!!mq.matches);
+        if (mq.addEventListener) mq.addEventListener('change', sync);
+        else mq.addListener(sync);
+        sync();
+        return () => {
+            if (mq.removeEventListener) mq.removeEventListener('change', sync);
+            else mq.removeListener(sync);
+        };
+    }, []);
 
     const adminFetch = async (url, options = {}) => {
         const headers = { ...(options.headers || {}) };
@@ -4286,6 +4288,79 @@ const AdminArea = ({
 
                 {adminCampaignsLoading ? (
                     <p style={{ color: 'var(--text-muted)' }}>Carregando…</p>
+                ) : adminCatalogCardsLayout ? (
+                    <div className="admin-catalog-card-list">
+                        {adminCampaigns.length === 0 ? (
+                            <p className="admin-catalog-empty">
+                                Nenhuma campanha cadastrada. Use «Nova campanha» para criar.
+                            </p>
+                        ) : (
+                            adminCampaigns.map((c) => {
+                                const total = linkedPackagesTotal(c.id);
+                                const nPack = c.linkedCount != null ? Number(c.linkedCount) : 0;
+                                const rowActive = isAdminCampaignRowActive(c);
+                                return (
+                                    <article key={c.id} className="admin-catalog-card">
+                                        <h4 className="admin-catalog-card__title">{c.name}</h4>
+                                        <div className="admin-catalog-card__field">
+                                            <span className="admin-catalog-card__label">Categoria</span>
+                                            <div className="admin-catalog-card__value">{c.category || 'Campanhas'}</div>
+                                        </div>
+                                        <div className="admin-catalog-card__field">
+                                            <span className="admin-catalog-card__label">Valor</span>
+                                            <div className="admin-catalog-card__value">{fmtMoney(total)}</div>
+                                            {nPack > 0 ? (
+                                                <div className="admin-catalog-card__sub">
+                                                    {nPack} pacote{nPack !== 1 ? 's' : ''}
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                        <div className="admin-catalog-card__field">
+                                            <span className="admin-catalog-card__label">Status</span>
+                                            <div className="admin-catalog-card__value">{rowActive ? 'Ativa' : 'Inativa'}</div>
+                                        </div>
+                                        <div className="admin-catalog-card__field">
+                                            <span className="admin-catalog-card__label">Validade</span>
+                                            <div className="admin-catalog-card__value">{formatCampaignValidityShort(c.validFrom, c.validTo)}</div>
+                                        </div>
+                                        <div className="admin-catalog-card__actions">
+                                            <button
+                                                type="button"
+                                                className="admin-campaigns-action-btn admin-campaigns-action-btn--edit"
+                                                onClick={() => openEditCampaign(c)}
+                                            >
+                                                Editar
+                                            </button>
+                                            {rowActive ? (
+                                                <button
+                                                    type="button"
+                                                    className="admin-campaigns-action-btn admin-campaigns-action-btn--inativar"
+                                                    onClick={() => inactivateCampaign(c)}
+                                                >
+                                                    Inativar
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    className="admin-campaigns-action-btn admin-campaigns-action-btn--ativar"
+                                                    onClick={() => activateCampaign(c)}
+                                                >
+                                                    Ativar
+                                                </button>
+                                            )}
+                                            <button
+                                                type="button"
+                                                className="admin-campaigns-action-btn admin-campaigns-action-btn--apagar admin-catalog-card__btn-apagar"
+                                                onClick={() => deleteCampaign(c)}
+                                            >
+                                                Apagar
+                                            </button>
+                                        </div>
+                                    </article>
+                                );
+                            })
+                        )}
+                    </div>
                 ) : (
                     <div
                         className="admin-services-table-wrap"
@@ -4323,10 +4398,24 @@ const AdminArea = ({
                                         const rowActive = isAdminCampaignRowActive(c);
                                         return (
                                             <tr key={c.id} style={{ borderTop: '1px solid var(--border-color)' }}>
-                                                <td style={{ padding: '10px 12px', fontSize: '13px', wordBreak: 'break-word' }}>
+                                                <td
+                                                    style={{
+                                                        padding: '10px 12px',
+                                                        fontSize: '13px',
+                                                        wordBreak: 'normal',
+                                                        overflowWrap: 'break-word'
+                                                    }}
+                                                >
                                                     <div style={{ fontWeight: 700 }}>{c.name}</div>
                                                 </td>
-                                                <td style={{ padding: '10px 12px', fontSize: '13px', wordBreak: 'break-word' }}>
+                                                <td
+                                                    style={{
+                                                        padding: '10px 12px',
+                                                        fontSize: '13px',
+                                                        wordBreak: 'normal',
+                                                        overflowWrap: 'break-word'
+                                                    }}
+                                                >
                                                     {c.category || 'Campanhas'}
                                                 </td>
                                                 <td style={{ padding: '10px 12px', fontSize: '13px', whiteSpace: 'nowrap', verticalAlign: 'top' }}>
@@ -4713,6 +4802,65 @@ const AdminArea = ({
 
                 {servicesAdminLoading ? (
                     <p style={{ color: 'var(--text-muted)' }}>Carregando…</p>
+                ) : adminCatalogCardsLayout ? (
+                    <div className="admin-catalog-card-list">
+                        {servicesMainGridRows.length === 0 ? (
+                            <p className="admin-catalog-empty">
+                                Nenhum serviço comum cadastrado. Use «Novo serviço» ou gerencie vales e pacotes na aba Campanhas.
+                            </p>
+                        ) : (
+                            servicesMainGridRows.map((row) => (
+                                <article key={row.id} className="admin-catalog-card">
+                                    <h4 className="admin-catalog-card__title">{row.name}</h4>
+                                    <div className="admin-catalog-card__field">
+                                        <span className="admin-catalog-card__label">Categoria</span>
+                                        <div className="admin-catalog-card__value">{row.category || '—'}</div>
+                                    </div>
+                                    <div className="admin-catalog-card__field">
+                                        <span className="admin-catalog-card__label">Preço</span>
+                                        <div className="admin-catalog-card__value">{fmtMoney(row.price)}</div>
+                                    </div>
+                                    <div className="admin-catalog-card__field">
+                                        <span className="admin-catalog-card__label">Status</span>
+                                        <div className="admin-catalog-card__value">{row.active ? 'Ativo' : 'Inativo'}</div>
+                                    </div>
+                                    <div className="admin-catalog-card__actions">
+                                        <button
+                                            type="button"
+                                            className="admin-campaigns-action-btn admin-campaigns-action-btn--edit"
+                                            onClick={() => openEdit(row)}
+                                        >
+                                            Editar
+                                        </button>
+                                        {row.active ? (
+                                            <button
+                                                type="button"
+                                                className="admin-campaigns-action-btn admin-campaigns-action-btn--inativar"
+                                                onClick={() => toggleActiveRow(row)}
+                                            >
+                                                Inativar
+                                            </button>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                className="admin-campaigns-action-btn admin-campaigns-action-btn--ativar"
+                                                onClick={() => toggleActiveRow(row)}
+                                            >
+                                                Ativar
+                                            </button>
+                                        )}
+                                        <button
+                                            type="button"
+                                            className="admin-campaigns-action-btn admin-campaigns-action-btn--apagar admin-catalog-card__btn-apagar"
+                                            onClick={() => deleteServiceRow(row)}
+                                        >
+                                            Apagar
+                                        </button>
+                                    </div>
+                                </article>
+                            ))
+                        )}
+                    </div>
                 ) : (
                     <div
                         className="admin-services-table-wrap"
@@ -4744,49 +4892,65 @@ const AdminArea = ({
                                     </tr>
                                 ) : (
                                     servicesMainGridRows.map((row) => (
-                                    <tr key={row.id} style={{ borderTop: '1px solid var(--border-color)' }}>
-                                        <td style={{ padding: '10px 12px', fontSize: '13px', wordBreak: 'break-word' }}>
-                                            <div style={{ fontWeight: 700 }}>{row.name}</div>
-                                        </td>
-                                        <td style={{ padding: '10px 12px', fontSize: '13px', wordBreak: 'break-word' }}>{row.category || '—'}</td>
-                                        <td style={{ padding: '10px 12px', fontSize: '13px', whiteSpace: 'nowrap' }}>{fmtMoney(row.price)}</td>
-                                        <td style={{ padding: '10px 12px', fontSize: '13px' }}>{row.active ? 'Sim' : 'Não'}</td>
-                                        <td className="admin-campaigns-actions-cell admin-campaigns-table-actions-col">
-                                            <div className="admin-campaigns-actions-row">
-                                                <button
-                                                    type="button"
-                                                    className="admin-campaigns-action-btn admin-campaigns-action-btn--edit"
-                                                    onClick={() => openEdit(row)}
-                                                >
-                                                    Editar
-                                                </button>
-                                                {row.active ? (
+                                        <tr key={row.id} style={{ borderTop: '1px solid var(--border-color)' }}>
+                                            <td
+                                                style={{
+                                                    padding: '10px 12px',
+                                                    fontSize: '13px',
+                                                    wordBreak: 'normal',
+                                                    overflowWrap: 'break-word'
+                                                }}
+                                            >
+                                                <div style={{ fontWeight: 700 }}>{row.name}</div>
+                                            </td>
+                                            <td
+                                                style={{
+                                                    padding: '10px 12px',
+                                                    fontSize: '13px',
+                                                    wordBreak: 'normal',
+                                                    overflowWrap: 'break-word'
+                                                }}
+                                            >
+                                                {row.category || '—'}
+                                            </td>
+                                            <td style={{ padding: '10px 12px', fontSize: '13px', whiteSpace: 'nowrap' }}>{fmtMoney(row.price)}</td>
+                                            <td style={{ padding: '10px 12px', fontSize: '13px' }}>{row.active ? 'Sim' : 'Não'}</td>
+                                            <td className="admin-campaigns-actions-cell admin-campaigns-table-actions-col">
+                                                <div className="admin-campaigns-actions-row">
                                                     <button
                                                         type="button"
-                                                        className="admin-campaigns-action-btn admin-campaigns-action-btn--inativar"
-                                                        onClick={() => toggleActiveRow(row)}
+                                                        className="admin-campaigns-action-btn admin-campaigns-action-btn--edit"
+                                                        onClick={() => openEdit(row)}
                                                     >
-                                                        Inativar
+                                                        Editar
                                                     </button>
-                                                ) : (
+                                                    {row.active ? (
+                                                        <button
+                                                            type="button"
+                                                            className="admin-campaigns-action-btn admin-campaigns-action-btn--inativar"
+                                                            onClick={() => toggleActiveRow(row)}
+                                                        >
+                                                            Inativar
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            className="admin-campaigns-action-btn admin-campaigns-action-btn--ativar"
+                                                            onClick={() => toggleActiveRow(row)}
+                                                        >
+                                                            Ativar
+                                                        </button>
+                                                    )}
                                                     <button
                                                         type="button"
-                                                        className="admin-campaigns-action-btn admin-campaigns-action-btn--ativar"
-                                                        onClick={() => toggleActiveRow(row)}
+                                                        className="admin-campaigns-action-btn admin-campaigns-action-btn--apagar"
+                                                        onClick={() => deleteServiceRow(row)}
                                                     >
-                                                        Ativar
+                                                        Apagar
                                                     </button>
-                                                )}
-                                                <button
-                                                    type="button"
-                                                    className="admin-campaigns-action-btn admin-campaigns-action-btn--apagar"
-                                                    onClick={() => deleteServiceRow(row)}
-                                                >
-                                                    Apagar
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
+                                                </div>
+                                            </td>
+                                        </tr>
                                     ))
                                 )}
                             </tbody>
@@ -5045,12 +5209,12 @@ const AdminArea = ({
     };
 
     const adminNavItems = [
-        { id: 'agenda', label: 'Agenda Geral', icon: 'fa-calendar-days' },
-        { id: 'clients', label: 'Radar Clientes', icon: 'fa-user-group' },
-        { id: 'report', label: 'Relatórios', icon: 'fa-chart-line' },
-        { id: 'blocks', label: 'Horários', icon: 'fa-clock' },
-        { id: 'services', label: 'Serviços', icon: 'fa-spa' },
-        { id: 'campaigns', label: 'Campanhas', icon: 'fa-bullhorn' }
+        { id: 'agenda', label: 'Agenda Geral', chipLabel: 'Agenda', icon: 'fa-calendar-days' },
+        { id: 'clients', label: 'Radar Clientes', chipLabel: 'Clientes', icon: 'fa-user-group' },
+        { id: 'report', label: 'Relatórios', chipLabel: 'Relatórios', icon: 'fa-chart-line' },
+        { id: 'blocks', label: 'Horários', chipLabel: 'Horários', icon: 'fa-clock' },
+        { id: 'services', label: 'Serviços', chipLabel: 'Serviços', icon: 'fa-spa' },
+        { id: 'campaigns', label: 'Campanhas', chipLabel: 'Campanhas', icon: 'fa-bullhorn' }
     ];
 
     return (
@@ -5120,6 +5284,31 @@ const AdminArea = ({
                             {adminPanelRefreshing ? ' Atualizando…' : ' Atualizar'}
                         </button>
                     </div>
+
+                    <nav className="admin-mobile-nav" aria-label="Seções do painel">
+                        {adminNavItems.map((item) => (
+                            <button
+                                key={`admin-mnav-${item.id}`}
+                                type="button"
+                                className={`admin-mobile-nav__chip tab-btn${adminView === item.id ? ' active' : ''}`}
+                                onClick={() => setAdminView(item.id)}
+                                aria-current={adminView === item.id ? 'page' : undefined}
+                                aria-label={item.label}
+                            >
+                                {item.chipLabel}
+                            </button>
+                        ))}
+                        <button
+                            type="button"
+                            className="admin-mobile-nav__chip admin-mobile-nav__chip--exit tab-btn"
+                            onClick={() => {
+                                if (typeof onExitAdmin === 'function') onExitAdmin();
+                            }}
+                            aria-label="Sair do painel profissional"
+                        >
+                            Sair
+                        </button>
+                    </nav>
 
                     <div className="admin-content-body">
                         {adminView === 'agenda' && renderAgenda()}
