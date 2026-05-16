@@ -1748,8 +1748,8 @@ const ClientArea = ({
         if (!sig || mobileAccInitSigRef.current === sig) return;
         mobileAccInitSigRef.current = sig;
         const o = {};
-        mobileCategoryKeys.forEach((k, i) => {
-            o[k] = i === 0;
+        mobileCategoryKeys.forEach((k) => {
+            o[k] = false;
         });
         setMobileAccOpen(o);
     }, [mobileCategoryKeys]);
@@ -2528,12 +2528,16 @@ const ClientArea = ({
                                 ? 'Nenhum item selecionado'
                                 : `${selectionDisplayCount} ${selectionDisplayCount === 1 ? 'item selecionado' : 'itens selecionados'}`}
                         </p>
-                        <p className="client-booking-home__mobile-summary-line">
-                            Duração: {selectionTotalDurationMin} min
-                        </p>
-                        <p className="client-booking-home__mobile-summary-line">
-                            Investimento: {formatPrice(selectionTotalPrice)}
-                        </p>
+                        <div className="client-booking-home__mobile-summary-grid">
+                            <div className="client-booking-home__mobile-summary-stat">
+                                <span className="client-booking-home__mobile-summary-stat-label">Duração</span>
+                                <span className="client-booking-home__mobile-summary-stat-value">{selectionTotalDurationMin} min</span>
+                            </div>
+                            <div className="client-booking-home__mobile-summary-stat">
+                                <span className="client-booking-home__mobile-summary-stat-label">Investimento</span>
+                                <span className="client-booking-home__mobile-summary-stat-value">{formatPrice(selectionTotalPrice)}</span>
+                            </div>
+                        </div>
                     </div>
 
                     {selectedServiceIds.length > 1 && (

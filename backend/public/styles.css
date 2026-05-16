@@ -1667,6 +1667,27 @@ textarea.form-control {
         max-width: 100%;
         box-sizing: border-box;
     }
+
+    .admin-catalog-card-list {
+        gap: 14px;
+    }
+
+    .admin-catalog-card {
+        border-radius: 14px;
+        padding: 18px 16px;
+        border: 1px solid rgba(111, 76, 165, 0.12);
+        box-shadow: 0 4px 20px rgba(75, 53, 110, 0.07);
+    }
+
+    .admin-catalog-card__title {
+        font-size: 1.06rem;
+        margin-bottom: 14px;
+    }
+
+    .admin-catalog-card__actions {
+        margin-top: 16px;
+        padding-top: 16px;
+    }
 }
 
 @media (min-width: 769px) {
@@ -2031,6 +2052,38 @@ textarea.form-control {
     text-transform: uppercase;
 }
 
+.client-booking-home__mobile-summary-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 16px;
+    align-items: start;
+}
+
+.client-booking-home__mobile-summary-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.client-booking-home__mobile-summary-stat-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    line-height: 1.2;
+}
+
+.client-booking-home__mobile-summary-stat-value {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--brand-dark);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.25;
+    word-break: normal;
+}
+
 /* Tela inicial — refinamento só em mobile ≤768px (desktop ≥769px inalterado) */
 @media (max-width: 768px) {
     .top-bar.top-bar--site-header {
@@ -2047,8 +2100,17 @@ textarea.form-control {
         width: 100%;
     }
 
+    .top-bar--site-header .logo-main {
+        font-size: clamp(26px, 6.4vw, 36px);
+        line-height: 1.15;
+    }
+
     .top-bar--site-header .logo-sub {
         text-align: center;
+        font-size: 12.5px;
+        letter-spacing: 0.14em;
+        margin-top: 4px;
+        opacity: 0.92;
     }
 
     .top-bar--site-header .top-bar__nav {
@@ -2063,12 +2125,24 @@ textarea.form-control {
         flex: 1 1 calc(50% - 4px);
         min-width: 0;
         max-width: 100%;
-        min-height: 44px;
-        padding: 8px 10px;
+        min-height: 46px;
+        padding: 10px 12px;
         justify-content: center;
         white-space: normal;
         text-align: center;
         line-height: 1.25;
+        font-size: clamp(14px, 3.8vw, 16px);
+        font-weight: 500;
+        gap: 8px;
+    }
+
+    .top-bar--site-header .btn-admin.active {
+        font-weight: 700;
+    }
+
+    .top-bar--site-header .btn-admin i {
+        font-size: 1.05em;
+        opacity: 0.9;
     }
 
     .client-booking-home.booking-section {
@@ -2076,6 +2150,8 @@ textarea.form-control {
         padding-bottom: max(102px, calc(32px + env(safe-area-inset-bottom, 0px)));
         overflow-x: hidden;
         border-radius: 16px;
+        border-color: rgba(111, 76, 165, 0.12);
+        box-shadow: 0 10px 36px -14px rgba(75, 53, 110, 0.12);
     }
 
     .client-booking-home__mobile-head {
@@ -2124,7 +2200,7 @@ textarea.form-control {
         text-align: center;
     }
 
-    .client-booking-home__mobile-summary-line--strong + .client-booking-home__mobile-summary-line {
+    .client-booking-home__mobile-summary-line--strong + .client-booking-home__mobile-summary-grid {
         padding-top: 14px;
         margin-top: 6px;
         border-top: 1px solid rgba(111, 76, 165, 0.12);
