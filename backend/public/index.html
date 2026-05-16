@@ -1027,12 +1027,13 @@ const formatAgendaServiceSummary = (app, catalogOpt) => {
     return { label, total: Math.round(total * 100) / 100, scheduleHint };
 };
 
-/** Título no card do cliente: sempre o nome do procedimento no catálogo. */
+/** Título no card do cliente: usa card_title (Premium, Essencial, etc.) quando houver; senão o nome do catálogo. */
 const getClientServiceCardTitle = (service) => {
     if (!service) return 'Serviço';
+    const card = String(service.cardTitle || service.card_title || '').trim();
+    if (card) return card;
     const n = String(service.name || '').trim();
-    if (n) return n;
-    return String(service.cardTitle || service.card_title || '').trim() || 'Serviço';
+    return n || 'Serviço';
 };
 
 const getClientServiceTitleById = (serviceId, catalogOpt) =>
