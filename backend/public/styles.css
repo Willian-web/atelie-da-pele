@@ -1440,7 +1440,7 @@ textarea.form-control {
     }
 }
 
-/* —— Painel profissional: mobile ≤768px (chips; Serviços/Campanhas em cards via JSX) —— */
+/* —— Painel profissional: mobile ≤768px (grade de atalhos; Serviços/Campanhas em cards via JSX) —— */
 .admin-mobile-nav {
     display: none;
     width: 100%;
@@ -1449,29 +1449,13 @@ textarea.form-control {
     margin: 0 0 12px;
     padding: 4px 0 10px;
     gap: 8px;
-    align-items: center;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior-x: contain;
-    scrollbar-width: thin;
+    align-items: stretch;
     border-bottom: 1px solid var(--border-color);
     padding-left: max(0px, env(safe-area-inset-left, 0px));
     padding-right: max(0px, env(safe-area-inset-right, 0px));
 }
 
-.admin-mobile-nav::-webkit-scrollbar {
-    height: 4px;
-}
-
-.admin-mobile-nav::-webkit-scrollbar-thumb {
-    background: rgba(111, 76, 165, 0.25);
-    border-radius: 4px;
-}
-
 .admin-mobile-nav__chip {
-    flex: 0 0 auto;
     padding: 7px 14px;
     border-radius: 999px;
     font-size: 13px;
@@ -1631,7 +1615,47 @@ textarea.form-control {
     }
 
     .admin-panel-root .admin-mobile-nav {
-        display: flex;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        align-items: stretch;
+        margin: 0 0 16px;
+        padding: 2px 0 16px;
+        overflow-x: visible;
+        overflow-y: visible;
+        border-bottom-color: rgba(111, 76, 165, 0.12);
+    }
+
+    .admin-panel-root .admin-mobile-nav__chip {
+        width: 100%;
+        min-height: 50px;
+        margin: 0;
+        padding: 14px 12px;
+        border-radius: 14px;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        line-height: 1.25;
+        white-space: normal;
+        text-align: center;
+        justify-content: center;
+        align-items: center;
+        display: inline-flex;
+        border: 1px solid rgba(111, 76, 165, 0.14);
+        box-shadow: 0 2px 14px rgba(75, 53, 110, 0.07);
+        box-sizing: border-box;
+        hyphens: none;
+    }
+
+    .admin-panel-root .admin-mobile-nav__chip.tab-btn.active {
+        box-shadow: 0 4px 18px rgba(75, 53, 110, 0.18);
+        border-color: transparent;
+    }
+
+    .admin-panel-root .admin-mobile-nav__chip--exit {
+        grid-column: 1 / -1;
+        margin-top: 2px;
+        min-height: 48px;
     }
 
     .admin-panel-root .admin-sidebar {

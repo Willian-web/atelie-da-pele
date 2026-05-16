@@ -447,7 +447,7 @@
             color: var(--text-muted);
             line-height: 1.5;
         }
-        /* Mobile ≤768px: sem sidebar em lista; navegação só em chips horizontais */
+        /* Mobile ≤768px: sem sidebar; navegação em grade (sem scroll horizontal) */
         @media (max-width: 768px) {
             .admin-panel-root .admin-layout {
                 flex-direction: column;
@@ -456,9 +456,6 @@
             }
             .admin-panel-root .admin-sidebar {
                 display: none !important;
-            }
-            .admin-panel-root .admin-mobile-nav {
-                display: flex !important;
             }
             .admin-panel-root .admin-panel-head {
                 flex-direction: column;
