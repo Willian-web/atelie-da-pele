@@ -335,6 +335,7 @@
             border-radius: 12px;
             margin-bottom: 14px;
             overflow: hidden;
+            order: 1;
         }
         .admin-sidebar-inner {
             padding: 12px 14px 14px;
@@ -417,6 +418,7 @@
             min-width: 0;
             max-width: 100%;
             box-sizing: border-box;
+            order: 2;
         }
         .admin-content-body {
             margin-top: 16px;
@@ -444,6 +446,41 @@
             font-size: 14px;
             color: var(--text-muted);
             line-height: 1.5;
+        }
+        /* Mobile ≤768px: sem sidebar em lista; navegação só em chips horizontais */
+        @media (max-width: 768px) {
+            .admin-panel-root .admin-layout {
+                flex-direction: column;
+                max-width: 100%;
+                overflow-x: clip;
+            }
+            .admin-panel-root .admin-sidebar {
+                display: none !important;
+            }
+            .admin-panel-root .admin-mobile-nav {
+                display: flex !important;
+            }
+            .admin-panel-root .admin-panel-head {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+                margin-bottom: 10px;
+            }
+            .admin-panel-root .admin-panel-head h2 {
+                margin: 0;
+                flex: none;
+                width: 100%;
+                min-width: 0;
+                word-break: normal;
+                overflow-wrap: anywhere;
+            }
+            .admin-panel-root .admin-panel-head .btn-admin {
+                align-self: flex-start;
+                max-width: 100%;
+            }
+            .admin-panel-root .admin-content-body {
+                margin-top: 0;
+            }
         }
         /* Desktop/tablet largo: sidebar a partir de 769px (mobile inclui 768px). */
         @media (min-width: 769px) {
@@ -1698,6 +1735,53 @@ const ClientArea = ({
         return nonPromoServiceList.filter((s) => s.category === serviceCatFilter);
     }, [serviceCatFilter, promosVisibleOnClient, nonPromoServiceList, clientCampaignBundles]);
 
+    const mobileCategoryKeys = useMemo(
+        () => serviceCategoryChips.filter((c) => c !== 'Todos'),
+        [serviceCategoryChips]
+    );
+
+    const mobileAccInitSigRef = useRef('');
+    const [mobileAccOpen, setMobileAccOpen] = useState({});
+
+    useEffect(() => {
+        const sig = mobileCategoryKeys.join('\0');
+        if (!sig || mobileAccInitSigRef.current === sig) return;
+        mobileAccInitSigRef.current = sig;
+        const o = {};
+        mobileCategoryKeys.forEach((k, i) => {
+            o[k] = i === 0;
+        });
+        setMobileAccOpen(o);
+    }, [mobileCategoryKeys]);
+
+    const toggleMobileAccSection = useCallback((key) => {
+        setMobileAccOpen((p) => ({ ...p, [key]: !p[key] }));
+    }, []);
+
+    const selectionDisplayCount = useMemo(() => {
+        const ids = Array.isArray(selectedServiceIds) ? selectedServiceIds : [];
+        if (ids.length === 0) return 0;
+        const idSet = new Set(ids);
+        const consumed = new Set();
+        let n = 0;
+        for (const b of clientCampaignBundles || []) {
+            const mids = Array.isArray(b.memberServiceIds) ? b.memberServiceIds : [];
+            if (mids.length && mids.every((id) => idSet.has(id))) {
+                n += 1;
+                mids.forEach((id) => consumed.add(id));
+            }
+        }
+        for (const id of ids) {
+            if (!consumed.has(id)) n += 1;
+        }
+        return n;
+    }, [selectedServiceIds, clientCampaignBundles]);
+
+    const selectionTotalDurationMin = useMemo(() => {
+        if (!selectedServiceIds.length) return 0;
+        return getTotalDurationMinutesForServiceIds(selectedServiceIds, catalogMetaLookupList);
+    }, [selectedServiceIds, catalogMetaLookupList]);
+
     const todayStr = getLocalTodayStr();
 
     const selectionTotalPrice = useMemo(() => {
@@ -2168,131 +2252,288 @@ const ClientArea = ({
         <div>
             {step === 1 && (
                 <div className="booking-section step-container client-booking-home">
-                    <h2 className="section-title">O que deseja agendar?</h2>
-                    <p className="client-booking-home__intro">Escolha os procedimentos desejados.</p>
-                    <div className="service-category-chips" role="tablist" aria-label="Filtrar por categoria ou campanha">
-                        {serviceCategoryChips.map((label) => (
-                            <button
-                                key={label}
-                                type="button"
-                                role="tab"
-                                aria-selected={serviceCatFilter === label}
-                                className={`service-category-chip${serviceCatFilter === label ? ' active' : ''}${
-                                    label === PROMO_CLIENT_FILTER_LABEL ? ' service-category-chip--campaign' : ''
-                                }`}
-                                onClick={() => setServiceCatFilter(label)}
-                            >
-                                {label}
-                            </button>
-                        ))}
+                    <div className="client-booking-home__mobile-head">
+                        <h2 className="section-title client-booking-home__title-mobile">Menu de Procedimentos</h2>
+                        <div className="client-booking-home__title-rule" aria-hidden="true" />
+                        <p className="client-booking-home__intro client-booking-home__intro-mobile">Escolha os procedimentos desejados.</p>
                     </div>
-                    <div className="services-grid">
-                        {servicesForGrid.map((s) => {
-                            const detailsOpen = serviceDetailOpenId === s.id;
-                            return (
-                                <div
-                                    key={s.id}
-                                    role="button"
-                                    tabIndex={0}
-                                    className={`service-card${s.promotionalCampaign || s.isPromotionalPackage ? ' service-card--promo' : ''}${
-                                        s.isCampaignBundle ? ' service-card--campaign-bundle' : ''
-                                    }${isClientGridItemSelected(s, selectedServiceIds) ? ' selected' : ''}`}
-                                    onClick={() => toggleServiceSelection(s.id)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter' || e.key === ' ') {
-                                            e.preventDefault();
-                                            toggleServiceSelection(s.id);
-                                        }
-                                    }}
+                    <div className="client-booking-home__desktop-head">
+                        <h2 className="section-title">O que deseja agendar?</h2>
+                        <p className="client-booking-home__intro">Escolha os procedimentos desejados.</p>
+                    </div>
+                    <div className="client-booking-home__desktop-only">
+                        <div className="service-category-chips" role="tablist" aria-label="Filtrar por categoria ou campanha">
+                            {serviceCategoryChips.map((label) => (
+                                <button
+                                    key={label}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={serviceCatFilter === label}
+                                    className={`service-category-chip${serviceCatFilter === label ? ' active' : ''}${
+                                        label === PROMO_CLIENT_FILTER_LABEL ? ' service-category-chip--campaign' : ''
+                                    }`}
+                                    onClick={() => setServiceCatFilter(label)}
                                 >
-                                    {s.promotionalCampaign || s.isPromotionalPackage ? (
-                                        <span
-                                            className="service-card__promo-pill"
-                                            title={getClientCampaignPillLabel(s)}
-                                        >
-                                            {getClientCampaignPillLabel(s)}
-                                        </span>
-                                    ) : null}
-                                    <div className="service-card-header">
-                                        <h3>{s.isCampaignBundle ? CLIENT_CAMPAIGN_CARD_MAIN_TITLE : getClientServiceCardTitle(s)}</h3>
-                                        <i className="fas fa-check-circle service-check" aria-hidden />
-                                    </div>
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="services-grid">
+                            {servicesForGrid.map((s) => {
+                                const detailsOpen = serviceDetailOpenId === s.id;
+                                return (
                                     <div
-                                        style={{
-                                            fontSize: '11px',
-                                            fontWeight: 600,
-                                            color: 'var(--text-muted)',
-                                            textTransform: 'uppercase',
-                                            letterSpacing: '0.07em',
-                                            marginTop: '2px'
+                                        key={s.id}
+                                        role="button"
+                                        tabIndex={0}
+                                        className={`service-card${s.promotionalCampaign || s.isPromotionalPackage ? ' service-card--promo' : ''}${
+                                            s.isCampaignBundle ? ' service-card--campaign-bundle' : ''
+                                        }${isClientGridItemSelected(s, selectedServiceIds) ? ' selected' : ''}`}
+                                        onClick={() => toggleServiceSelection(s.id)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                e.preventDefault();
+                                                toggleServiceSelection(s.id);
+                                            }
                                         }}
                                     >
-                                        {s.isCampaignBundle ? PROMO_CLIENT_FILTER_LABEL : s.category}
-                                    </div>
-                                    <div className="service-price">{formatPrice(s.price)}</div>
-                                    <div className="service-card__footer">
-                                        <button
-                                            type="button"
-                                            className="service-card__details-btn"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setServiceDetailOpenId((prev) => (prev === s.id ? null : s.id));
+                                        {s.promotionalCampaign || s.isPromotionalPackage ? (
+                                            <span
+                                                className="service-card__promo-pill"
+                                                title={getClientCampaignPillLabel(s)}
+                                            >
+                                                {getClientCampaignPillLabel(s)}
+                                            </span>
+                                        ) : null}
+                                        <div className="service-card-header">
+                                            <h3>{s.isCampaignBundle ? CLIENT_CAMPAIGN_CARD_MAIN_TITLE : getClientServiceCardTitle(s)}</h3>
+                                            <i className="fas fa-check-circle service-check" aria-hidden />
+                                        </div>
+                                        <div
+                                            style={{
+                                                fontSize: '11px',
+                                                fontWeight: 600,
+                                                color: 'var(--text-muted)',
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.07em',
+                                                marginTop: '2px'
                                             }}
-                                            aria-expanded={detailsOpen}
                                         >
-                                            {detailsOpen ? 'Ocultar detalhes' : 'Ver detalhes'}
-                                        </button>
-                                        {detailsOpen && s.isCampaignBundle && Array.isArray(s.includedServices) && s.includedServices.length > 0 ? (
-                                            <div
-                                                style={{
-                                                    marginTop: '10px',
-                                                    fontSize: '13px',
-                                                    color: 'var(--text-muted)',
-                                                    lineHeight: 1.5,
-                                                    textAlign: 'left'
+                                            {s.isCampaignBundle ? PROMO_CLIENT_FILTER_LABEL : s.category}
+                                        </div>
+                                        <div className="service-price">{formatPrice(s.price)}</div>
+                                        <div className="service-card__footer">
+                                            <button
+                                                type="button"
+                                                className="service-card__details-btn"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setServiceDetailOpenId((prev) => (prev === s.id ? null : s.id));
                                                 }}
+                                                aria-expanded={detailsOpen}
                                             >
-                                                <p style={{ margin: '0 0 8px', fontSize: '12px', color: 'var(--text-dark)' }}>
-                                                    <strong>Procedimento:</strong> {CLIENT_CAMPAIGN_CARD_MAIN_TITLE}
-                                                </p>
-                                                <p style={{ margin: '0 0 6px', fontWeight: 700, color: 'var(--text-dark)', fontSize: '12px' }}>
-                                                    Inclui:
-                                                </p>
-                                                <ul style={{ margin: '0 0 10px', paddingLeft: '1.1rem' }}>
-                                                    {s.includedServices.map((inc) => (
-                                                        <li key={inc.id} style={{ marginBottom: '4px' }}>
-                                                            {inc.label}
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                                <p style={{ margin: 0, fontWeight: 700, color: 'var(--text-dark)' }}>
-                                                    Valor total: {formatPrice(s.price)}
-                                                </p>
-                                            </div>
-                                        ) : null}
-                                        {detailsOpen && !s.isCampaignBundle ? (
-                                            <div
-                                                style={{
-                                                    marginTop: '10px',
-                                                    fontSize: '13px',
-                                                    color: 'var(--text-muted)',
-                                                    lineHeight: 1.5,
-                                                    textAlign: 'left'
-                                                }}
-                                            >
-                                                {String(s.name || '').trim() ? (
+                                                {detailsOpen ? 'Ocultar detalhes' : 'Ver detalhes'}
+                                            </button>
+                                            {detailsOpen && s.isCampaignBundle && Array.isArray(s.includedServices) && s.includedServices.length > 0 ? (
+                                                <div
+                                                    style={{
+                                                        marginTop: '10px',
+                                                        fontSize: '13px',
+                                                        color: 'var(--text-muted)',
+                                                        lineHeight: 1.5,
+                                                        textAlign: 'left'
+                                                    }}
+                                                >
                                                     <p style={{ margin: '0 0 8px', fontSize: '12px', color: 'var(--text-dark)' }}>
-                                                        <strong>Procedimento:</strong> {String(s.name).trim()}
+                                                        <strong>Procedimento:</strong> {CLIENT_CAMPAIGN_CARD_MAIN_TITLE}
                                                     </p>
-                                                ) : null}
-                                                {s.summary ? <p style={{ margin: '0 0 8px' }}>{s.summary}</p> : null}
-                                                {s.detail ? <p style={{ margin: 0 }}>{s.detail}</p> : null}
-                                            </div>
-                                        ) : null}
+                                                    <p style={{ margin: '0 0 6px', fontWeight: 700, color: 'var(--text-dark)', fontSize: '12px' }}>
+                                                        Inclui:
+                                                    </p>
+                                                    <ul style={{ margin: '0 0 10px', paddingLeft: '1.1rem' }}>
+                                                        {s.includedServices.map((inc) => (
+                                                            <li key={inc.id} style={{ marginBottom: '4px' }}>
+                                                                {inc.label}
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                    <p style={{ margin: 0, fontWeight: 700, color: 'var(--text-dark)' }}>
+                                                        Valor total: {formatPrice(s.price)}
+                                                    </p>
+                                                </div>
+                                            ) : null}
+                                            {detailsOpen && !s.isCampaignBundle ? (
+                                                <div
+                                                    style={{
+                                                        marginTop: '10px',
+                                                        fontSize: '13px',
+                                                        color: 'var(--text-muted)',
+                                                        lineHeight: 1.5,
+                                                        textAlign: 'left'
+                                                    }}
+                                                >
+                                                    {String(s.name || '').trim() ? (
+                                                        <p style={{ margin: '0 0 8px', fontSize: '12px', color: 'var(--text-dark)' }}>
+                                                            <strong>Procedimento:</strong> {String(s.name).trim()}
+                                                        </p>
+                                                    ) : null}
+                                                    {s.summary ? <p style={{ margin: '0 0 8px' }}>{s.summary}</p> : null}
+                                                    {s.detail ? <p style={{ margin: 0 }}>{s.detail}</p> : null}
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <div className="client-booking-home__mobile-accordion" role="navigation" aria-label="Procedimentos por categoria">
+                        {mobileCategoryKeys.map((catKey, catIdx) => {
+                            const accId = `mob-acc-${catIdx}`;
+                            const items =
+                                catKey === PROMO_CLIENT_FILTER_LABEL
+                                    ? clientCampaignBundles
+                                    : nonPromoServiceList.filter((s) => s.category === catKey);
+                            if (!items.length) return null;
+                            const expanded = !!mobileAccOpen[catKey];
+                            return (
+                                <div key={catKey} className="client-booking-acc">
+                                    <button
+                                        type="button"
+                                        id={`${accId}-btn`}
+                                        className="client-booking-acc__header"
+                                        aria-expanded={expanded}
+                                        aria-controls={`${accId}-panel`}
+                                        onClick={() => toggleMobileAccSection(catKey)}
+                                    >
+                                        <span className="client-booking-acc__header-text">{String(catKey).toLocaleUpperCase('pt-BR')}</span>
+                                        <i className={`fas fa-chevron-${expanded ? 'up' : 'down'} client-booking-acc__chev`} aria-hidden="true" />
+                                    </button>
+                                    <div
+                                        id={`${accId}-panel`}
+                                        className="client-booking-acc__panel"
+                                        role="region"
+                                        aria-labelledby={`${accId}-btn`}
+                                        hidden={!expanded}
+                                    >
+                                        {items.map((s) => {
+                                            const detailsOpen = serviceDetailOpenId === s.id;
+                                            const selected = isClientGridItemSelected(s, selectedServiceIds);
+                                            const rowDur =
+                                                s.isCampaignBundle && Array.isArray(s.memberServiceIds)
+                                                    ? getTotalDurationMinutesForServiceIds(s.memberServiceIds, catalogMetaLookupList)
+                                                    : typeof s.duration === 'number' && Number.isFinite(s.duration)
+                                                      ? s.duration
+                                                      : DEFAULT_APPOINTMENT_DURATION_MIN;
+                                            const rowTitle = s.isCampaignBundle ? CLIENT_CAMPAIGN_CARD_MAIN_TITLE : getClientServiceCardTitle(s);
+                                            return (
+                                                <div
+                                                    key={s.id}
+                                                    role="button"
+                                                    tabIndex={0}
+                                                    className={`client-booking-acc__row${selected ? ' client-booking-acc__row--selected' : ''}`}
+                                                    onClick={() => toggleServiceSelection(s.id)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter' || e.key === ' ') {
+                                                            e.preventDefault();
+                                                            toggleServiceSelection(s.id);
+                                                        }
+                                                    }}
+                                                >
+                                                    <div className="client-booking-acc__row-body">
+                                                        <div className="client-booking-acc__row-top">
+                                                            <span className="client-booking-acc__row-name">{rowTitle}</span>
+                                                            <button
+                                                                type="button"
+                                                                className="client-booking-acc__info"
+                                                                aria-label={detailsOpen ? 'Ocultar detalhes' : 'Ver detalhes'}
+                                                                title={detailsOpen ? 'Ocultar' : 'Detalhes'}
+                                                                onClick={(e) => {
+                                                                    e.preventDefault();
+                                                                    e.stopPropagation();
+                                                                    setServiceDetailOpenId((prev) => (prev === s.id ? null : s.id));
+                                                                }}
+                                                            >
+                                                                <i className="fas fa-circle-question" aria-hidden="true" />
+                                                            </button>
+                                                        </div>
+                                                        {s.isCampaignBundle ? (
+                                                            <div className="client-booking-acc__campaign-tag">{getClientCampaignPillLabel(s)}</div>
+                                                        ) : null}
+                                                        <div className="client-booking-acc__row-meta">
+                                                            {rowDur} min · {formatPrice(s.price)}
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            className="client-booking-acc__details-link"
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+                                                                setServiceDetailOpenId((prev) => (prev === s.id ? null : s.id));
+                                                            }}
+                                                            aria-expanded={detailsOpen}
+                                                        >
+                                                            {detailsOpen ? 'Ocultar' : 'detalhes'}
+                                                        </button>
+                                                        {detailsOpen && s.isCampaignBundle && Array.isArray(s.includedServices) && s.includedServices.length > 0 ? (
+                                                            <div className="client-booking-acc__details">
+                                                                <p style={{ margin: '0 0 8px', fontSize: '12px', color: 'var(--text-dark)' }}>
+                                                                    <strong>Procedimento:</strong> {CLIENT_CAMPAIGN_CARD_MAIN_TITLE}
+                                                                </p>
+                                                                <p style={{ margin: '0 0 6px', fontWeight: 700, color: 'var(--text-dark)', fontSize: '12px' }}>
+                                                                    Inclui:
+                                                                </p>
+                                                                <ul style={{ margin: '0 0 10px', paddingLeft: '1.1rem' }}>
+                                                                    {s.includedServices.map((inc) => (
+                                                                        <li key={inc.id} style={{ marginBottom: '4px' }}>
+                                                                            {inc.label}
+                                                                        </li>
+                                                                    ))}
+                                                                </ul>
+                                                                <p style={{ margin: 0, fontWeight: 700, color: 'var(--text-dark)' }}>
+                                                                    Valor total: {formatPrice(s.price)}
+                                                                </p>
+                                                            </div>
+                                                        ) : null}
+                                                        {detailsOpen && !s.isCampaignBundle ? (
+                                                            <div className="client-booking-acc__details">
+                                                                {String(s.name || '').trim() ? (
+                                                                    <p style={{ margin: '0 0 8px', fontSize: '12px', color: 'var(--text-dark)' }}>
+                                                                        <strong>Procedimento:</strong> {String(s.name).trim()}
+                                                                    </p>
+                                                                ) : null}
+                                                                {s.summary ? <p style={{ margin: '0 0 8px' }}>{s.summary}</p> : null}
+                                                                {s.detail ? <p style={{ margin: 0 }}>{s.detail}</p> : null}
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
+                                                    <div className="client-booking-acc__row-check" aria-hidden="true">
+                                                        <span className={`client-booking-acc__checkbox${selected ? ' client-booking-acc__checkbox--on' : ''}`}>
+                                                            <i className="fas fa-check" />
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             );
                         })}
+                    </div>
+
+                    <div className="client-booking-home__mobile-summary" aria-live="polite">
+                        <p className="client-booking-home__mobile-summary-line client-booking-home__mobile-summary-line--strong">
+                            {selectionDisplayCount === 0
+                                ? 'Nenhum item selecionado'
+                                : `${selectionDisplayCount} ${selectionDisplayCount === 1 ? 'item selecionado' : 'itens selecionados'}`}
+                        </p>
+                        <p className="client-booking-home__mobile-summary-line">
+                            Duração: {selectionTotalDurationMin} min
+                        </p>
+                        <p className="client-booking-home__mobile-summary-line">
+                            Investimento: {formatPrice(selectionTotalPrice)}
+                        </p>
                     </div>
 
                     {selectedServiceIds.length > 1 && (
@@ -2567,8 +2808,13 @@ const ClientArea = ({
                         </div>
 
                         <div className="form-group full-width">
-                            <button type="submit" className="btn-submit" disabled={!canProceedStep1}>
-                                Prosseguir à Identificação <i className="fas fa-arrow-right"></i>
+                            <button type="submit" className="btn-submit client-booking-home__submit-step1" disabled={!canProceedStep1}>
+                                <span className="client-booking-home__submit-label client-booking-home__submit-label--desktop">
+                                    Prosseguir à Identificação <i className="fas fa-arrow-right"></i>
+                                </span>
+                                <span className="client-booking-home__submit-label client-booking-home__submit-label--mobile">
+                                    Prosseguir com reserva <i className="fas fa-arrow-right"></i>
+                                </span>
                             </button>
                         </div>
                     </form>
@@ -3023,14 +3269,24 @@ const AdminArea = ({
         if (typeof window === 'undefined' || !window.matchMedia) return undefined;
         const mq = window.matchMedia('(max-width: 768px)');
         const sync = () => setAdminCatalogCardsLayout(!!mq.matches);
+        sync();
         if (mq.addEventListener) mq.addEventListener('change', sync);
         else mq.addListener(sync);
-        sync();
+        window.addEventListener('resize', sync);
+        window.addEventListener('orientationchange', sync);
         return () => {
             if (mq.removeEventListener) mq.removeEventListener('change', sync);
             else mq.removeListener(sync);
+            window.removeEventListener('resize', sync);
+            window.removeEventListener('orientationchange', sync);
         };
     }, []);
+
+    useEffect(() => {
+        if (adminView !== 'services' && adminView !== 'campaigns') return;
+        if (typeof window === 'undefined' || !window.matchMedia) return;
+        setAdminCatalogCardsLayout(window.matchMedia('(max-width: 768px)').matches);
+    }, [adminView]);
 
     const adminFetch = async (url, options = {}) => {
         const headers = { ...(options.headers || {}) };
@@ -4316,12 +4572,12 @@ const AdminArea = ({
                                             ) : null}
                                         </div>
                                         <div className="admin-catalog-card__field">
-                                            <span className="admin-catalog-card__label">Status</span>
-                                            <div className="admin-catalog-card__value">{rowActive ? 'Ativa' : 'Inativa'}</div>
-                                        </div>
-                                        <div className="admin-catalog-card__field">
                                             <span className="admin-catalog-card__label">Validade</span>
                                             <div className="admin-catalog-card__value">{formatCampaignValidityShort(c.validFrom, c.validTo)}</div>
+                                        </div>
+                                        <div className="admin-catalog-card__field">
+                                            <span className="admin-catalog-card__label">Status</span>
+                                            <div className="admin-catalog-card__value">{rowActive ? 'Ativa' : 'Inativa'}</div>
                                         </div>
                                         <div className="admin-catalog-card__actions">
                                             <button
@@ -5220,56 +5476,6 @@ const AdminArea = ({
     return (
         <div className="booking-section step-container admin-panel-root">
             <div className="admin-layout">
-                <aside
-                    className={`admin-sidebar${adminSidebarCollapsed ? ' admin-sidebar--collapsed' : ''}`}
-                    aria-label="Menu lateral do painel"
-                >
-                    <div className="admin-sidebar-inner">
-                        <div className="admin-sidebar-title-row">
-                            <h3 className="admin-sidebar-heading">Menu</h3>
-                            <button
-                                type="button"
-                                className="admin-sidebar-toggle"
-                                onClick={() => setAdminSidebarCollapsed((c) => !c)}
-                                aria-expanded={!adminSidebarCollapsed}
-                                aria-controls="admin-main-panel"
-                                title={adminSidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}
-                            >
-                                <i
-                                    className={`fas ${adminSidebarCollapsed ? 'fa-chevron-right' : 'fa-chevron-left'}`}
-                                    aria-hidden="true"
-                                />
-                            </button>
-                        </div>
-                        <nav className="admin-sidebar-nav" aria-label="Seções do painel">
-                            {adminNavItems.map((item) => (
-                                <button
-                                    key={item.id}
-                                    type="button"
-                                    className={`admin-menu-item tab-btn${adminView === item.id ? ' active' : ''}`}
-                                    onClick={() => setAdminView(item.id)}
-                                    aria-current={adminView === item.id ? 'page' : undefined}
-                                    aria-label={item.label}
-                                >
-                                    <i className={`fas ${item.icon}`} aria-hidden="true" />
-                                    <span className="admin-menu-item-label">{item.label}</span>
-                                </button>
-                            ))}
-                            <button
-                                type="button"
-                                className="admin-menu-item admin-menu-item--exit tab-btn"
-                                onClick={() => {
-                                    if (typeof onExitAdmin === 'function') onExitAdmin();
-                                }}
-                                aria-label="Sair do painel profissional"
-                            >
-                                <i className="fas fa-right-from-bracket" aria-hidden="true" />
-                                <span className="admin-menu-item-label">Sair</span>
-                            </button>
-                        </nav>
-                    </div>
-                </aside>
-
                 <div className="admin-content" id="admin-main-panel">
                     <div className="admin-panel-head">
                         <h2>Painel Profissional</h2>
@@ -5319,6 +5525,56 @@ const AdminArea = ({
                         {adminView === 'services' && renderAdminServices()}
                     </div>
                 </div>
+
+                <aside
+                    className={`admin-sidebar${adminSidebarCollapsed ? ' admin-sidebar--collapsed' : ''}`}
+                    aria-label="Menu lateral do painel"
+                >
+                    <div className="admin-sidebar-inner">
+                        <div className="admin-sidebar-title-row">
+                            <h3 className="admin-sidebar-heading">Menu</h3>
+                            <button
+                                type="button"
+                                className="admin-sidebar-toggle"
+                                onClick={() => setAdminSidebarCollapsed((c) => !c)}
+                                aria-expanded={!adminSidebarCollapsed}
+                                aria-controls="admin-main-panel"
+                                title={adminSidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}
+                            >
+                                <i
+                                    className={`fas ${adminSidebarCollapsed ? 'fa-chevron-right' : 'fa-chevron-left'}`}
+                                    aria-hidden="true"
+                                />
+                            </button>
+                        </div>
+                        <nav className="admin-sidebar-nav" aria-label="Seções do painel">
+                            {adminNavItems.map((item) => (
+                                <button
+                                    key={item.id}
+                                    type="button"
+                                    className={`admin-menu-item tab-btn${adminView === item.id ? ' active' : ''}`}
+                                    onClick={() => setAdminView(item.id)}
+                                    aria-current={adminView === item.id ? 'page' : undefined}
+                                    aria-label={item.label}
+                                >
+                                    <i className={`fas ${item.icon}`} aria-hidden="true" />
+                                    <span className="admin-menu-item-label">{item.label}</span>
+                                </button>
+                            ))}
+                            <button
+                                type="button"
+                                className="admin-menu-item admin-menu-item--exit tab-btn"
+                                onClick={() => {
+                                    if (typeof onExitAdmin === 'function') onExitAdmin();
+                                }}
+                                aria-label="Sair do painel profissional"
+                            >
+                                <i className="fas fa-right-from-bracket" aria-hidden="true" />
+                                <span className="admin-menu-item-label">Sair</span>
+                            </button>
+                        </nav>
+                    </div>
+                </aside>
             </div>
 
             {confirmLocalPayModal && (
