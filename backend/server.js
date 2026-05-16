@@ -33,7 +33,9 @@ const {
     sendConfirmationEmail,
     sendClientConfirmationEmail,
     sendClientAppointmentCancelledEmail,
-    sendAdminAppointmentCancelledEmail
+    sendAdminAppointmentCancelledEmail,
+    sendClientAppointmentRescheduledEmail,
+    sendAdminAppointmentRescheduledEmail
 } = require('./services/emailService');
 const { createCheckoutLink, checkPaymentStatus } = require('./services/infinitepayService');
 
@@ -707,6 +709,67 @@ function normalizeSlotStatus(st) {
 
 function isSlotCancelled(slot) {
     return normalizeSlotStatus(slot && slot.status) === APPOINTMENT_SLOT_STATUS_CANCELLED;
+}
+
+/** Garante que todos os slots do JSON fiquem com status cancelled (cancelamento total). */
+function ensureAllSlotsCancelled(slots, cancelReason) {
+    const now = new Date().toISOString();
+    const reason = String(cancelReason || '').trim() || 'Cancelado pelo usuário';
+    return (slots || []).map((sl, i) => ({
+        ...sl,
+        slotIndex: sl.slotIndex != null ? sl.slotIndex : i,
+        status: APPOINTMENT_SLOT_STATUS_CANCELLED,
+        cancelledAt: sl.cancelledAt || now,
+        cancelReason: sl.cancelReason || reason
+    }));
+}
+
+async function notifyFullCancelEmails(cancelledRow) {
+    const id = cancelledRow.id;
+    const idsForCancelMail = getAppointmentServiceIdsFromRow(cancelledRow);
+    const serviceObjForCancelMail = buildServiceEmailAggregate(
+        idsForCancelMail.length ? idsForCancelMail : getAppointmentServiceIdsFromRow(cancelledRow)
+    );
+    try {
+        const cid = cancelledRow.client_id;
+        if (cid) {
+            const cr = await pool.query('SELECT email FROM clients WHERE id = $1', [cid]);
+            const em = normalizeEmail(cr.rows[0]?.email);
+            if (isValidEmailBasic(em)) {
+                await sendClientAppointmentCancelledEmail(cancelledRow, serviceObjForCancelMail, em);
+            }
+        }
+    } catch (mailErr) {
+        console.error(`[Cancel] Falha e-mail cliente (${id}):`, mailErr);
+    }
+    try {
+        await sendAdminAppointmentCancelledEmail(cancelledRow, serviceObjForCancelMail);
+    } catch (adminMailErr) {
+        console.error(`[Cancel] Falha e-mail admin (${id}):`, adminMailErr);
+    }
+}
+
+async function notifyRescheduleEmails(appointmentRow, serviceData, rescheduleInfo) {
+    const id = appointmentRow.id;
+    try {
+        const cid = appointmentRow.client_id;
+        if (cid) {
+            const cr = await pool.query('SELECT email FROM clients WHERE id = $1', [cid]);
+            const em = normalizeEmail(cr.rows[0]?.email);
+            if (isValidEmailBasic(em)) {
+                await sendClientAppointmentRescheduledEmail(appointmentRow, serviceData, em, rescheduleInfo);
+            } else {
+                console.warn(`[Reschedule] E-mail da cliente ausente (${id}).`);
+            }
+        }
+    } catch (mailErr) {
+        console.error(`[Reschedule] Falha e-mail cliente (${id}):`, mailErr);
+    }
+    try {
+        await sendAdminAppointmentRescheduledEmail(appointmentRow, serviceData, rescheduleInfo);
+    } catch (adminMailErr) {
+        console.error(`[Reschedule] Falha e-mail admin (${id}):`, adminMailErr);
+    }
 }
 
 function enrichAppointmentSlotRecord(x, slotIndex) {
@@ -3873,50 +3936,56 @@ function clientHoursUntilSlot(slot) {
     return (apTime - now) / (1000 * 60 * 60);
 }
 
-async function applyFullAppointmentCancel(ap, cancelledBy, cancelReason, res) {
+async function applyFullAppointmentCancel(ap, cancelledBy, cancelReason, res, opts = {}) {
     const id = ap.id;
+    const slotsSource =
+        opts.precomputedSlots && opts.precomputedSlots.length
+            ? opts.precomputedSlots
+            : getServiceSlotsFromRow(ap);
+    const allCancelled = ensureAllSlotsCancelled(slotsSource, cancelReason);
+    const slotsJson = serializeAppointmentSlots(allCancelled);
+
     const update = await pool.query(
         `
             UPDATE appointments
             SET status = 'cancelled',
                 cancelled_by = $1,
                 cancel_reason = $2,
-                cancelled_at = CURRENT_TIMESTAMP
-            WHERE id = $3
+                cancelled_at = COALESCE(cancelled_at, CURRENT_TIMESTAMP),
+                service_slots_json = $3,
+                service_ids_json = $4
+            WHERE id = $5
               AND status <> 'cancelled'
             RETURNING *
         `,
-        [cancelledBy || 'client', cancelReason || 'Cancelado pelo usuário', id]
+        [
+            cancelledBy || 'client',
+            cancelReason || 'Cancelado pelo usuário',
+            slotsJson,
+            JSON.stringify([]),
+            id
+        ]
     );
     if (update.rows.length === 0) {
         const again = await pool.query('SELECT * FROM appointments WHERE id = $1', [id]);
         if (again.rows.length === 0) {
             return res.status(404).json({ error: 'Agendamento inexistente.' });
         }
-        return res.json(mapAppointmentRow(again.rows[0]));
+        const repaired = await pool.query(
+            `
+                UPDATE appointments
+                SET service_slots_json = $1,
+                    service_ids_json = $2
+                WHERE id = $3
+                RETURNING *
+            `,
+            [slotsJson, JSON.stringify([]), id]
+        );
+        const row = repaired.rows[0] || again.rows[0];
+        return res.json(mapAppointmentRow(row));
     }
     const cancelledRow = update.rows[0];
-    const idsForCancelMail = getActiveAppointmentServiceIdsFromRow(cancelledRow);
-    const serviceObjForCancelMail = buildServiceEmailAggregate(
-        idsForCancelMail.length ? idsForCancelMail : getAppointmentServiceIdsFromRow(cancelledRow)
-    );
-    try {
-        const cid = cancelledRow.client_id;
-        if (cid) {
-            const cr = await pool.query('SELECT email FROM clients WHERE id = $1', [cid]);
-            const em = normalizeEmail(cr.rows[0]?.email);
-            if (isValidEmailBasic(em)) {
-                await sendClientAppointmentCancelledEmail(cancelledRow, serviceObjForCancelMail, em);
-            }
-        }
-    } catch (mailErr) {
-        console.error(`[Cancel] Falha e-mail cliente (${id}):`, mailErr);
-    }
-    try {
-        await sendAdminAppointmentCancelledEmail(cancelledRow, serviceObjForCancelMail);
-    } catch (adminMailErr) {
-        console.error(`[Cancel] Falha e-mail admin (${id}):`, adminMailErr);
-    }
+    await notifyFullCancelEmails(cancelledRow);
     return res.json(mapAppointmentRow(cancelledRow));
 }
 
@@ -3997,8 +4066,32 @@ app.patch('/appointments/:id/slots/:slotIndex/cancel', async (req, res) => {
 
         const activeCount = nextSlots.filter((sl) => !isSlotCancelled(sl)).length;
         if (activeCount === 0) {
-            await clientPg.query('ROLLBACK');
-            return applyFullAppointmentCancel(ap, cancelledBy || 'client', cancelReason, res);
+            const allCancelledSlots = ensureAllSlotsCancelled(nextSlots, cancelReason);
+            const slotsJson = serializeAppointmentSlots(allCancelledSlots);
+            const updFull = await clientPg.query(
+                `
+                UPDATE appointments
+                SET status = 'cancelled',
+                    cancelled_by = $1,
+                    cancel_reason = $2,
+                    cancelled_at = COALESCE(cancelled_at, CURRENT_TIMESTAMP),
+                    service_slots_json = $3,
+                    service_ids_json = $4
+                WHERE id = $5
+                RETURNING *
+            `,
+                [
+                    cancelledBy || 'client',
+                    cancelReason || 'Cancelado pelo cliente em Meus agendamentos',
+                    slotsJson,
+                    JSON.stringify([]),
+                    id
+                ]
+            );
+            await clientPg.query('COMMIT');
+            const cancelledRow = updFull.rows[0];
+            await notifyFullCancelEmails(cancelledRow);
+            return res.json(mapAppointmentRow(cancelledRow));
         }
 
         const { primaryDate, primaryTime, primaryServiceId } = syncAppointmentPrimaryFromActiveSlots(nextSlots);
@@ -4094,6 +4187,12 @@ app.patch('/appointments/:id/slots/:slotIndex/reschedule', async (req, res) => {
             return res.status(400).json({ error: 'Este procedimento já foi cancelado.' });
         }
 
+        const oldDate = target.date;
+        const oldTime = target.time;
+        const procedureName =
+            target.serviceName || findServiceById(target.serviceId)?.name || target.serviceId || 'Procedimento';
+        const multiItemAppointment = slots.length > 1;
+
         const diffHours = clientHoursUntilSlot(target);
         if (diffHours < 2) {
             await clientPg.query('ROLLBACK');
@@ -4174,7 +4273,17 @@ app.patch('/appointments/:id/slots/:slotIndex/reschedule', async (req, res) => {
         );
 
         await clientPg.query('COMMIT');
-        return res.json(mapAppointmentRow(upd.rows[0]));
+        const updatedRow = upd.rows[0];
+        const serviceObjMail = buildServiceEmailAggregate([target.serviceId]);
+        await notifyRescheduleEmails(updatedRow, serviceObjMail, {
+            procedureName,
+            oldDate,
+            oldTime,
+            newDate: dateStr,
+            newTime: timeStr,
+            isIndividualProcedure: multiItemAppointment
+        });
+        return res.json(mapAppointmentRow(updatedRow));
     } catch (e) {
         await clientPg.query('ROLLBACK');
         console.error('[PATCH /appointments/:id/slots/:slotIndex/reschedule] Erro:', e);
@@ -4225,18 +4334,29 @@ app.patch('/appointments/:id/cancel', async (req, res) => {
             }
         }
 
+        const allCancelled = ensureAllSlotsCancelled(getServiceSlotsFromRow(ap), cancelReason);
+        const slotsJson = serializeAppointmentSlots(allCancelled);
+
         const update = await pool.query(
             `
             UPDATE appointments
             SET status = 'cancelled',
                 cancelled_by = $1,
                 cancel_reason = $2,
-                cancelled_at = CURRENT_TIMESTAMP
-            WHERE id = $3
+                cancelled_at = COALESCE(cancelled_at, CURRENT_TIMESTAMP),
+                service_slots_json = $3,
+                service_ids_json = $4
+            WHERE id = $5
               AND status <> 'cancelled'
             RETURNING *
         `,
-            [cancelledBy || 'client', cancelReason || 'Cancelado pelo usuário', id]
+            [
+                cancelledBy || 'client',
+                cancelReason || 'Cancelado pelo usuário',
+                slotsJson,
+                JSON.stringify([]),
+                id
+            ]
         );
 
         if (update.rows.length === 0) {
@@ -4248,29 +4368,7 @@ app.patch('/appointments/:id/cancel', async (req, res) => {
         }
 
         const cancelledRow = update.rows[0];
-        const idsForCancelMail = getAppointmentServiceIdsFromRow(cancelledRow);
-        const serviceObjForCancelMail = buildServiceEmailAggregate(idsForCancelMail);
-
-        try {
-            const cid = cancelledRow.client_id;
-            if (cid) {
-                const cr = await pool.query('SELECT email FROM clients WHERE id = $1', [cid]);
-                const em = normalizeEmail(cr.rows[0]?.email);
-                if (isValidEmailBasic(em)) {
-                    await sendClientAppointmentCancelledEmail(cancelledRow, serviceObjForCancelMail, em);
-                } else {
-                    console.warn(`[PATCH /appointments/:id/cancel] E-mail da cliente ausente; sem aviso de cancelamento (${id}).`);
-                }
-            }
-        } catch (mailErr) {
-            console.error(`[PATCH /appointments/:id/cancel] Falha e-mail de cancelamento ao cliente (${id}):`, mailErr);
-        }
-
-        try {
-            await sendAdminAppointmentCancelledEmail(cancelledRow, serviceObjForCancelMail);
-        } catch (adminMailErr) {
-            console.error(`[PATCH /appointments/:id/cancel] Falha e-mail de cancelamento ao admin (${id}):`, adminMailErr);
-        }
+        await notifyFullCancelEmails(cancelledRow);
 
         return res.json(mapAppointmentRow(cancelledRow));
     } catch (e) {

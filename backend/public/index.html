@@ -183,27 +183,78 @@
             box-sizing: border-box;
         }
         .my-app-procedures-box {
-            margin-bottom: 12px;
-            padding: 10px 12px;
-            border-radius: 10px;
-            border: 1px solid var(--border-color);
-            background: rgba(248, 246, 252, 0.65);
+            margin-bottom: 14px;
+            padding: 14px 14px 12px;
+            border-radius: 14px;
+            border: 1px solid rgba(111, 76, 165, 0.14);
+            background: linear-gradient(165deg, rgba(243, 215, 231, 0.38) 0%, rgba(252, 248, 254, 0.95) 48%);
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 12px;
             max-width: 100%;
             box-sizing: border-box;
+            overflow-x: hidden;
+        }
+        .my-app-procedures-box__title {
+            margin: 0;
+            font-weight: 700;
+            font-size: 13px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--brand-dark);
         }
         .my-app-procedure-row {
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px solid rgba(226, 232, 240, 0.9);
-            background: #fff;
+            padding: 14px 14px 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(111, 76, 165, 0.1);
+            background: var(--card-bg);
             max-width: 100%;
             box-sizing: border-box;
+            box-shadow: 0 2px 12px rgba(75, 53, 110, 0.05);
         }
         .my-app-procedure-row--cancelled {
-            opacity: 0.72;
+            border-color: rgba(196, 92, 106, 0.28);
+            background: rgba(252, 238, 238, 0.55);
+            opacity: 0.92;
+        }
+        .my-app-procedure-row__name {
+            font-weight: 700;
+            font-size: 14px;
+            margin-bottom: 6px;
+            line-height: 1.35;
+            color: var(--text-dark);
+            word-break: normal;
+            overflow-wrap: break-word;
+        }
+        .my-app-procedure-row__meta {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+            line-height: 1.4;
+        }
+        .my-app-procedure-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            line-height: 1.25;
+        }
+        .my-app-procedure-badge--confirmed {
+            background: rgba(111, 76, 165, 0.12);
+            color: var(--brand-dark);
+            border: 1px solid rgba(111, 76, 165, 0.2);
+        }
+        .my-app-procedure-badge--pending {
+            background: rgba(227, 168, 200, 0.35);
+            color: var(--brand-dark);
+            border: 1px solid rgba(111, 76, 165, 0.16);
+        }
+        .my-app-procedure-badge--cancelled {
+            background: rgba(196, 92, 106, 0.14);
+            color: #9b1c1c;
+            border: 1px solid rgba(196, 92, 106, 0.32);
         }
         .my-app-procedure-actions {
             display: flex;
@@ -6398,10 +6449,24 @@ const MyAppointmentsArea = ({
                             <>
                                 {appointmentItems.length > 0 ? (
                                     <div className="my-app-procedures-box">
-                                        <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--text-dark)' }}>Procedimentos</div>
+                                        <h4 className="my-app-procedures-box__title">Procedimentos</h4>
                                         {appointmentItems.map((item) => {
+                                            const itemStatusNorm = String(item.status || '').toLowerCase();
+                                            const appStatusNorm = String(app.status || '').toLowerCase();
                                             const cancelled =
-                                                String(item.status || '').toLowerCase() === APPOINTMENT_ITEM_STATUS_CANCELLED;
+                                                itemStatusNorm === APPOINTMENT_ITEM_STATUS_CANCELLED ||
+                                                appStatusNorm === 'cancelled';
+                                            const itemPending = !cancelled && appStatusNorm === 'pending_payment';
+                                            const badgeClass = cancelled
+                                                ? 'my-app-procedure-badge--cancelled'
+                                                : itemPending
+                                                  ? 'my-app-procedure-badge--pending'
+                                                  : 'my-app-procedure-badge--confirmed';
+                                            const badgeLabel = cancelled
+                                                ? 'Cancelado'
+                                                : itemPending
+                                                  ? 'Pendente pagamento'
+                                                  : 'Confirmado';
                                             const itemDate = item.date
                                                 ? new Date(item.date + 'T12:00:00').toLocaleDateString('pt-BR')
                                                 : '—';
@@ -6413,15 +6478,16 @@ const MyAppointmentsArea = ({
                                                     key={`${app.id}-${item.slotIndex}-${item.id}`}
                                                     className={`my-app-procedure-row${cancelled ? ' my-app-procedure-row--cancelled' : ''}`}
                                                 >
-                                                    <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '4px' }}>
+                                                    <div className="my-app-procedure-row__name">
                                                         {item.name || item.id}
                                                     </div>
-                                                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                                                    <div className="my-app-procedure-row__meta">
                                                         {itemDate} • {itemTime}
                                                     </div>
-                                                    <div style={{ fontSize: '12px', marginBottom: canActItem ? '6px' : 0 }}>
-                                                        <strong>Status:</strong>{' '}
-                                                        {cancelled ? 'Cancelado' : app.status === 'pending_payment' ? 'Pendente pagamento' : 'Confirmado'}
+                                                    <div style={{ marginBottom: canActItem ? '8px' : 0 }}>
+                                                        <span className={`my-app-procedure-badge ${badgeClass}`}>
+                                                            {badgeLabel}
+                                                        </span>
                                                     </div>
                                                     {canActItem ? (
                                                         <div className="my-app-procedure-actions">

@@ -1070,11 +1070,234 @@ async function sendAdminAppointmentCancelledEmail(appointmentRow, serviceData) {
     }
 }
 
+function formatDateBrYmd(ymd) {
+    if (!ymd) return '—';
+    try {
+        return new Date(`${String(ymd).trim()}T12:00:00`).toLocaleDateString('pt-BR');
+    } catch {
+        return String(ymd);
+    }
+}
+
+function buildReschedulePaymentBulletLines(appointmentRow, serviceData) {
+    const paymentLine = describePaymentForCancelEmail(appointmentRow);
+    const lines = [paymentLine];
+    const servicePriceNum =
+        typeof serviceData?.price === 'number' && Number.isFinite(serviceData.price) ? serviceData.price : null;
+    if (servicePriceNum != null) {
+        lines.push(`Valor do procedimento: ${formatCurrencyBRL(servicePriceNum)}`);
+    }
+    const st = String(appointmentRow.status || '').trim().toLowerCase();
+    if (st === 'pending_payment') {
+        lines.push('Status do pagamento: Aguardando confirmação');
+    } else if (st === 'confirmed') {
+        lines.push('Status do pagamento: Confirmado');
+    }
+    return lines.filter(Boolean);
+}
+
+/**
+ * E-mail à cliente após reagendamento (procedimento individual ou agendamento único).
+ */
+async function sendClientAppointmentRescheduledEmail(appointmentRow, serviceData, clientEmailTo, rescheduleInfo) {
+    const to = String(clientEmailTo || '').trim().toLowerCase();
+    if (!process.env.RESEND_API_KEY) {
+        console.error('[EmailService] RESEND_API_KEY ausente; não enviando e-mail de reagendamento ao cliente.');
+        return;
+    }
+    if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+        console.error('[EmailService] E-mail da cliente inválido; não enviando reagendamento.');
+        return;
+    }
+
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const clientName = appointmentRow.client_name || appointmentRow.clientName || 'Cliente';
+    const firstName = (String(clientName).trim().split(/\s+/)[0] || 'Cliente').trim();
+    const info = rescheduleInfo || {};
+    const isIndividual = !!info.isIndividualProcedure;
+    const procedureName =
+        info.procedureName ||
+        serviceData?.name ||
+        appointmentRow.service_name ||
+        appointmentRow.service_id ||
+        'Procedimento';
+
+    const oldDateStr = formatDateBrYmd(info.oldDate);
+    const oldTimeStr = info.oldTime || '—';
+    const newDateStr = formatDateBrYmd(info.newDate);
+    const newTimeStr = info.newTime || '—';
+
+    const clientInformedAddress = appointmentRow.location ? String(appointmentRow.location).trim() : '';
+    const paymentBulletLines = buildReschedulePaymentBulletLines(appointmentRow, serviceData);
+
+    const subject = `${firstName}, agendamento reagendado — Ateliê da Pele`;
+    const title = 'Agendamento reagendado';
+    const subtitle = isIndividual
+        ? 'Um procedimento do seu agendamento foi reagendado com sucesso.'
+        : 'Seu agendamento foi reagendado com sucesso.';
+
+    const details = [
+        { label: 'Cliente', value: clientName },
+        { label: isIndividual ? 'Procedimento' : 'Serviço(s)', value: procedureName },
+        { label: 'Data e horário anteriores', value: `${oldDateStr} às ${oldTimeStr}` },
+        { label: 'Nova data e horário', value: `${newDateStr} às ${newTimeStr}` },
+        { label: 'Local do atendimento', value: ATELIE_SALON_LOCATION_LINE }
+    ];
+    for (const line of paymentBulletLines) {
+        const idx = String(line).indexOf(':');
+        if (idx === -1) {
+            details.push({ label: 'Pagamento', value: line });
+        } else {
+            details.push({ label: line.slice(0, idx).trim(), value: line.slice(idx + 1).trim() });
+        }
+    }
+    if (clientInformedAddress) {
+        details.push({ label: 'Endereço informado', value: clientInformedAddress });
+    }
+
+    const text = buildEmailTemplate('confirmation', 'client', {
+        greeting: `Olá, ${firstName}!`,
+        title,
+        subtitle,
+        clientName,
+        serviceName: procedureName,
+        dateStr: newDateStr,
+        timeStr: newTimeStr,
+        paymentBulletLines,
+        complement: 'Qualquer dúvida, fale conosco pelo WhatsApp (41) 8485-0169.',
+        clientInformedAddress
+    });
+
+    const html = buildEmailHtmlTemplate({
+        greeting: `Olá, ${firstName}!`,
+        title,
+        subtitle,
+        details,
+        noteAfterCard: 'Qualquer dúvida, fale conosco pelo WhatsApp (41) 8485-0169.',
+        actionButton: null
+    });
+
+    try {
+        const { data, error } = await resend.emails.send({
+            from: process.env.FROM_EMAIL || 'Ateliê da Pele <onboarding@resend.dev>',
+            to,
+            subject,
+            text,
+            html
+        });
+        if (error) {
+            console.error('[EmailService] Falha Resend (reagendamento cliente):', error.message || error);
+            throw new Error(error.message || 'Falha no envio ao cliente');
+        }
+        console.log(`[EmailService] Reagendamento à cliente enviado. Resend ID: ${data?.id || 'N/A'}`);
+        return data;
+    } catch (error) {
+        console.error('[EmailService] Falha geral e-mail reagendamento cliente:', error.message || error);
+        throw error;
+    }
+}
+
+/**
+ * Cópia administrativa de reagendamento (NOTIFICATION_EMAIL).
+ */
+async function sendAdminAppointmentRescheduledEmail(appointmentRow, serviceData, rescheduleInfo) {
+    const adminTo = String(process.env.NOTIFICATION_EMAIL || '').trim();
+    if (!process.env.RESEND_API_KEY) {
+        console.error('[EmailService] RESEND_API_KEY ausente; não enviando reagendamento ao admin.');
+        return;
+    }
+    if (!adminTo || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminTo)) {
+        console.error('[EmailService] NOTIFICATION_EMAIL ausente; não enviando reagendamento ao admin.');
+        return;
+    }
+
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const info = rescheduleInfo || {};
+    const isIndividual = !!info.isIndividualProcedure;
+    const clientName = appointmentRow.client_name || appointmentRow.clientName || 'Cliente';
+    const clientPhone = appointmentRow.client_phone || appointmentRow.clientPhone || '—';
+    const procedureName =
+        info.procedureName ||
+        serviceData?.name ||
+        appointmentRow.service_name ||
+        appointmentRow.service_id ||
+        'Procedimento';
+
+    const oldDateStr = formatDateBrYmd(info.oldDate);
+    const oldTimeStr = info.oldTime || '—';
+    const newDateStr = formatDateBrYmd(info.newDate);
+    const newTimeStr = info.newTime || '—';
+    const paymentBulletLines = buildReschedulePaymentBulletLines(appointmentRow, serviceData);
+
+    const subject = `Agendamento reagendado - ${clientName}`;
+    const title = 'Agendamento reagendado';
+    const subtitle = isIndividual
+        ? 'O cliente reagendou um procedimento deste atendimento.'
+        : 'O cliente reagendou um atendimento.';
+
+    const details = [
+        { label: 'Cliente', value: clientName },
+        { label: 'Telefone', value: clientPhone },
+        { label: isIndividual ? 'Procedimento' : 'Serviço(s)', value: procedureName },
+        { label: 'Data e horário anteriores', value: `${oldDateStr} às ${oldTimeStr}` },
+        { label: 'Nova data e horário', value: `${newDateStr} às ${newTimeStr}` }
+    ];
+    for (const line of paymentBulletLines) {
+        const idx = String(line).indexOf(':');
+        if (idx === -1) {
+            details.push({ label: 'Pagamento', value: line });
+        } else {
+            details.push({ label: line.slice(0, idx).trim(), value: line.slice(idx + 1).trim() });
+        }
+    }
+
+    const text = buildEmailTemplate('confirmation', 'admin', {
+        title,
+        subtitle,
+        clientName,
+        serviceName: procedureName,
+        dateStr: newDateStr,
+        timeStr: newTimeStr,
+        paymentBulletLines,
+        complement: '',
+        clientInformedAddress: appointmentRow.location ? String(appointmentRow.location).trim() : ''
+    });
+
+    const html = buildEmailHtmlTemplate({
+        title,
+        subtitle,
+        details,
+        noteAfterCard: '',
+        actionButton: null
+    });
+
+    try {
+        const { data, error } = await resend.emails.send({
+            from: process.env.FROM_EMAIL || 'Ateliê da Pele <onboarding@resend.dev>',
+            to: adminTo,
+            subject,
+            text,
+            html
+        });
+        if (error) {
+            console.error('[EmailService] Falha Resend (reagendamento admin):', error.message || error);
+            throw new Error(error.message || 'Falha no envio ao admin');
+        }
+        console.log(`[EmailService] Reagendamento ao admin enviado. Resend ID: ${data?.id || 'N/A'}`);
+        return data;
+    } catch (error) {
+        console.error('[EmailService] Falha geral e-mail reagendamento admin:', error.message || error);
+        throw error;
+    }
+}
+
 module.exports = {
     sendConfirmationEmail,
     sendClientConfirmationEmail,
     sendClientAppointmentCancelledEmail,
     sendAdminAppointmentCancelledEmail,
+    sendClientAppointmentRescheduledEmail,
+    sendAdminAppointmentRescheduledEmail,
     buildEmailTemplate,
     buildEmailHtmlTemplate,
     buildStandardBookingDetailRows,
