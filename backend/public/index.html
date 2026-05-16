@@ -2442,19 +2442,6 @@ const ClientArea = ({
                                                     <div className="client-booking-acc__row-body">
                                                         <div className="client-booking-acc__row-top">
                                                             <span className="client-booking-acc__row-name">{rowTitle}</span>
-                                                            <button
-                                                                type="button"
-                                                                className="client-booking-acc__info"
-                                                                aria-label={detailsOpen ? 'Ocultar detalhes' : 'Ver detalhes'}
-                                                                title={detailsOpen ? 'Ocultar' : 'Detalhes'}
-                                                                onClick={(e) => {
-                                                                    e.preventDefault();
-                                                                    e.stopPropagation();
-                                                                    setServiceDetailOpenId((prev) => (prev === s.id ? null : s.id));
-                                                                }}
-                                                            >
-                                                                <i className="fas fa-circle-question" aria-hidden="true" />
-                                                            </button>
                                                         </div>
                                                         {s.isCampaignBundle ? (
                                                             <div className="client-booking-acc__campaign-tag">{getClientCampaignPillLabel(s)}</div>
@@ -2471,8 +2458,9 @@ const ClientArea = ({
                                                                 setServiceDetailOpenId((prev) => (prev === s.id ? null : s.id));
                                                             }}
                                                             aria-expanded={detailsOpen}
+                                                            aria-label={detailsOpen ? 'Ocultar detalhes do procedimento' : 'Ver detalhes do procedimento'}
                                                         >
-                                                            {detailsOpen ? 'Ocultar' : 'detalhes'}
+                                                            {detailsOpen ? 'Ocultar' : 'Detalhes'}
                                                         </button>
                                                         {detailsOpen && s.isCampaignBundle && Array.isArray(s.includedServices) && s.includedServices.length > 0 ? (
                                                             <div className="client-booking-acc__details">

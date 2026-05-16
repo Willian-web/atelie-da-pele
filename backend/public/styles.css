@@ -1926,7 +1926,7 @@ textarea.form-control {
 .client-booking-acc__row-top {
     display: flex;
     align-items: flex-start;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 10px;
 }
 
@@ -1938,33 +1938,6 @@ textarea.form-control {
     word-break: normal;
     overflow-wrap: break-word;
     hyphens: none;
-}
-
-.client-booking-acc__info {
-    flex-shrink: 0;
-    width: 40px;
-    height: 40px;
-    margin: -4px -2px 0 0;
-    padding: 0;
-    border: none;
-    border-radius: 50%;
-    background: rgba(111, 76, 165, 0.09);
-    color: var(--brand-primary);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 16px;
-    box-shadow: 0 1px 3px rgba(75, 53, 110, 0.06);
-}
-
-.client-booking-acc__info:active {
-    transform: scale(0.96);
-}
-
-.client-booking-acc__info:focus-visible {
-    outline: 2px solid var(--focus-ring);
-    outline-offset: 2px;
 }
 
 .client-booking-acc__campaign-tag {
@@ -2113,7 +2086,7 @@ textarea.form-control {
     .top-bar.top-bar--site-header {
         padding: 8px 0 10px;
         margin-bottom: 10px;
-        gap: 8px;
+        gap: 6px;
         flex-direction: column;
         align-items: center;
         text-align: center;
@@ -2125,39 +2098,42 @@ textarea.form-control {
     }
 
     .top-bar--site-header .logo-main {
-        font-size: clamp(26px, 6.4vw, 36px);
-        line-height: 1.15;
+        font-size: clamp(30px, 7.5vw, 42px);
+        line-height: 1.12;
     }
 
     .top-bar--site-header .logo-sub {
         text-align: center;
-        font-size: 12.5px;
-        letter-spacing: 0.14em;
-        margin-top: 4px;
+        font-size: 13.5px;
+        letter-spacing: 0.13em;
+        margin-top: 5px;
         opacity: 0.92;
     }
 
     .top-bar--site-header .top-bar__nav {
         justify-content: center !important;
         width: 100%;
-        gap: 8px;
-        row-gap: 6px;
+        max-width: 100%;
+        gap: 6px;
+        column-gap: 6px;
+        row-gap: 8px;
         flex-wrap: wrap;
     }
 
     .top-bar--site-header .btn-admin {
-        flex: 1 1 calc(50% - 4px);
-        min-width: 0;
+        flex: 0 1 auto;
+        width: auto;
+        min-width: min(100%, 9.5rem);
         max-width: 100%;
         min-height: 46px;
-        padding: 10px 12px;
+        padding: 10px 14px;
         justify-content: center;
         white-space: normal;
         text-align: center;
         line-height: 1.25;
         font-size: clamp(14px, 3.8vw, 16px);
         font-weight: 500;
-        gap: 8px;
+        gap: 6px;
     }
 
     .top-bar--site-header .btn-admin.active {
