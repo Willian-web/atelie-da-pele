@@ -1714,7 +1714,8 @@ const ClientArea = ({
     bookingRestoreOrderNsu,
     onBookingRestoreConsumed,
     mergeAppointmentRow,
-    catalogServicesClient
+    catalogServicesClient,
+    catalogCampaignBundles
 }) => {
     const [step, setStep] = useState(1);
     
@@ -1763,7 +1764,20 @@ const ClientArea = ({
         return { nonPromoServiceList: SERVICES, promoServiceList: FALLBACK_PROMO_SERVICES };
     }, [effectiveClientCatalog]);
 
-    const clientCampaignBundles = useMemo(() => buildClientCampaignBundles(promoServiceList), [promoServiceList]);
+    const clientCampaignBundles = useMemo(() => {
+        const legacy = buildClientCampaignBundles(promoServiceList);
+        const api = Array.isArray(catalogCampaignBundles) ? catalogCampaignBundles : [];
+        const byKey = new Map();
+        for (const b of [...api, ...legacy]) {
+            const k = String(b.campaignId || b.id || '');
+            if (k && !byKey.has(k)) byKey.set(k, b);
+        }
+        return Array.from(byKey.values()).sort((a, b) => {
+            const d = (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0);
+            if (d !== 0) return d;
+            return String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR');
+        });
+    }, [promoServiceList, catalogCampaignBundles]);
 
     const clientCampaignBundleByCardId = useMemo(() => {
         const m = new Map();
@@ -4404,7 +4418,11 @@ const AdminArea = ({
 
     const openEditCampaign = async (c) => {
         const list = await loadAdminServices();
-        const linked = (list || []).filter((s) => s.promotionalCampaign === c.id).map((s) => s.id);
+        const linkedFromApi = Array.isArray(c.linkedServiceIds) ? c.linkedServiceIds.map((x) => String(x || '').trim()).filter(Boolean) : [];
+        const linked =
+            linkedFromApi.length > 0
+                ? linkedFromApi
+                : (list || []).filter((s) => s.promotionalCampaign === c.id).map((s) => s.id);
         setCampaignModal({
             mode: 'edit',
             id: c.id,
@@ -4593,6 +4611,18 @@ const AdminArea = ({
             const cid = String(campaignRow?.id || campaignRow || '');
             const promo = campaignRow?.promotionalPrice != null ? Number(campaignRow.promotionalPrice) : null;
             if (Number.isFinite(promo) && promo > 0) return promo;
+            const linkedIds = Array.isArray(campaignRow?.linkedServiceIds)
+                ? campaignRow.linkedServiceIds.map((x) => String(x || '').trim()).filter(Boolean)
+                : [];
+            if (linkedIds.length > 0) {
+                let sum = 0;
+                for (const sid of linkedIds) {
+                    const s = (servicesAdminList || []).find((x) => String(x.id) === sid);
+                    const n = Number(s?.price);
+                    if (Number.isFinite(n)) sum += n;
+                }
+                return Math.round(sum * 100) / 100;
+            }
             let sum = 0;
             for (const s of servicesAdminList || []) {
                 if (String(s.promotionalCampaign || '') !== cid || !s.isPromotionalPackage) continue;
@@ -6802,6 +6832,7 @@ const App = () => {
     const [adminWhatsApp, setAdminWhatsApp] = useState('');
     const [promoPackagesEnabled, setPromoPackagesEnabled] = useState(false);
     const [catalogServicesClient, setCatalogServicesClient] = useState(null);
+    const [catalogCampaignBundles, setCatalogCampaignBundles] = useState(null);
 
     const handleAdminLoginSuccess = (token) => {
         try {
@@ -6918,6 +6949,14 @@ const App = () => {
             } else {
                 setCatalogServicesClient(null);
             }
+
+            const resCamp = await fetch(`${API_BASE_URL}/public/campaign-bundles`, { cache: 'no-store' });
+            if (resCamp.ok) {
+                const campList = await resCamp.json().catch(() => null);
+                setCatalogCampaignBundles(Array.isArray(campList) ? campList : null);
+            } else {
+                setCatalogCampaignBundles(null);
+            }
         } catch (e) {
             console.error(e);
         }
@@ -6967,6 +7006,7 @@ const App = () => {
                         onBookingRestoreConsumed={clearBookingRestore}
                         mergeAppointmentRow={mergeAppointmentRow}
                         catalogServicesClient={catalogServicesClient}
+                        catalogCampaignBundles={catalogCampaignBundles}
                     />
                 )}
                 {view === 'my_apps' && (

@@ -267,6 +267,81 @@ const FIXED_SIGNAL_AMOUNT = 30.00;
 
 const PROMO_PACKAGE_IDS = new Set(['promo_dia_maes_reflexologia', 'promo_dia_maes_facial']);
 
+/** Pacotes promocionais dedicados (seed/legado): não reverter vínculo de campanha em catalog_services. */
+const LEGACY_DEDICATED_PROMO_SERVICE_IDS = ['promo_dia_maes_reflexologia', 'promo_dia_maes_facial'];
+
+/** Origens permitidas a alterar catalog_services (campanhas NÃO estão incluídas). */
+const CATALOG_MUTATION_ORIGINS = {
+    ADMIN_SERVICES: 'admin_services',
+    BOOT_LEGACY_PROMO: 'boot_legacy_promo',
+    BOOT_REPAIR: 'boot_repair',
+    SEED: 'seed'
+};
+
+/** Colunas que campanhas nunca podem alterar em catalog_services. */
+const CATALOG_CAMPAIGN_FORBIDDEN_COLUMNS = [
+    'active',
+    'archived_at',
+    'category',
+    'is_promotional_package',
+    'promotional_campaign',
+    'name',
+    'price',
+    'duration',
+    'summary',
+    'description',
+    'card_title',
+    'sort_order'
+];
+
+function catalogGuardLog(message, level = 'info') {
+    const line = `[catalog_guard] ${message}`;
+    if (level === 'warn' || level === 'error') {
+        console.warn(line);
+    } else {
+        console.log(line);
+    }
+}
+
+function catalogGuardLogBlocked(origin, field, serviceId, detail) {
+    catalogGuardLog(
+        `tentativa bloqueada: origem=${origin} campo=${field} service_id=${serviceId || '—'}${detail ? ` detalhe=${detail}` : ''}`,
+        'warn'
+    );
+}
+
+/** Campanhas só podem referenciar serviços via promotional_campaigns.linked_service_ids. */
+function catalogGuardAssertCampaignDoesNotMutateServices(origin, attemptedColumns = []) {
+    const cols = Array.isArray(attemptedColumns) ? attemptedColumns : [attemptedColumns];
+    for (const col of cols) {
+        if (!col) continue;
+        catalogGuardLogBlocked(origin, col, '*', 'use linked_service_ids na campanha');
+    }
+}
+
+function catalogGuardAssertAllowedOrigin(origin) {
+    const allowed = Object.values(CATALOG_MUTATION_ORIGINS);
+    if (!allowed.includes(origin)) {
+        catalogGuardLog(`origem não reconhecida para mutação: ${origin}`, 'warn');
+        return false;
+    }
+    return true;
+}
+
+function isDedicatedPromoPackageServiceId(serviceId) {
+    return LEGACY_DEDICATED_PROMO_SERVICE_IDS.includes(String(serviceId || '').trim());
+}
+
+function isMislinkedNormalCatalogServiceRow(row) {
+    if (!row) return false;
+    const id = String(row.id || '').trim();
+    if (!id || isDedicatedPromoPackageServiceId(id)) return false;
+    if (row.archived_at != null && String(row.archived_at).trim() !== '') return false;
+    if (row.is_promotional_package === true) return true;
+    const pc = row.promotional_campaign != null ? String(row.promotional_campaign).trim() : '';
+    return pc !== '';
+}
+
 /** Duração padrão na agenda (alinhada a `SERVICES` / `generateTimeSlots` em `public/index.html`). */
 const DEFAULT_APPOINTMENT_DURATION_MIN = 60;
 /** Intervalo mínimo entre inícios de agendamentos (minutos); grade em intervalos de 1 hora. */
@@ -474,8 +549,14 @@ async function initDB() {
             ON promotional_campaigns (active);
         `);
 
+        /*
+         * Nunca sobrescrever catalog_services em produção.
+         * Seed apenas quando a tabela estiver vazia (COUNT = 0). Sem UPDATE/DELETE em massa.
+         */
         const cntRes = await client.query(`SELECT COUNT(*)::int AS c FROM catalog_services`);
-        if (cntRes.rows[0].c === 0) {
+        const catalogCount = Number(cntRes.rows[0] && cntRes.rows[0].c) || 0;
+        if (catalogCount === 0) {
+            catalogGuardLog(`seed inicial permitido: tabela vazia, origem=${CATALOG_MUTATION_ORIGINS.SEED}`);
             const seedPath = path.join(__dirname, 'catalog_seed.json');
             const raw = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
             if (!Array.isArray(raw) || raw.length === 0) {
@@ -505,8 +586,12 @@ async function initDB() {
                         ]
                     );
                 }
-                console.log(`[catalog_services] Seed inicial: ${raw.length} serviços.`);
+                catalogGuardLog(`seed inicial concluído: ${raw.length} serviço(s) inserido(s).`);
             }
+        } else {
+            catalogGuardLog(
+                `seed ignorado: catalog_services já possui ${catalogCount} registro(s) — catálogo manual preservado.`
+            );
         }
 
         const campCnt = await client.query(`SELECT COUNT(*)::int AS c FROM promotional_campaigns`);
@@ -598,10 +683,18 @@ async function initDB() {
             ADD COLUMN IF NOT EXISTS promotional_price NUMERIC(10, 2) NULL
         `);
         await client.query(`
+            ALTER TABLE promotional_campaigns
+            ADD COLUMN IF NOT EXISTS linked_service_ids JSONB NOT NULL DEFAULT '[]'::jsonb
+        `);
+        await client.query(`
             CREATE INDEX IF NOT EXISTS idx_promotional_campaigns_archived
             ON promotional_campaigns (archived_at)
         `);
-        /* Legado Dia das Mães: só preenche campanha quando ainda não vinculado (não sobrescreve campanhas novas). */
+        /*
+         * Legado Dia das Mães: só nos ids dedicados do seed; nunca em serviços normais novos.
+         * Nunca sobrescrever catalog_services em produção. Seed apenas quando a tabela estiver vazia.
+         */
+        catalogGuardLog(`mutação permitida: origem=${CATALOG_MUTATION_ORIGINS.BOOT_LEGACY_PROMO} ids legado Dia das Mães`);
         await client.query(`
             UPDATE catalog_services
             SET is_promotional_package = TRUE,
@@ -609,6 +702,22 @@ async function initDB() {
             WHERE id IN ('promo_dia_maes_reflexologia', 'promo_dia_maes_facial')
               AND (promotional_campaign IS NULL OR TRIM(promotional_campaign) = '')
         `);
+
+        const healthBoot = await auditCatalogHealth(client, { autoFix: true });
+        if (healthBoot.warnings.length > 0) {
+            catalogGuardLog(`boot: ${healthBoot.warnings.length} aviso(s) de catálogo (ver GET /admin/catalog-health).`, 'warn');
+        }
+        if (!healthBoot.ok) {
+            const remaining = healthBoot.issues.filter((i) => i.severity === 'high');
+            if (remaining.length > 0) {
+                catalogGuardLog(
+                    `boot: ${remaining.length} inconsistência(s) alta(s) após reparo — revisar manualmente no admin.`,
+                    'warn'
+                );
+            }
+        } else {
+            catalogGuardLog('boot: catálogo consistente após verificação de segurança.');
+        }
 
         console.log('✅ Banco de dados sincronizado / migrado');
         await backfillAppointmentSlotItemStatus();
@@ -1172,6 +1281,10 @@ function mapDbRowToCatalogService(row) {
     };
 }
 
+/**
+ * Recarrega cache a partir do PostgreSQL — somente leitura.
+ * Nunca substitui o banco por catalog_seed.json; nunca grava alterações no banco.
+ */
 async function refreshServicesCatalogCache() {
     if (!isPostgresSetup) return;
     try {
@@ -1182,7 +1295,7 @@ async function refreshServicesCatalogCache() {
              ORDER BY sort_order ASC, name ASC`
         );
         servicesCatalogAll = rows.map(mapDbRowToCatalogService);
-        console.log(`[catalog_services] Cache: ${servicesCatalogAll.length} itens.`);
+        console.log(`[catalog_services] Cache (read-only): ${servicesCatalogAll.length} itens.`);
     } catch (e) {
         console.error('[catalog_services] Falha ao recarregar cache:', e);
     }
@@ -1197,7 +1310,8 @@ async function refreshPromotionalSettingsCache() {
     try {
         promoPackagesEnabledCache = await readPromotionalPackagesEnabledFromDb();
         const { rows } = await pool.query(
-            `SELECT id, name, description, active, valid_from, valid_to, category, sort_order, promotional_price, created_at, updated_at, archived_at
+            `SELECT id, name, description, active, valid_from, valid_to, category, sort_order, promotional_price,
+                    linked_service_ids, created_at, updated_at, archived_at
              FROM promotional_campaigns
              WHERE archived_at IS NULL
              ORDER BY sort_order ASC, name ASC`
@@ -1257,13 +1371,224 @@ function getCampaignPromotionalPrice(campaignId) {
     return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+function parseLinkedServiceIdsValue(raw) {
+    if (raw == null) return [];
+    if (Array.isArray(raw)) {
+        return [...new Set(raw.map((x) => String(x || '').trim()).filter(Boolean))];
+    }
+    if (typeof raw === 'string') {
+        const t = raw.trim();
+        if (!t) return [];
+        try {
+            const parsed = JSON.parse(t);
+            return parseLinkedServiceIdsValue(parsed);
+        } catch (_) {
+            return [];
+        }
+    }
+    return [];
+}
+
+function getCampaignLinkedServiceIdsFromRow(cRow) {
+    if (!cRow) return [];
+    const fromJson = parseLinkedServiceIdsValue(cRow.linked_service_ids);
+    if (fromJson.length) return fromJson;
+    return parseLinkedServiceIdsValue(cRow.linkedServiceIds);
+}
+
 function getCampaignMemberServiceIds(campaignId) {
     const cid = String(campaignId || '').trim();
     if (!cid) return [];
+    const fromCampaign = getCampaignLinkedServiceIdsFromRow(getCampaignRowById(cid));
+    if (fromCampaign.length) {
+        return fromCampaign.filter((id) => {
+            const s = Array.isArray(servicesCatalogAll) && servicesCatalogAll.find((x) => String(x.id) === id);
+            return s && (s.archived_at == null || String(s.archived_at).trim() === '');
+        });
+    }
     return (servicesCatalogAll || [])
         .filter((s) => s && !s.archived_at && String(s.promotional_campaign || '').trim() === cid)
         .map((s) => String(s.id))
         .filter(Boolean);
+}
+
+function getCampaignLinkedCount(campaignId) {
+    return getCampaignMemberServiceIds(campaignId).length;
+}
+
+/**
+ * Auditoria read-only do catálogo (+ opcional correção idempotente de vínculos indevidos).
+ * Nunca apaga linhas; autoFix só reverte is_promotional_package/promotional_campaign em serviços normais.
+ */
+async function auditCatalogHealth(dbClient, options = {}) {
+    const autoFix = options.autoFix === true;
+    const { rows } = await dbClient.query(
+        `SELECT id, name, category, price, duration, card_title, active, archived_at,
+                is_promotional_package, promotional_campaign, sort_order
+         FROM catalog_services
+         ORDER BY sort_order ASC, name ASC`
+    );
+    const issues = [];
+    const warnings = [];
+    let totalActive = 0;
+    let totalInactive = 0;
+    let totalArchived = 0;
+    let totalPromo = 0;
+    let totalNormal = 0;
+
+    for (const row of rows) {
+        const archived = row.archived_at != null && String(row.archived_at).trim() !== '';
+        const active = row.active !== false;
+        if (archived) totalArchived += 1;
+        else if (active) totalActive += 1;
+        else totalInactive += 1;
+
+        const dedicated = isDedicatedPromoPackageServiceId(row.id);
+        if (row.is_promotional_package === true || dedicated) totalPromo += 1;
+        else totalNormal += 1;
+
+        if (!archived && isMislinkedNormalCatalogServiceRow(row)) {
+            issues.push({
+                severity: 'high',
+                code: 'mislinked_as_promo',
+                serviceId: row.id,
+                name: row.name,
+                cardTitle: row.card_title,
+                message:
+                    'Serviço normal marcado como pacote promocional ou com promotional_campaign (deve usar linked_service_ids na campanha).'
+            });
+        }
+
+        const cat = row.category != null ? String(row.category).trim() : '';
+        if (!archived && !cat) {
+            warnings.push({
+                code: 'missing_category',
+                serviceId: row.id,
+                name: row.name,
+                message: 'Categoria vazia; vitrine pode agrupar em «Geral».'
+            });
+        }
+
+        const price = Number(row.price);
+        if (!archived && (!Number.isFinite(price) || price < 0)) {
+            issues.push({
+                severity: 'medium',
+                code: 'invalid_price',
+                serviceId: row.id,
+                name: row.name,
+                message: 'Preço ausente ou inválido.'
+            });
+        }
+
+        const dur = Math.round(Number(row.duration));
+        if (!archived && (!Number.isFinite(dur) || dur <= 0)) {
+            issues.push({
+                severity: 'medium',
+                code: 'invalid_duration',
+                serviceId: row.id,
+                name: row.name,
+                message: 'Duração ausente ou inválida.'
+            });
+        }
+
+        if (!archived && !active && row.is_promotional_package !== true) {
+            warnings.push({
+                code: 'inactive_visible_catalog',
+                serviceId: row.id,
+                name: row.name,
+                message: 'Serviço inativo (active=false) sem arquivamento; não aparece na vitrine pública.'
+            });
+        }
+    }
+
+    let autoFixed = [];
+    if (autoFix && issues.some((i) => i.code === 'mislinked_as_promo')) {
+        const repair = await repairMislinkedCatalogServices(dbClient);
+        autoFixed = repair.revertedServices || [];
+        if (repair.migratedCampaigns > 0) {
+            catalogGuardLog(
+                `boot: ${repair.migratedCampaigns} campanha(s) com linked_service_ids migrado(s) de vínculo legado.`,
+                'info'
+            );
+        }
+        for (const r of autoFixed) {
+            catalogGuardLog(
+                `corrigido automaticamente: service_id=${r.id} origem=${CATALOG_MUTATION_ORIGINS.BOOT_REPAIR} campos=is_promotional_package,promotional_campaign`,
+                'info'
+            );
+        }
+    }
+
+    return {
+        totals: {
+            all: rows.length,
+            active: totalActive,
+            inactive: totalInactive,
+            archived: totalArchived,
+            promotionalPackages: totalPromo,
+            normalServices: totalNormal
+        },
+        mislinkedNormalCount: issues.filter((i) => i.code === 'mislinked_as_promo').length,
+        issues,
+        warnings,
+        autoFixed: autoFixed.map((r) => ({
+            id: r.id,
+            name: r.name,
+            cardTitle: r.card_title
+        })),
+        ok: issues.filter((i) => i.severity === 'high').length === 0
+    };
+}
+
+/**
+ * Migra vínculos antigos (promotional_campaign em catalog_services) para linked_service_ids na campanha
+ * e reverte serviços normais marcados indevidamente como pacote promocional.
+ * Idempotente: não altera pacotes dedicados do seed (Dia das Mães).
+ */
+async function repairMislinkedCatalogServices(dbClient) {
+    catalogGuardAssertAllowedOrigin(CATALOG_MUTATION_ORIGINS.BOOT_REPAIR);
+    const migrated = await dbClient.query(`
+        UPDATE promotional_campaigns c
+        SET linked_service_ids = COALESCE(
+            (
+                SELECT jsonb_agg(s.id ORDER BY s.sort_order ASC, s.name ASC)
+                FROM catalog_services s
+                WHERE TRIM(COALESCE(s.promotional_campaign, '')) = c.id
+                  AND s.archived_at IS NULL
+            ),
+            '[]'::jsonb
+        ),
+        updated_at = NOW()
+        WHERE c.archived_at IS NULL
+          AND COALESCE(jsonb_array_length(c.linked_service_ids), 0) = 0
+          AND EXISTS (
+              SELECT 1 FROM catalog_services s
+              WHERE TRIM(COALESCE(s.promotional_campaign, '')) = c.id
+                AND s.archived_at IS NULL
+          )
+    `);
+
+    const reverted = await dbClient.query(
+        `
+        UPDATE catalog_services
+        SET is_promotional_package = FALSE,
+            promotional_campaign = NULL,
+            updated_at = NOW()
+        WHERE archived_at IS NULL
+          AND NOT (id = ANY($1::varchar[]))
+          AND (
+              is_promotional_package = TRUE
+              OR (promotional_campaign IS NOT NULL AND TRIM(promotional_campaign) <> '')
+          )
+        RETURNING id, name, card_title, promotional_campaign
+    `,
+        [LEGACY_DEDICATED_PROMO_SERVICE_IDS]
+    );
+
+    return {
+        migratedCampaigns: migrated.rowCount || 0,
+        revertedServices: reverted.rows || []
+    };
 }
 
 /**
@@ -1359,6 +1684,80 @@ function toPublicServiceJson(s) {
         campaignPromotionalPrice: getCampaignPromotionalPrice(s.promotional_campaign) ?? undefined,
         isPromotionalPackage: !!s.is_promotional_package
     };
+}
+
+/** Cards de campanha (Vale Presente) para a vitrine — membros vêm de linked_service_ids, sem converter serviços normais. */
+function buildPublicCampaignBundles() {
+    const bundles = [];
+    if (!Array.isArray(promotionalCampaignsAll)) return bundles;
+    for (const camp of promotionalCampaignsAll) {
+        if (!isCampaignLiveForNow(camp)) continue;
+        const cid = String(camp.id || '').trim();
+        if (!cid) continue;
+        const memberIds = getCampaignMemberServiceIds(cid);
+        if (!memberIds.length) continue;
+        const members = [];
+        for (const mid of memberIds) {
+            const s = findServiceById(mid);
+            if (!s || s.archived_at != null) continue;
+            if (s.active === false) continue;
+            if (s.is_promotional_package && isDedicatedPromoPackageServiceId(s.id)) {
+                members.push(s);
+                continue;
+            }
+            if (!s.is_promotional_package) {
+                members.push(s);
+            }
+        }
+        if (!members.length) continue;
+        if (members.every((m) => isDedicatedPromoPackageServiceId(m.id))) {
+            continue;
+        }
+        const promo = getCampaignPromotionalPrice(cid);
+        let price = 0;
+        if (promo != null) {
+            price = promo;
+        } else {
+            for (const m of members) {
+                price += roundMoney2(Number(m.price) || 0);
+            }
+            price = roundMoney2(price);
+        }
+        const duration = members.reduce(
+            (sum, m) => sum + (Number(m.duration) || DEFAULT_APPOINTMENT_DURATION_MIN),
+            0
+        );
+        const campaignName = getCampaignDisplayName(cid) || cid.replace(/_/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase());
+        const first = members[0];
+        bundles.push({
+            id: `campaign:${cid}`,
+            campaignId: cid,
+            name: campaignName,
+            cardTitle: campaignName,
+            category: camp.category != null ? String(camp.category) : 'Campanhas',
+            price,
+            duration,
+            summary: first.summary || '',
+            detail: first.detail || '',
+            includedServices: members.map((m) => ({
+                id: m.id,
+                label: (m.card_title && String(m.card_title).trim()) || String(m.name || '').trim()
+            })),
+            memberServiceIds: members.map((m) => String(m.id)),
+            isCampaignBundle: true,
+            isPromotionalPackage: true,
+            promotionalCampaign: cid,
+            promotionalCampaignName: campaignName,
+            campaignPromotionalPrice: promo ?? undefined,
+            sortOrder: Math.round(Number(camp.sort_order)) || 0
+        });
+    }
+    bundles.sort((a, b) => {
+        const d = (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0);
+        if (d !== 0) return d;
+        return String(a.name || '').localeCompare(String(b.name || ''), 'pt-BR');
+    });
+    return bundles;
 }
 
 /** Sinal na reserva parcial: no máximo o fixo do produto, e nunca acima do valor total do procedimento. */
@@ -2983,7 +3382,11 @@ function mapCampaignRowToAdminApi(row) {
         category: row.category != null ? String(row.category) : 'Campanhas',
         sortOrder: Math.round(Number(row.sort_order)) || 0,
         promotionalPrice,
-        linkedCount: row.linked_count != null ? Number(row.linked_count) : undefined,
+        linkedCount:
+            row.linked_count != null
+                ? Number(row.linked_count)
+                : getCampaignLinkedServiceIdsFromRow(row).length,
+        linkedServiceIds: getCampaignLinkedServiceIdsFromRow(row),
         createdAt: row.created_at || null,
         updatedAt: row.updated_at || null
     };
@@ -3014,11 +3417,13 @@ async function generateUniqueCampaignId(dbClient, baseName) {
 }
 
 /**
- * Desvincula pacotes desta campanha e vincula os ids informados como pacotes promocionais.
+ * Vincula procedimentos à campanha de forma relacional (linked_service_ids).
+ * Não altera is_promotional_package nem promotional_campaign em serviços normais do catálogo.
  * @param {import('pg').PoolClient} dbClient
  * @throws {Error} `code === 'BAD_SERVICE_IDS'` se algum serviço não existir ou estiver arquivado.
  */
 async function applyCampaignLinkedServiceIds(dbClient, campaignId, rawIds) {
+    catalogGuardAssertCampaignDoesNotMutateServices('campanha', CATALOG_CAMPAIGN_FORBIDDEN_COLUMNS);
     const cid = String(campaignId || '').trim();
     if (!cid) {
         const err = new Error('INVALID_CAMPAIGN');
@@ -3026,38 +3431,27 @@ async function applyCampaignLinkedServiceIds(dbClient, campaignId, rawIds) {
         throw err;
     }
     const ids = [...new Set((rawIds || []).map((x) => String(x || '').trim()).filter(Boolean))];
-    await dbClient.query(
-        `
-        UPDATE catalog_services
-        SET promotional_campaign = NULL,
-            is_promotional_package = FALSE,
-            updated_at = NOW()
-        WHERE promotional_campaign = $1
-    `,
-        [cid]
-    );
-    if (ids.length === 0) {
-        return { linkedCount: 0 };
-    }
-    const chk = await dbClient.query(
-        `SELECT id FROM catalog_services WHERE id = ANY($1::varchar[]) AND archived_at IS NULL`,
-        [ids]
-    );
-    if (chk.rows.length !== ids.length) {
-        const err = new Error('INVALID_SERVICE_IDS');
-        err.code = 'BAD_SERVICE_IDS';
-        throw err;
+    if (ids.length > 0) {
+        const chk = await dbClient.query(
+            `SELECT id FROM catalog_services WHERE id = ANY($1::varchar[]) AND archived_at IS NULL`,
+            [ids]
+        );
+        if (chk.rows.length !== ids.length) {
+            const err = new Error('INVALID_SERVICE_IDS');
+            err.code = 'BAD_SERVICE_IDS';
+            throw err;
+        }
     }
     await dbClient.query(
         `
-        UPDATE catalog_services
-        SET promotional_campaign = $1,
-            is_promotional_package = TRUE,
+        UPDATE promotional_campaigns
+        SET linked_service_ids = $2::jsonb,
             updated_at = NOW()
-        WHERE id = ANY($2::varchar[])
+        WHERE id = $1
     `,
-        [cid, ids]
+        [cid, JSON.stringify(ids)]
     );
+    catalogGuardLog(`campanha ${cid}: vínculo salvo em linked_service_ids (${ids.length} procedimento(s)); catalog_services não alterado.`);
     return { linkedCount: ids.length };
 }
 
@@ -3069,7 +3463,7 @@ app.get('/admin/campaigns', requireAdminAuth, async (_req, res) => {
         const { rows } = await pool.query(
             `
             SELECT c.*,
-                   (SELECT COUNT(*)::int FROM catalog_services s WHERE s.promotional_campaign = c.id AND s.archived_at IS NULL) AS linked_count
+                   COALESCE(jsonb_array_length(c.linked_service_ids), 0)::int AS linked_count
             FROM promotional_campaigns c
             WHERE c.archived_at IS NULL
             ORDER BY c.sort_order ASC, c.name ASC
@@ -3152,14 +3546,11 @@ app.post('/admin/campaigns', requireAdminAuth, async (req, res) => {
         `,
             [id, name, description, active, vf, vt, category, sortOrder, promotionalPriceDb]
         );
-        await applyCampaignLinkedServiceIds(dbClient, id, serviceIdsNorm);
+        const linkResult = await applyCampaignLinkedServiceIds(dbClient, id, serviceIdsNorm);
         await dbClient.query('COMMIT');
         const row = ins.rows[0];
-        const cnt = await dbClient.query(
-            `SELECT COUNT(*)::int AS c FROM catalog_services WHERE promotional_campaign = $1 AND archived_at IS NULL`,
-            [id]
-        );
-        row.linked_count = cnt.rows[0].c;
+        row.linked_service_ids = JSON.stringify(serviceIdsNorm);
+        row.linked_count = linkResult.linkedCount;
         await refreshPromotionalSettingsCache();
         await refreshServicesCatalogCache();
         return res.status(201).json(mapCampaignRowToAdminApi(row));
@@ -3333,14 +3724,13 @@ app.patch('/admin/campaigns/:id', requireAdminAuth, async (req, res) => {
             row = up.rows[0];
         }
         if (hasServiceIdsKey) {
-            await applyCampaignLinkedServiceIds(client, id, serviceIdsForAssign);
+            const linkResult = await applyCampaignLinkedServiceIds(client, id, serviceIdsForAssign);
+            row.linked_service_ids = JSON.stringify(serviceIdsForAssign);
+            row.linked_count = linkResult.linkedCount;
+        } else {
+            row.linked_count = getCampaignLinkedCount(id);
         }
         await client.query('COMMIT');
-        const cnt = await client.query(
-            `SELECT COUNT(*)::int AS c FROM catalog_services WHERE promotional_campaign = $1 AND archived_at IS NULL`,
-            [id]
-        );
-        row.linked_count = cnt.rows[0].c;
         await refreshPromotionalSettingsCache();
         await refreshServicesCatalogCache();
         return res.json(mapCampaignRowToAdminApi(row));
@@ -3483,6 +3873,46 @@ function mapCatalogRowToAdminApi(row) {
     };
 }
 
+app.get('/admin/catalog-health', requireAdminAuth, async (_req, res) => {
+    if (!isPostgresSetup) {
+        return res.status(500).json({ error: 'DB não configurado.' });
+    }
+    const client = await pool.connect();
+    try {
+        const report = await auditCatalogHealth(client, { autoFix: false });
+        const premiumHints = (await client.query(
+            `
+            SELECT id, name, card_title, active, archived_at, is_promotional_package, promotional_campaign
+            FROM catalog_services
+            WHERE archived_at IS NULL
+              AND (
+                  LOWER(COALESCE(name, '')) LIKE '%premium%'
+                  OR LOWER(COALESCE(card_title, '')) LIKE '%premium%'
+                  OR LOWER(id) LIKE '%premium%'
+              )
+            ORDER BY sort_order ASC, name ASC
+            `
+        )).rows.map((r) => ({
+            id: r.id,
+            name: r.name,
+            cardTitle: r.card_title,
+            active: r.active !== false,
+            isPromotionalPackage: !!r.is_promotional_package,
+            promotionalCampaign: r.promotional_campaign
+        }));
+        return res.json({
+            ...report,
+            premiumMatches: premiumHints,
+            generatedAt: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('[GET /admin/catalog-health] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao auditar catálogo.' });
+    } finally {
+        client.release();
+    }
+});
+
 app.get('/admin/services', requireAdminAuth, async (_req, res) => {
     if (!isPostgresSetup) {
         return res.status(500).json({ error: 'DB não configurado.' });
@@ -3556,6 +3986,7 @@ app.post('/admin/services', requireAdminAuth, async (req, res) => {
             so = Math.round(Number(rSo.rows[0].n)) || 0;
         }
 
+        catalogGuardLog(`criação permitida: origem=${CATALOG_MUTATION_ORIGINS.ADMIN_SERVICES} service_id=${id}`);
         await client.query(
             `
             INSERT INTO catalog_services (
@@ -3677,6 +4108,11 @@ app.patch('/admin/services/:id', requireAdminAuth, async (req, res) => {
             return res.status(404).json({ error: 'Serviço não encontrado ou já removido do catálogo.' });
         }
 
+        catalogGuardLog(
+            `atualização permitida: origem=${CATALOG_MUTATION_ORIGINS.ADMIN_SERVICES} service_id=${id} campos=${sets
+                .map((s) => s.split('=')[0].trim())
+                .join(',')}`
+        );
         const q = `UPDATE catalog_services SET ${sets.join(', ')} WHERE id = $${p} AND archived_at IS NULL RETURNING id, name, category, price, duration, summary, description, card_title, active,
                     is_promotional_package, promotional_campaign, sort_order, created_at, updated_at`;
         const up = await client.query(q, vals);
@@ -3703,6 +4139,9 @@ app.delete('/admin/services/:id', requireAdminAuth, async (req, res) => {
     }
     const client = await pool.connect();
     try {
+        catalogGuardLog(
+            `arquivamento permitido (soft delete): origem=${CATALOG_MUTATION_ORIGINS.ADMIN_SERVICES} service_id=${id}`
+        );
         const up = await client.query(
             `
             UPDATE catalog_services
@@ -3725,6 +4164,23 @@ app.delete('/admin/services/:id', requireAdminAuth, async (req, res) => {
         return res.status(500).json({ error: 'Erro ao arquivar serviço.' });
     } finally {
         client.release();
+    }
+});
+
+app.get('/public/campaign-bundles', async (_req, res) => {
+    res.set('Cache-Control', 'private, no-store, max-age=0, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    if (!isPostgresSetup) {
+        return res.json([]);
+    }
+    try {
+        await refreshServicesCatalogCache();
+        await refreshPromotionalSettingsCache();
+        const bundles = buildPublicCampaignBundles();
+        return res.json(bundles);
+    } catch (error) {
+        console.error('[GET /public/campaign-bundles] Erro:', error);
+        return res.status(500).json({ error: 'Erro ao carregar campanhas.' });
     }
 });
 
