@@ -2180,11 +2180,9 @@ textarea.form-control {
 
     .client-booking-home__title-mobile.section-title {
         margin-bottom: 4px;
-        font-family: var(--font-heading);
         font-size: clamp(1.12rem, 3.9vw, 1.38rem);
-        font-weight: 500;
-        letter-spacing: 0.07em;
-        text-transform: uppercase;
+        font-weight: 600;
+        letter-spacing: -0.02em;
         line-height: 1.25;
         color: var(--brand-dark);
     }

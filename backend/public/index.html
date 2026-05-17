@@ -2345,7 +2345,7 @@ const ClientArea = ({
             {step === 1 && (
                 <div className="booking-section step-container client-booking-home">
                     <div className="client-booking-home__mobile-head">
-                        <h2 className="section-title client-booking-home__title-mobile">Menu de Procedimentos</h2>
+                        <h2 className="section-title client-booking-home__title-mobile">O que deseja agendar?</h2>
                         <div className="client-booking-home__title-rule" aria-hidden="true" />
                         <p className="client-booking-home__intro client-booking-home__intro-mobile">Escolha os procedimentos desejados.</p>
                     </div>
@@ -2554,7 +2554,7 @@ const ClientArea = ({
                                                             aria-expanded={detailsOpen}
                                                             aria-label={detailsOpen ? 'Ocultar detalhes do procedimento' : 'Ver detalhes do procedimento'}
                                                         >
-                                                            {detailsOpen ? 'Ocultar' : 'Detalhes'}
+                                                            {detailsOpen ? 'Ocultar detalhes' : 'Ver detalhes'}
                                                         </button>
                                                         {detailsOpen && s.isCampaignBundle && Array.isArray(s.includedServices) && s.includedServices.length > 0 ? (
                                                             <div className="client-booking-acc__details">
@@ -2897,7 +2897,7 @@ const ClientArea = ({
                                     Prosseguir à Identificação <i className="fas fa-arrow-right"></i>
                                 </span>
                                 <span className="client-booking-home__submit-label client-booking-home__submit-label--mobile">
-                                    Prosseguir com reserva <i className="fas fa-arrow-right"></i>
+                                    Prosseguir à Identificação <i className="fas fa-arrow-right"></i>
                                 </span>
                             </button>
                         </div>
